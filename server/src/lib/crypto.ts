@@ -23,7 +23,7 @@ export class SecretBox {
 
   seal(plaintext: string, aad: string): string {
     const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', this.#key, iv);
+    const cipher = createCipheriv('aes-256-gcm', this.#key, iv, { authTagLength: 16 });
     cipher.setAAD(Buffer.from(aad));
     const data = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
     return ['v1', iv, cipher.getAuthTag(), data].map((p) => (typeof p === 'string' ? p : p.toString('base64url'))).join('.');
@@ -32,9 +32,12 @@ export class SecretBox {
   open(sealed: string, aad: string): string {
     const [version, iv, tag, data] = sealed.split('.');
     if (version !== 'v1' || !iv || !tag || data === undefined) throw new Error('Secret chiffré invalide');
-    const decipher = createDecipheriv('aes-256-gcm', this.#key, Buffer.from(iv, 'base64url'));
+    const authTag = Buffer.from(tag, 'base64url');
+    // Étiquette de 16 octets exigée : une étiquette tronquée affaiblirait l'authentification (GCM).
+    if (authTag.length !== 16) throw new Error('Secret chiffré invalide');
+    const decipher = createDecipheriv('aes-256-gcm', this.#key, Buffer.from(iv, 'base64url'), { authTagLength: 16 });
     decipher.setAAD(Buffer.from(aad));
-    decipher.setAuthTag(Buffer.from(tag, 'base64url'));
+    decipher.setAuthTag(authTag);
     return Buffer.concat([decipher.update(Buffer.from(data, 'base64url')), decipher.final()]).toString('utf8');
   }
 }
