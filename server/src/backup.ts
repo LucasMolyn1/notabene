@@ -14,6 +14,15 @@ export const backupName = (d = new Date()) =>
 export async function backupTo(db: DB, file: string): Promise<void> {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   await db.backup(file);
+  // La copie hérite du mode WAL : on la repasse en journal classique pour qu'elle reste un fichier unique
+  // (sans -wal/-shm créés à chaque ouverture, même en lecture seule).
+  const copy = new Database(file);
+  try {
+    copy.pragma('journal_mode = DELETE');
+  } finally {
+    copy.close();
+  }
+  for (const ext of ['-wal', '-shm']) rmSync(`${file}${ext}`, { force: true });
   chmodSync(file, 0o600);
 }
 
@@ -36,7 +45,7 @@ export function verifyBackup(file: string): { users: number; pages: number; vers
 export function pruneBackups(dir: string, keep: number): string[] {
   const files = readdirSync(dir).filter((f) => /^notabene-\d{8}-\d{6}\.db$/.test(f)).sort();
   const old = files.slice(0, Math.max(0, files.length - keep));
-  for (const f of old) rmSync(resolve(dir, f));
+  for (const f of old) for (const ext of ['', '-wal', '-shm']) rmSync(resolve(dir, f + ext), { force: true });
   return old;
 }
 

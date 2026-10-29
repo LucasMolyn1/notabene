@@ -23,6 +23,9 @@ describe('sauvegarde et restauration', () => {
     const backup = resolve(dir, 'b', 'notabene-20260101-000000.db');
     await backupTo(db, backup);
     expect(verifyBackup(backup).pages).toBe(pages);
+    // Une sauvegarde reste un fichier unique, même après vérification.
+    expect(existsSync(`${backup}-wal`)).toBe(false);
+    expect(existsSync(`${backup}-shm`)).toBe(false);
 
     db.prepare('DELETE FROM pages').run();
     db.close();
