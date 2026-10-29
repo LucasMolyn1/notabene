@@ -2,6 +2,7 @@
 // Sert aussi à choisir une page à lier (mode « pick »).
 import { h, esc, norm, debounce } from './util.js';
 import { icon } from './icons.js';
+import { pageIcon } from './ui.js';
 import { store } from './store.js';
 import { session } from './session.js';
 import { streamAsk } from './api.js';
@@ -31,7 +32,7 @@ const snippetHTML = (s) => esc(s).replace(/\u0002/g, '<mark>').replace(/\u0003/g
 
 function pathOf(page) {
   const space = store.space(page.spaceId);
-  return [space ? `${space.icon} ${space.name}` : '', ...store.ancestors(page.id).map((a) => a.title || 'Sans titre')]
+  return [space ? space.name : '', ...store.ancestors(page.id).map((a) => a.title || 'Sans titre')]
     .filter(Boolean).join(' › ');
 }
 
@@ -77,7 +78,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
   const list = h('div', { class: 'pal-list', role: 'listbox' });
   const tabs = aiAvailable && h('div', { class: 'pal-tabs' },
     h('button', { class: 'pal-tab', 'data-tab': 'search', onClick: () => switchTab('search') }, icon('search', 14), 'Rechercher'),
-    h('button', { class: 'pal-tab', 'data-tab': 'ai', onClick: () => switchTab('ai') }, '✨ Demander à l’IA'));
+    h('button', { class: 'pal-tab', 'data-tab': 'ai', onClick: () => switchTab('ai') }, icon('sparkle', 14), 'Demander à l\'IA'));
   const foot = h('div', { class: 'pal-foot' });
   const box = h('div', { class: 'palette' },
     h('div', { class: 'pal-head' }, icon('search', 18), input, h('kbd', null, 'Échap')),
@@ -143,7 +144,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
         onMouseMove: () => { if (active !== i) { active = i; render(); } },
         onClick: () => choose(i),
       },
-      h('span', { class: 'pal-icon' }, r.page.icon || '📄'),
+      h('span', { class: 'pal-icon' }, pageIcon(r.page.icon)),
       h('span', { class: 'pal-text' },
         h('span', { class: 'pal-title', html: highlightTitle(r.page.title || 'Sans titre', query) }),
         h('span', { class: 'pal-path' }, pathOf(r.page)),
@@ -162,7 +163,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
 
   function renderAiIntro() {
     list.replaceChildren(h('div', { class: 'ai-intro' },
-      h('div', { class: 'ai-badge' }, '✨'),
+      h('div', { class: 'ai-badge' }, icon('sparkle', 24)),
       h('p', null, 'Posez une question en langage naturel : l’IA répond à partir des pages auxquelles vous avez accès, en citant ses sources.'),
       h('div', { class: 'ai-examples' }, ['Comment se connecter avec Authentik ?', 'Comment créer un jeton d’API ?', 'Quels diagrammes sont disponibles ?']
         .map((q) => h('button', { class: 'chip', onClick: () => { input.value = q; ask(); } }, q)))));
@@ -185,7 +186,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
         sources = s;
         sourceList.replaceChildren(...(s.length
           ? [h('div', { class: 'pal-section' }, 'Sources'), ...s.map((src) => h('a', { class: 'ai-source', href: `#/p/${src.id}`, onClick: () => close() },
-            h('span', { class: 'cite' }, String(src.n)), h('span', null, `${src.icon || '📄'} ${src.title}`)))]
+            h('span', { class: 'cite' }, String(src.n)), h('span', null, src.title)))]
           : [h('p', { class: 'hint' }, 'Aucune page pertinente trouvée.')]));
       },
       onDelta: (chunk) => { text += chunk; paint(); },

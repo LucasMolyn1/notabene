@@ -6,7 +6,7 @@ import { session } from './session.js';
 import { prefs, savePrefs, app } from './prefs.js';
 import { createEditor } from './editor.js';
 import { presence, colorFor } from './presence.js';
-import { openMenu, openModal, toast } from './ui.js';
+import { openMenu, openModal, toast, pageIcon } from './ui.js';
 import { openPalette } from './palette.js';
 import * as A from './actions.js';
 
@@ -40,7 +40,7 @@ export function topbar(left, right = []) {
 function crumbsFor(page) {
   const space = store.space(page.spaceId);
   const parts = [
-    space && h('a', { class: 'crumb', href: `#/s/${space.id}` }, h('span', { class: 'crumb-ico' }, space.icon), space.name),
+    space && h('a', { class: 'crumb', href: `#/s/${space.id}` }, h('span', { class: 'crumb-ico' }, icon(space.icon || 'folder', 14)), space.name),
     ...store.ancestors(page.id).map((a) => h('a', { class: 'crumb', href: `#/p/${a.id}` }, a.icon && h('span', { class: 'crumb-ico' }, a.icon), a.title || 'Sans titre')),
     h('span', { class: 'crumb current' }, page.icon && h('span', { class: 'crumb-ico' }, page.icon), page.title || 'Sans titre'),
   ].filter(Boolean);
@@ -379,17 +379,17 @@ export function showSpace(spaceId) {
     const recent = store.recent(spaceId, 9);
     const roots = store.children(spaceId, null);
     main().replaceChildren(
-      topbar(h('nav', { class: 'crumbs' }, h('span', { class: 'crumb current' }, h('span', { class: 'crumb-ico' }, s.icon), s.name)),
+      topbar(h('nav', { class: 'crumbs' }, h('span', { class: 'crumb current' }, h('span', { class: 'crumb-ico' }, icon(s.icon || 'folder', 14)), s.name)),
         app.embed || !canWrite ? [] : [h('button', { class: 'btn btn-primary btn-sm', onClick: () => A.newPage(spaceId) }, icon('plus', 15), 'Nouvelle page')]),
       scroller);
     scroller.replaceChildren(h('div', { class: 'space-home' },
       h('div', { class: 'space-hero' },
-        h('div', { class: 'space-hero-icon' }, s.icon),
+        h('div', { class: 'space-hero-icon' }, pageIcon(s.icon, 32)),
         h('div', null,
           h('h1', null, s.name),
           s.description && h('p', { class: 'muted' }, s.description),
           h('div', { class: 'space-stats' },
-            h('span', null, s.visibility === 'public' ? '🌍 Public' : '🔒 Privé'),
+            h('span', null, s.visibility === 'public' ? 'Public' : 'Privé'),
             h('span', null, `${pages.length} page${pages.length > 1 ? 's' : ''}`),
             h('span', null, `${roots.length} à la racine`),
             pages.length > 0 && h('span', null, `Activité ${timeAgo(Math.max(...pages.map((p) => p.updatedAt)))}`))),
@@ -400,7 +400,7 @@ export function showSpace(spaceId) {
           h('div', { class: 'cards' }, recent.map((p) => {
             const parent = p.parentId && store.page(p.parentId);
             return h('a', { class: 'card', href: `#/p/${p.id}` },
-              h('div', { class: 'card-icon' }, p.icon || '📄'),
+              h('div', { class: 'card-icon' }, pageIcon(p.icon)),
               h('strong', { class: 'card-title' }, p.title || 'Sans titre'),
               h('p', { class: 'card-snippet' }, p.excerpt ? p.excerpt.slice(0, 120) + (p.excerpt.length > 120 ? '…' : '') : 'Page vide'),
               h('div', { class: 'card-foot' },
@@ -409,7 +409,7 @@ export function showSpace(spaceId) {
           })),
         ]
         : h('div', { class: 'empty' },
-          h('div', { class: 'empty-emoji' }, '🌱'),
+          h('div', { class: 'empty-emoji' }, icon('plus', 32)),
           h('p', null, 'Cet espace est encore vide.'),
           canWrite && !app.embed && h('button', { class: 'btn btn-primary', onClick: () => A.newPage(spaceId) }, 'Créer la première page'))));
   }
@@ -452,7 +452,7 @@ export function showMissing(id, status = 404) {
   main().replaceChildren(
     topbar(h('nav', { class: 'crumbs' })),
     h('div', { class: 'scroller' }, h('div', { class: 'empty big' },
-      h('div', { class: 'empty-emoji' }, '🔭'),
+      h('div', { class: 'empty-emoji' }, icon('search', 32)),
       h('h2', null, 'Page introuvable'),
       h('p', { class: 'muted' }, anonymous
         ? 'Cette page n’existe pas ou nécessite d’être connecté.'

@@ -9,18 +9,19 @@ import Typography from '@tiptap/extension-typography';
 import Image from '@tiptap/extension-image';
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
 import { h, norm, pickFile } from './util.js';
+import { icon } from './icons.js';
 import { store } from './store.js';
 import { session } from './session.js';
-import { toast } from './ui.js';
+import { toast, pageIcon } from './ui.js';
 import { DEFAULT_MERMAID, DrawIo, Excalidraw, Mermaid, openDrawio, openExcalidraw } from './diagrams.js';
 
 // ---- Nœuds personnalisés -------------------------------------------------
 
 const CALLOUTS = {
-  info: { emoji: 'ℹ️', label: 'Info' },
-  warning: { emoji: '⚠️', label: 'Attention' },
-  success: { emoji: '✅', label: 'Succès' },
-  danger: { emoji: '🚫', label: 'Danger' },
+  info: { glyph: 'i', label: 'Info' },
+  warning: { glyph: '!', label: 'Attention' },
+  success: { glyph: '✓', label: 'Succès' },
+  danger: { glyph: '✗', label: 'Danger' },
 };
 const CALLOUT_ORDER = Object.keys(CALLOUTS);
 
@@ -60,7 +61,7 @@ const Callout = Node.create({
       const dom = h('div', { class: 'callout', 'data-callout': '' }, iconBtn, content);
       const paint = () => {
         dom.dataset.type = current.attrs.type;
-        iconBtn.textContent = CALLOUTS[current.attrs.type]?.emoji || 'ℹ️';
+        iconBtn.textContent = CALLOUTS[current.attrs.type]?.glyph || 'i';
       };
       iconBtn.addEventListener('mousedown', (e) => {
         e.preventDefault();
@@ -105,7 +106,7 @@ const PageLink = Node.create({
 
   renderHTML({ node, HTMLAttributes }) {
     const p = store.page(node.attrs.id);
-    return ['a', mergeAttributes(HTMLAttributes, { class: 'page-link' }), `${p?.icon || '📄'} ${p?.title || 'Sans titre'}`];
+    return ['a', mergeAttributes(HTMLAttributes, { class: 'page-link' }), p?.title || 'Sans titre'];
   },
 
   renderText({ node }) { return store.page(node.attrs.id)?.title || 'Sans titre'; },
@@ -118,7 +119,7 @@ const PageLink = Node.create({
         const missing = !p || !!p.deletedAt;
         dom.classList.toggle('missing', missing);
         dom.replaceChildren(
-          h('span', { class: 'page-link-icon' }, missing ? '⛔' : p.icon || '📄'),
+          h('span', { class: 'page-link-icon' }, missing ? icon('ban', 14) : pageIcon(p.icon, 14)),
           h('span', { class: 'page-link-title' }, missing ? 'Page supprimée' : p.title || 'Sans titre'),
         );
       };
@@ -212,18 +213,18 @@ const SLASH_ITEMS = [
   { group: 'Listes', title: 'Liste de tâches', desc: 'Cases à cocher', glyph: '☑', keys: 'todo checklist taches', run: chainCmd((c) => c.toggleTaskList()) },
   { group: 'Blocs', title: 'Citation', desc: 'Mettre une citation en avant', glyph: '❝', keys: 'quote blockquote', run: chainCmd((c) => c.toggleBlockquote()) },
   { group: 'Blocs', title: 'Bloc de code', desc: 'Code avec police à chasse fixe', glyph: '</>', keys: 'code pre', run: chainCmd((c) => c.toggleCodeBlock()) },
-  { group: 'Blocs', title: 'Callout info', desc: 'Encadré d’information', glyph: 'ℹ️', keys: 'callout note info', run: chainCmd((c) => c.setCallout({ type: 'info' })) },
-  { group: 'Blocs', title: 'Callout attention', desc: 'Encadré d’avertissement', glyph: '⚠️', keys: 'callout warning avertissement', run: chainCmd((c) => c.setCallout({ type: 'warning' })) },
-  { group: 'Blocs', title: 'Callout succès', desc: 'Encadré positif', glyph: '✅', keys: 'callout success tip astuce', run: chainCmd((c) => c.setCallout({ type: 'success' })) },
-  { group: 'Blocs', title: 'Callout danger', desc: 'Encadré critique', glyph: '🚫', keys: 'callout danger erreur', run: chainCmd((c) => c.setCallout({ type: 'danger' })) },
+  { group: 'Blocs', title: 'Callout info', desc: 'Encadré d’information', glyph: 'i', keys: 'callout note info', run: chainCmd((c) => c.setCallout({ type: 'info' })) },
+  { group: 'Blocs', title: 'Callout attention', desc: 'Encadré d’avertissement', glyph: '!', keys: 'callout warning avertissement', run: chainCmd((c) => c.setCallout({ type: 'warning' })) },
+  { group: 'Blocs', title: 'Callout succès', desc: 'Encadré positif', glyph: '✓', keys: 'callout success tip astuce', run: chainCmd((c) => c.setCallout({ type: 'success' })) },
+  { group: 'Blocs', title: 'Callout danger', desc: 'Encadré critique', glyph: '✗', keys: 'callout danger erreur', run: chainCmd((c) => c.setCallout({ type: 'danger' })) },
   { group: 'Blocs', title: 'Tableau', desc: 'Tableau 3 × 3 avec en-tête', glyph: '▦', keys: 'table grille', run: chainCmd((c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true })) },
   { group: 'Blocs', title: 'Séparateur', desc: 'Ligne horizontale', glyph: '—', keys: 'hr divider ligne', run: chainCmd((c) => c.setHorizontalRule()) },
   {
-    group: 'Diagrammes', title: 'Mermaid', desc: 'Schéma décrit en texte (flux, séquence…)', glyph: '◇', keys: 'mermaid diagramme flowchart sequence schema',
+    group: 'Diagrammes', title: 'Mermaid', desc: 'Schéma décrit en texte (flux, séquence…)', ico: 'diamond', keys: 'mermaid diagramme flowchart sequence schema',
     run: chainCmd((c) => c.insertContent({ type: 'mermaid', attrs: { code: DEFAULT_MERMAID } })),
   },
   {
-    group: 'Diagrammes', title: 'Excalidraw', desc: 'Dessin à main levée', glyph: '✏️', keys: 'excalidraw dessin croquis sketch whiteboard',
+    group: 'Diagrammes', title: 'Excalidraw', desc: 'Dessin à main levée', ico: 'pencil', keys: 'excalidraw dessin croquis sketch whiteboard',
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).insertContent({ type: 'excalidraw' }).run();
       const pos = editor.state.selection.from - 1;
@@ -231,7 +232,7 @@ const SLASH_ITEMS = [
     },
   },
   {
-    group: 'Diagrammes', title: 'Draw.io', desc: 'Diagramme d’architecture (instance auto-hébergée)', glyph: '⬡', keys: 'drawio diagrams.net architecture uml',
+    group: 'Diagrammes', title: 'Draw.io', desc: 'Diagramme d’architecture (instance auto-hébergée)', ico: 'hexagon', keys: 'drawio diagrams.net architecture uml',
     when: () => !!session.config.drawioUrl,
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).insertContent({ type: 'drawio' }).run();
@@ -240,7 +241,7 @@ const SLASH_ITEMS = [
     },
   },
   {
-    group: 'Médias', title: 'Image', desc: 'Importer depuis votre ordinateur', glyph: '🖼', keys: 'image photo upload',
+    group: 'Médias', title: 'Image', desc: 'Importer depuis votre ordinateur', ico: 'upload', keys: 'image photo upload',
     run: async (editor, range) => {
       editor.chain().focus().deleteRange(range).run();
       const file = await pickFile('image/*');
@@ -248,7 +249,7 @@ const SLASH_ITEMS = [
     },
   },
   {
-    group: 'Pages', title: 'Sous-page', desc: 'Créer une page enfant et y accéder', glyph: '📄', keys: 'subpage page enfant nouvelle',
+    group: 'Pages', title: 'Sous-page', desc: 'Créer une page enfant et y accéder', ico: 'file', keys: 'subpage page enfant nouvelle',
     run: async (editor, range, ctx) => {
       editor.chain().focus().deleteRange(range).run();
       const id = await ctx.createSubpage?.();
@@ -258,7 +259,7 @@ const SLASH_ITEMS = [
     },
   },
   {
-    group: 'Pages', title: 'Lien vers une page', desc: 'Mentionner une page existante', glyph: '🔗', keys: 'mention lien page link',
+    group: 'Pages', title: 'Lien vers une page', desc: 'Mentionner une page existante', ico: 'link', keys: 'mention lien page link',
     run: (editor, range, ctx) => {
       editor.chain().focus().deleteRange(range).run();
       ctx.pickPage?.((page) => {
@@ -305,7 +306,7 @@ function createSlashMenu(editor, ctx) {
         onMouseDown: (e) => { e.preventDefault(); select(i); },
         onMouseMove: () => { if (active !== i) { active = i; render(); } },
       },
-      h('span', { class: 'slash-glyph' }, it.glyph),
+      h('span', { class: 'slash-glyph' }, it.ico ? icon(it.ico, 18) : it.glyph),
       h('span', { class: 'slash-text' }, h('strong', null, it.title), h('small', null, it.desc))));
     });
     el.querySelector('.slash-item.active')?.scrollIntoView({ block: 'nearest' });
@@ -393,7 +394,7 @@ function createBubbleMenu(editor) {
       btn('H2', 'Titre 2', () => editor.isActive('heading', { level: 2 }), () => c().toggleHeading({ level: 2 }).run(), 'small'),
       btn('❝', 'Citation', () => editor.isActive('blockquote'), () => c().toggleBlockquote().run()),
       h('span', { class: 'bubble-sep' }),
-      btn('🔗', 'Lien', () => editor.isActive('link'), () => { linkMode = true; renderLink(); }),
+      btn('↗', 'Lien', () => editor.isActive('link'), () => { linkMode = true; renderLink(); }),
     );
   }
 
@@ -426,7 +427,7 @@ function createBubbleMenu(editor) {
       editor.isActive('link') && h('button', {
         class: 'bubble-btn', type: 'button', title: 'Retirer le lien',
         onMouseDown: (e) => { e.preventDefault(); input.value = ''; apply(); },
-      }, '✕'),
+      }, icon('x', 14)),
     );
     position();
     input.focus();

@@ -23,7 +23,7 @@ const card = (title, desc, ...body) => h('section', { class: 'set-card' },
 const kv = (rows) => h('dl', { class: 'kv' }, rows.filter(Boolean).flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v ?? '—')]));
 
 const pill = (text, kind = '') => h('span', { class: `pill ${kind}` }, text);
-const status = (ok, onText = 'Actif', offText = 'Inactif') => pill(ok ? `● ${onText}` : `○ ${offText}`, ok ? 'ok' : 'off');
+const status = (ok, onText = 'Actif', offText = 'Inactif') => pill(ok ? onText : offText, ok ? 'ok' : 'off');
 
 function copyable(value) {
   return h('span', { class: 'copyable' }, h('code', null, value),
@@ -53,7 +53,7 @@ async function renderProfile(el) {
         h('p', { class: 'muted' }, u.email || 'Adresse e-mail non communiquée par le fournisseur'),
         h('div', { class: 'row' }, pill(ROLE_LABELS[u.role], 'accent'), pill(session.config.auth.oidc ? 'Connecté via Authentik (OIDC)' : 'Connexion de développement'))))),
     card('Permissions', 'Votre rôle est attribué par vos groupes Authentik et recalculé à chaque connexion.',
-      h('ul', { class: 'perm-list' }, perms.map(([key, label]) => h('li', { class: session.can(key) ? 'ok' : 'off' }, session.can(key) ? '✓' : '✕', ' ', label)))),
+      h('ul', { class: 'perm-list' }, perms.map(([key, label]) => h('li', { class: session.can(key) ? 'ok' : 'off' }, icon(session.can(key) ? 'check' : 'x', 14), ' ', label)))),
     card('Sessions actives', 'Chaque navigateur connecté ouvre une session distincte, valable au maximum la durée configurée.', sessionsBox),
     card('Déconnexion', null, h('button', { class: 'btn btn-ghost', onClick: () => session.logout() }, icon('move', 15), 'Se déconnecter')));
 
@@ -202,7 +202,7 @@ const MODEL_SUGGESTIONS = {
 async function renderAi(el) {
   const usage = card('Utilisation', null, h('p', null, 'Ouvrez la recherche avec ', h('kbd', null, '⌘K'), ', puis appuyez sur ', h('kbd', null, 'Tab'),
     ' pour passer à l’onglet « Demander à l’IA ». Les réponses s’appuient uniquement sur les pages que vous pouvez lire et citent leurs sources.'),
-  session.can('ai') && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => A.search() }, '✨ Essayer maintenant'));
+  session.can('ai') && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => A.search() }, icon('sparkle', 14), ' Essayer maintenant'));
 
   if (!session.can('admin')) {
     el.replaceChildren(card('État', null, kv([['Recherche IA', status(session.config.ai, 'Activée', 'Non configurée')]]),
@@ -270,7 +270,7 @@ async function renderAi(el) {
             if (!(await save())) return;
             result.textContent = 'Test en cours…';
             const r = await A.attempt(() => api.post('/admin/ai/test'));
-            result.textContent = r?.ok ? `✅ Connexion réussie (« ${r.sample} »)` : `❌ ${r?.message || 'Échec'}`;
+            result.textContent = r?.ok ? `Connexion réussie (« ${r.sample} »)` : r?.message || 'Échec';
           },
         }, 'Enregistrer et tester'),
         result))),
@@ -282,18 +282,18 @@ async function renderAi(el) {
 
 function renderDiagrams(el) {
   const drawio = session.config.drawioUrl;
-  const tool = (emoji, name, desc, state, cmd, tryIt) => h('div', { class: 'tool-card' },
-    h('div', { class: 'tool-emoji' }, emoji),
+  const tool = (ico, name, desc, state, cmd, tryIt) => h('div', { class: 'tool-card' },
+    h('div', { class: 'tool-emoji' }, icon(ico, 20)),
     h('div', { class: 'grow' }, h('strong', null, name), h('p', { class: 'muted' }, desc),
       h('div', { class: 'row' }, state, h('code', null, cmd))),
     tryIt && h('button', { class: 'btn btn-ghost btn-sm', onClick: tryIt }, 'Essayer'));
   const scratch = (label) => () => toast(`${label} : brouillon non enregistré (insérez-le dans une page avec le menu /).`);
   el.replaceChildren(
     card('Outils disponibles', 'Insérez un diagramme dans n’importe quelle page avec le menu « / ».', h('div', { class: 'stack' },
-      tool('◇', 'Mermaid', 'Schémas décrits en texte : organigrammes, séquences, Gantt, classes… Rendu sécurisé (mode strict).', status(true, 'Intégré'), '/mermaid'),
-      tool('✏️', 'Excalidraw', 'Dessin à main levée, chargé à la demande. Polices servies par votre serveur.', status(true, 'Intégré'), '/excalidraw',
+      tool('diamond', 'Mermaid', 'Schémas décrits en texte : organigrammes, séquences, Gantt, classes… Rendu sécurisé (mode strict).', status(true, 'Intégré'), '/mermaid'),
+      tool('pencil', 'Excalidraw', 'Dessin à main levée, chargé à la demande. Polices servies par votre serveur.', status(true, 'Intégré'), '/excalidraw',
         () => openExcalidraw({ scene: '', svg: '' }, scratch('Excalidraw'))),
-      tool('⬡', 'Draw.io', drawio ? `Instance auto-hébergée : ${drawio}` : 'Nécessite le conteneur Draw.io et la variable DRAWIO_URL.',
+      tool('hexagon', 'Draw.io', drawio ? `Instance auto-hébergée : ${drawio}` : 'Nécessite le conteneur Draw.io et la variable DRAWIO_URL.',
         status(!!drawio, 'Configuré', 'Non configuré'), '/drawio', drawio && (() => openDrawio({ xml: '', svg: '' }, scratch('Draw.io')))))),
     card('Sécurité', null, h('p', { class: 'muted' }, 'Les dessins Excalidraw et Draw.io sont enregistrés en SVG et affichés comme images : aucun script ne peut s’exécuter dans la page. Les messages de Draw.io ne sont acceptés que depuis l’origine configurée.')));
 }
@@ -303,7 +303,7 @@ function renderDiagrams(el) {
 async function renderEmbed(el) {
   const publicSpaces = store.spaces.filter((s) => s.visibility === 'public');
   const pages = store.recent(null, 500).filter((p) => publicSpaces.some((s) => s.id === p.spaceId));
-  const select = h('select', { class: 'input' }, pages.map((p) => h('option', { value: p.id }, `${p.icon || '📄'} ${p.title || 'Sans titre'}`)));
+  const select = h('select', { class: 'input' }, pages.map((p) => h('option', { value: p.id }, `${p.title || 'Sans titre'}`)));
   const height = h('input', { class: 'input', type: 'number', min: '200', max: '2000', value: '640' });
   const code = h('textarea', { class: 'code-area', readonly: true, rows: 4 });
   const open = h('a', { class: 'btn btn-ghost btn-sm', target: '_blank', rel: 'noopener' }, 'Aperçu ↗');
@@ -324,8 +324,8 @@ async function renderEmbed(el) {
   el.replaceChildren(
     card('1. Espaces publics', 'Seuls les espaces publics sont visibles sans connexion, donc intégrables.', h('div', { class: 'table' },
       store.spaces.map((s) => h('div', { class: 'table-row' },
-        h('span', { class: 'grow' }, `${s.icon} ${s.name}`),
-        s.visibility === 'public' ? pill('🌍 Public', 'ok') : pill('🔒 Privé', 'off'),
+        h('span', { class: 'grow' }, icon(s.icon || 'folder', 16), ` ${s.name}`),
+        s.visibility === 'public' ? pill('Public', 'ok') : pill('Privé', 'off'),
         session.can('admin') && h('button', {
           class: 'btn btn-ghost btn-sm',
           onClick: async () => {
@@ -355,9 +355,9 @@ function renderSpaces(el) {
   el.replaceChildren(
     card('Espaces', 'Organisez le wiki par équipe ou par projet. La visibilité « public » rend un espace lisible sans connexion.',
       h('div', { class: 'table' }, store.spaces.map((s) => h('div', { class: 'table-row' },
-        h('span', { class: 'space-ico' }, s.icon),
+        h('span', { class: 'space-ico' }, icon(s.icon || 'folder', 18)),
         h('span', { class: 'grow' }, h('strong', null, s.name), h('small', null, `${store.pagesIn(s.id).length} pages · ${s.description || 'Sans description'}`)),
-        s.visibility === 'public' ? pill('🌍 Public', 'ok') : pill('🔒 Privé', 'off'),
+        s.visibility === 'public' ? pill('Public', 'ok') : pill('Privé', 'off'),
         h('button', { class: 'icon-btn', title: 'Modifier', onClick: () => A.spaceForm(s) }, icon('edit')),
         store.spaces.length > 1 && h('button', { class: 'icon-btn danger', title: 'Supprimer', onClick: () => A.deleteSpace(s) }, icon('trash'))))),
       h('button', { class: 'btn btn-primary btn-sm', onClick: () => A.spaceForm() }, icon('plus', 15), 'Nouvel espace')),
@@ -446,18 +446,18 @@ async function renderInstance(el) {
 // ---- Page -----------------------------------------------------------------------------
 
 const SECTIONS = [
-  { group: 'Compte', id: 'profile', label: 'Profil et sessions', emoji: '👤', render: renderProfile },
-  { group: 'Compte', id: 'appearance', label: 'Apparence', emoji: '🎨', render: renderAppearance },
-  { group: 'Compte', id: 'tokens', label: 'Jetons d’API', emoji: '🔑', render: renderTokens },
-  { group: 'Fonctionnalités', id: 'ai', label: 'Recherche IA', emoji: '✨', render: renderAi },
-  { group: 'Fonctionnalités', id: 'diagrams', label: 'Diagrammes', emoji: '📐', render: renderDiagrams },
-  { group: 'Fonctionnalités', id: 'api', label: 'API REST', emoji: '🔌', render: renderApi },
-  { group: 'Fonctionnalités', id: 'embed', label: 'Intégration portfolio', emoji: '🖼️', render: renderEmbed },
-  { group: 'Administration', id: 'spaces', label: 'Espaces', emoji: '🗂️', admin: true, render: renderSpaces },
-  { group: 'Administration', id: 'auth', label: 'Authentification', emoji: '🛡️', admin: true, render: renderAuth },
-  { group: 'Administration', id: 'users', label: 'Utilisateurs', emoji: '👥', admin: true, render: renderUsers },
-  { group: 'Administration', id: 'audit', label: 'Journal d’audit', emoji: '📜', admin: true, render: renderAudit },
-  { group: 'Administration', id: 'instance', label: 'Instance', emoji: '🖥️', admin: true, render: renderInstance },
+  { group: 'Compte', id: 'profile', label: 'Profil et sessions', ico: 'users', render: renderProfile },
+  { group: 'Compte', id: 'appearance', label: 'Apparence', ico: 'sun', render: renderAppearance },
+  { group: 'Compte', id: 'tokens', label: 'Jetons d’API', ico: 'key', render: renderTokens },
+  { group: 'Fonctionnalités', id: 'ai', label: 'Recherche IA', ico: 'sparkle', render: renderAi },
+  { group: 'Fonctionnalités', id: 'diagrams', label: 'Diagrammes', ico: 'diamond', render: renderDiagrams },
+  { group: 'Fonctionnalités', id: 'api', label: 'API REST', ico: 'code', render: renderApi },
+  { group: 'Fonctionnalités', id: 'embed', label: 'Intégration portfolio', ico: 'globe', render: renderEmbed },
+  { group: 'Administration', id: 'spaces', label: 'Espaces', ico: 'folder', admin: true, render: renderSpaces },
+  { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', admin: true, render: renderAuth },
+  { group: 'Administration', id: 'users', label: 'Utilisateurs', ico: 'users', admin: true, render: renderUsers },
+  { group: 'Administration', id: 'audit', label: 'Journal d’audit', ico: 'file', admin: true, render: renderAudit },
+  { group: 'Administration', id: 'instance', label: 'Instance', ico: 'settings', admin: true, render: renderInstance },
 ];
 
 export function showSettings(sectionId) {
@@ -470,17 +470,17 @@ export function showSettings(sectionId) {
   const nav = h('nav', { class: 'set-nav', 'aria-label': 'Sections des paramètres' });
   for (const s of sections) {
     if (s.group !== group) { group = s.group; nav.append(h('div', { class: 'set-nav-group' }, group)); }
-    nav.append(h('a', { class: `set-nav-item${s.id === section.id ? ' active' : ''}`, href: `#/settings/${s.id}` }, h('span', null, s.emoji), s.label));
+    nav.append(h('a', { class: `set-nav-item${s.id === section.id ? ' active' : ''}`, href: `#/settings/${s.id}` }, h('span', null, icon(s.ico, 16)), s.label));
   }
   const content = h('div', { class: 'set-content' });
   document.getElementById('main').replaceChildren(
     topbar(h('nav', { class: 'crumbs' },
-      h('a', { class: 'crumb', href: '#/settings' }, h('span', { class: 'crumb-ico' }, '⚙️'), 'Paramètres'),
+      h('a', { class: 'crumb', href: '#/settings' }, h('span', { class: 'crumb-ico' }, icon('settings', 14)), 'Paramètres'),
       h('span', { class: 'crumb-sep' }, '/'),
       h('span', { class: 'crumb current' }, section.label))),
     h('div', { class: 'scroller' }, h('div', { class: 'settings' },
       nav,
-      h('div', { class: 'set-main' }, h('h1', null, `${section.emoji} ${section.label}`), content))));
+      h('div', { class: 'set-main' }, h('h1', null, icon(section.ico, 24), ` ${section.label}`), content))));
   section.render(content);
   // Les sections qui affichent des espaces se rafraîchissent quand ils changent.
   setView({ kind: 'settings', id: section.id, onStore: (evt) => { if (['spaces', 'embed'].includes(section.id) && evt.type !== 'page') section.render(content); } });

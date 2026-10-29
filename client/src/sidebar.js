@@ -5,7 +5,7 @@ import { store } from './store.js';
 import { session } from './session.js';
 import { prefs, savePrefs, currentTheme } from './prefs.js';
 import { colorFor } from './presence.js';
-import { openMenu } from './ui.js';
+import { openMenu, pageIcon } from './ui.js';
 import * as A from './actions.js';
 
 let dragId = null;
@@ -23,7 +23,7 @@ function spaceMenu(anchor, space) {
   openMenu(anchor, [
     { heading: 'Espaces' },
     ...store.spaces.map((s) => ({
-      label: s.name, emoji: s.icon, checked: s.id === space.id,
+      label: s.name, icon: s.icon || 'folder', checked: s.id === space.id,
       onClick: () => { prefs.space = s.id; savePrefs(); A.go(`/s/${s.id}`); },
     })),
     admin && { sep: true },
@@ -43,7 +43,7 @@ function pageMenu(anchor, page) {
     { label: 'Copier le lien', icon: 'link', onClick: () => A.copyLink(page.id) },
     { label: 'Exporter en Markdown', icon: 'download', onClick: () => A.exportMarkdown(page.id) },
     others.length && { sep: true },
-    ...others.map((s) => ({ label: `Déplacer vers ${s.name}`, emoji: s.icon, onClick: () => A.moveToSpace(page.id, s.id) })),
+    ...others.map((s) => ({ label: `Déplacer vers ${s.name}`, icon: 'folder', onClick: () => A.moveToSpace(page.id, s.id) })),
     { sep: true },
     { label: 'Mettre à la corbeille', icon: 'trash', danger: true, onClick: () => A.trash(page.id) },
   ]);
@@ -54,10 +54,10 @@ function accountMenu(anchor) {
   openMenu(anchor, [
     { heading: `${session.user.name} · ${ROLE_LABELS[session.user.role]}` },
     { label: 'Paramètres', icon: 'settings', onClick: () => A.go('/settings') },
-    { label: 'Profil et sessions', emoji: '👤', onClick: () => A.go('/settings/profile') },
+    { label: 'Profil et sessions', icon: 'users', onClick: () => A.go('/settings/profile') },
     { label: 'Jetons d’API', icon: 'code', onClick: () => A.go('/settings/tokens') },
-    { label: 'Recherche IA', emoji: '✨', onClick: () => A.go('/settings/ai') },
-    admin && { label: 'Administration', emoji: '🛡️', onClick: () => A.go('/settings/instance') },
+    { label: 'Recherche IA', icon: 'sparkle', onClick: () => A.go('/settings/ai') },
+    admin && { label: 'Administration', icon: 'shield', onClick: () => A.go('/settings/instance') },
     { sep: true },
     { label: 'Se déconnecter', icon: 'move', onClick: () => session.logout() },
   ], { align: 'left' });
@@ -113,7 +113,7 @@ function treeNode(page, depth, activeId, canWrite) {
       renderSidebar();
     },
   }, icon('chevron', 14)),
-  h('span', { class: 'tree-icon' }, page.icon || icon('file', 15)),
+  h('span', { class: 'tree-icon' }, pageIcon(page.icon, 15)),
   h('span', { class: 'tree-title' }, page.title || 'Sans titre'),
   canWrite && h('span', { class: 'tree-actions' },
     h('button', { class: 'mini-btn', title: 'Options', onClick: (e) => { e.stopPropagation(); pageMenu(e.currentTarget, page); } }, icon('more', 15)),
@@ -206,7 +206,7 @@ export function renderSidebar() {
   el.replaceChildren(
     brand,
     h('button', { class: 'space-switch', onClick: (e) => spaceMenu(e.currentTarget, space) },
-      h('span', { class: 'space-ico' }, space.icon || '📁'),
+      h('span', { class: 'space-ico' }, icon(space.icon || 'folder', 18)),
       h('span', { class: 'space-meta' },
         h('strong', null, space.name),
         h('small', null, `${space.visibility === 'public' ? 'Public' : 'Privé'} · ${store.pagesIn(space.id).length} pages`)),
@@ -222,7 +222,7 @@ export function renderSidebar() {
           class: `tree-row${p.id === activeId ? ' active' : ''}`,
           style: { paddingLeft: '10px' },
           onClick: () => A.go(`/p/${p.id}`),
-        }, h('span', { class: 'tree-icon' }, p.icon || icon('file', 15)), h('span', { class: 'tree-title' }, p.title || 'Sans titre')))))),
+        }, h('span', { class: 'tree-icon' }, pageIcon(p.icon, 15)), h('span', { class: 'tree-title' }, p.title || 'Sans titre')))))),
       h('section', { class: 'sb-section' },
         h('div', { class: 'sb-section-head' },
           h('span', null, 'Pages'),

@@ -5,7 +5,7 @@ import { request } from './api.js';
 import { store } from './store.js';
 import { session } from './session.js';
 import { prefs, savePrefs, setTheme, currentTheme } from './prefs.js';
-import { toast, openModal, confirmModal, emojiPicker } from './ui.js';
+import { toast, openModal, confirmModal, iconPicker, pageIcon } from './ui.js';
 import { openPalette } from './palette.js';
 import { jsonToHTML } from './editor.js';
 
@@ -76,12 +76,12 @@ export async function moveToSpace(id, spaceId) {
     await store.movePage(id, null, undefined, spaceId);
     prefs.space = spaceId;
     savePrefs();
-    toast(`Page déplacée vers ${space.icon} ${space.name}`);
+    toast(`Page déplacée vers ${space.name}`);
   });
 }
 
 export function pickIcon(anchor, id) {
-  emojiPicker(anchor, (emoji) => attempt(() => store.updatePage(id, { icon: emoji })));
+  iconPicker(anchor, (name) => attempt(() => store.updatePage(id, { icon: name })));
 }
 
 export const pageUrl = (id, { embed = false } = {}) => `${location.origin}/${embed ? '?embed' : ''}#/p/${id}`;
@@ -138,7 +138,7 @@ td,th{border:1px solid #e3e3e0;padding:6px 10px;text-align:left}th{background:#f
 .callout{background:#f1f0ff;border-radius:8px;padding:12px 16px;margin:1em 0}.callout[data-type=warning]{background:#fff6e0}
 .callout[data-type=success]{background:#e8f7ec}.callout[data-type=danger]{background:#fdecec}
 ul[data-type=taskList]{list-style:none;padding-left:4px}mark{background:#fff3a3}a{color:#4636d8}
-</style></head><body><h1>${esc(page.icon || '')} ${esc(title)}</h1>
+</style></head><body><h1>${esc(title)}</h1>
 ${jsonToHTML(page.content)}
 </body></html>`;
   download(`${slugify(title)}.html`, html, 'text/html');
@@ -192,17 +192,17 @@ export async function openTrash() {
     const items = await attempt(() => store.trashed());
     if (!items) return;
     if (!items.length) {
-      body.replaceChildren(h('div', { class: 'empty' }, h('div', { class: 'empty-emoji' }, '🧹'), h('p', null, 'La corbeille est vide.')));
+      body.replaceChildren(h('div', { class: 'empty' }, h('div', { class: 'empty-emoji' }, icon('trash', 32)), h('p', null, 'La corbeille est vide.')));
       return;
     }
     body.replaceChildren(...[
       ...items.map((p) => {
         const space = store.space(p.spaceId);
         return h('div', { class: 'trash-row' },
-          h('span', { class: 'trash-icon' }, p.icon || '📄'),
+          h('span', { class: 'trash-icon' }, pageIcon(p.icon)),
           h('div', { class: 'trash-text' },
             h('strong', null, p.title || 'Sans titre'),
-            h('small', null, `${space ? `${space.icon} ${space.name} · ` : ''}supprimée ${timeAgo(p.deletedAt)}`)),
+            h('small', null, `${space ? `${space.name} · ` : ''}supprimée ${timeAgo(p.deletedAt)}`)),
           h('button', {
             class: 'btn btn-ghost btn-sm',
             onClick: async () => { if ((await attempt(() => store.restorePage(p.id).then(() => true)))) { render(); toast('Page restaurée'); } },
@@ -234,20 +234,22 @@ export async function openTrash() {
 // ---- Espaces --------------------------------------------------------------
 
 export function spaceForm(space = null) {
-  let emoji = space?.icon || '📁';
-  const iconBtn = h('button', { class: 'emoji-field', type: 'button' }, emoji);
-  iconBtn.addEventListener('click', () => emojiPicker(iconBtn, (e) => { emoji = e || '📁'; iconBtn.textContent = emoji; }, { allowRemove: false }));
+  let spaceIcon = space?.icon || 'folder';
+  const iconBtn = h('button', { class: 'emoji-field', type: 'button' }, icon('folder', 20));
+  const paintBtn = () => { iconBtn.replaceChildren(icon(spaceIcon, 20)); };
+  iconBtn.addEventListener('click', () => iconPicker(iconBtn, (name) => { spaceIcon = name || 'folder'; paintBtn(); }, { allowRemove: false }));
+  if (space?.icon) paintBtn();
   const name = h('input', { class: 'input', placeholder: 'Ex. Produit, Équipe design…', maxlength: '80' });
   name.value = space?.name || '';
   const desc = h('textarea', { class: 'input', rows: 3, placeholder: 'À quoi sert cet espace ?', maxlength: '1000' });
   desc.value = space?.description || '';
   const visibility = h('select', { class: 'input' },
-    h('option', { value: 'private' }, '🔒 Privé : utilisateurs connectés uniquement'),
-    h('option', { value: 'public' }, '🌍 Public : lisible sans connexion (portfolio)'));
+    h('option', { value: 'private' }, 'Privé : utilisateurs connectés uniquement'),
+    h('option', { value: 'public' }, 'Public : lisible sans connexion (portfolio)'));
   visibility.value = space?.visibility || 'private';
 
   const submit = async () => {
-    const values = { name: name.value.trim() || 'Nouvel espace', icon: emoji, description: desc.value.trim(), visibility: visibility.value };
+    const values = { name: name.value.trim() || 'Nouvel espace', icon: spaceIcon, description: desc.value.trim(), visibility: visibility.value };
     if (space) return (await attempt(() => store.updateSpace(space.id, values).then(() => true))) ? undefined : false;
     const id = await attempt(() => store.createSpace(values));
     if (!id) return false;

@@ -14,6 +14,7 @@ import { renderSidebar } from './sidebar.js';
 import { showLogin, showMissing, showPage, showSpace, notifyStore, toastAuthError } from './views.js';
 import { showSettings } from './settings.js';
 import { h } from './util.js';
+import { icon } from './icons.js';
 import * as A from './actions.js';
 
 function route() {
@@ -37,7 +38,7 @@ function route() {
 
 function showNoSpace() {
   document.getElementById('main').replaceChildren(h('div', { class: 'empty big' },
-    h('div', { class: 'empty-emoji' }, '🗂️'),
+    h('div', { class: 'empty-emoji' }, icon('folder', 32)),
     h('h2', null, 'Aucun espace'),
     h('p', { class: 'muted' }, session.can('admin') ? 'Créez un premier espace pour commencer.' : 'Aucun espace ne vous est accessible pour le moment.'),
     session.can('admin') && h('button', { class: 'btn btn-primary', onClick: () => A.spaceForm() }, 'Créer un espace')));
