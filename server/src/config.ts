@@ -24,6 +24,7 @@ const schema = z
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
     TRUST_PROXY: bool('false'),
     ALLOW_INSECURE_HTTP: bool('false'),
+    WEBHOOK_ALLOW_PRIVATE: bool('false'),
 
     // Clé maîtresse (32 octets en base64) : chiffre les secrets stockés en base (clé LLM…).
     ENCRYPTION_KEY: z.string().refine((v) => Buffer.from(v, 'base64').length === 32, {

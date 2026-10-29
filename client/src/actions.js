@@ -121,9 +121,9 @@ export async function exportMarkdown(id) {
   if (md != null) download(`${slugify(page?.title)}.md`, md, 'text/markdown');
 }
 
-export async function exportHTML(id) {
+async function buildHTML(id) {
   const page = await attempt(() => store.fetchPage(id));
-  if (!page) return;
+  if (!page) return null;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const title = page.title || 'Sans titre';
   const html = `<!doctype html>
@@ -141,7 +141,27 @@ ul[data-type=taskList]{list-style:none;padding-left:4px}mark{background:#fff3a3}
 </style></head><body><h1>${esc(title)}</h1>
 ${jsonToHTML(page.content)}
 </body></html>`;
-  download(`${slugify(title)}.html`, html, 'text/html');
+  return { title, html };
+}
+
+export async function exportHTML(id) {
+  const out = await buildHTML(id);
+  if (out) download(`${slugify(out.title)}.html`, out.html, 'text/html');
+}
+
+// PDF via le moteur d'impression du navigateur : aucun rendu côté serveur, le contenu reste local.
+export async function exportPDF(id) {
+  const out = await buildHTML(id);
+  if (!out) return;
+  const frame = h('iframe', { title: 'Export PDF', sandbox: 'allow-same-origin allow-modals', style: { position: 'fixed', width: '0', height: '0', border: '0' } });
+  frame.addEventListener('load', () => {
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+    setTimeout(() => frame.remove(), 60000);
+  });
+  frame.srcdoc = out.html.replace('</style>', '@page{margin:18mm}body{margin:0;max-width:none}</style>');
+  document.body.append(frame);
+  toast('Choisissez « Enregistrer au format PDF » dans la fenêtre d’impression.');
 }
 
 // ---- Historique -----------------------------------------------------------

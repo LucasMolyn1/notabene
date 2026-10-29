@@ -42,6 +42,7 @@ function pageMenu(anchor, page) {
     { label: 'Dupliquer', icon: 'copy', onClick: () => A.duplicate(page.id) },
     { label: 'Copier le lien', icon: 'link', onClick: () => A.copyLink(page.id) },
     { label: 'Exporter en Markdown', icon: 'download', onClick: () => A.exportMarkdown(page.id) },
+    { label: 'Exporter en PDF', icon: 'pdf', onClick: () => A.exportPDF(page.id) },
     others.length && { sep: true },
     ...others.map((s) => ({ label: `Déplacer vers ${s.name}`, icon: 'folder', onClick: () => A.moveToSpace(page.id, s.id) })),
     { sep: true },

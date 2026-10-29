@@ -1,5 +1,5 @@
 // Page Paramètres : compte, fonctionnalités (IA, diagrammes, API, intégration) et administration.
-import { h, initials, timeAgo, fullDate } from './util.js';
+import { h, initials, timeAgo, fullDate, download } from './util.js';
 import { icon } from './icons.js';
 import { api } from './api.js';
 import { store } from './store.js';
@@ -7,6 +7,7 @@ import { session } from './session.js';
 import { prefs, savePrefs, setTheme } from './prefs.js';
 import { colorFor } from './presence.js';
 import { toast, confirmModal } from './ui.js';
+import qrcode from 'qrcode-generator';
 import { openDrawio, openExcalidraw } from './diagrams.js';
 import { beginView, setView, topbar } from './views.js';
 import * as A from './actions.js';
@@ -443,6 +444,134 @@ async function renderInstance(el) {
       h('a', { class: 'btn btn-ghost btn-sm', href: '/api/docs', target: '_blank', rel: 'noopener' }, 'API ↗'))));
 }
 
+// ---- Outils ---------------------------------------------------------------------------
+
+const CHARSETS = { lower: 'abcdefghijklmnopqrstuvwxyz', upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', digits: '0123456789', symbols: '!@#$%^&*()-_=+[]{};:,.?' };
+
+// Tirage uniforme sans biais de modulo.
+function randomInt(max) {
+  const limit = Math.floor(0x100000000 / max) * max;
+  const buf = new Uint32Array(1);
+  do crypto.getRandomValues(buf); while (buf[0] >= limit);
+  return buf[0] % max;
+}
+
+function generatePassword(length, sets) {
+  const pools = sets.map((k) => CHARSETS[k]);
+  const all = pools.join('');
+  const chars = pools.map((p) => p[randomInt(p.length)]);
+  while (chars.length < length) chars.push(all[randomInt(all.length)]);
+  for (let i = chars.length - 1; i > 0; i--) { const j = randomInt(i + 1); [chars[i], chars[j]] = [chars[j], chars[i]]; }
+  return chars.join('');
+}
+
+function renderTools(el) {
+  const len = h('input', { class: 'input', type: 'number', min: '8', max: '128', value: '20' });
+  const checks = Object.keys(CHARSETS).map((k) => {
+    const box = h('input', { type: 'checkbox', checked: true, onChange: gen });
+    return { k, box, node: h('label', { class: 'row' }, box, { lower: 'minuscules', upper: 'majuscules', digits: 'chiffres', symbols: 'symboles' }[k]) };
+  });
+  const out = h('code', { class: 'pw-out' });
+  const entropy = h('small', { class: 'hint' });
+  function gen() {
+    const sets = checks.filter((c) => c.box.checked).map((c) => c.k);
+    const n = Math.min(128, Math.max(8, Number(len.value) || 20));
+    if (!sets.length) { out.textContent = ''; entropy.textContent = 'Sélectionnez au moins un jeu de caractères.'; return; }
+    out.textContent = generatePassword(n, sets);
+    entropy.textContent = `Entropie estimée : ${Math.round(n * Math.log2(sets.reduce((a, k) => a + CHARSETS[k].length, 0)))} bits`;
+  }
+  len.addEventListener('input', gen);
+
+  const text = h('input', { class: 'input', placeholder: 'https://… ou texte', maxlength: '1000' });
+  const qr = h('div', { class: 'qr-out' });
+  const paintQr = () => {
+    qr.replaceChildren();
+    if (!text.value.trim()) return;
+    try {
+      const code = qrcode(0, 'M');
+      code.addData(text.value);
+      code.make();
+      const n = code.getModuleCount();
+      let d = '';
+      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (code.isDark(y, x)) d += `M${x + 4} ${y + 4}h1v1h-1z`;
+      const ns = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(ns, 'svg');
+      svg.setAttribute('viewBox', `0 0 ${n + 8} ${n + 8}`);
+      svg.setAttribute('width', '220');
+      svg.setAttribute('role', 'img');
+      svg.setAttribute('aria-label', 'QR code');
+      const bg = document.createElementNS(ns, 'rect');
+      bg.setAttribute('width', '100%'); bg.setAttribute('height', '100%'); bg.setAttribute('fill', '#fff');
+      const path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', d); path.setAttribute('fill', '#000');
+      svg.append(bg, path);
+      qr.append(svg, h('button', { class: 'btn btn-ghost btn-sm', onClick: () => download('qrcode.svg', new XMLSerializer().serializeToString(svg), 'image/svg+xml') }, icon('download', 14), 'Télécharger (SVG)'));
+    } catch {
+      qr.append(h('p', { class: 'hint' }, 'Texte trop long pour un QR code.'));
+    }
+  }
+  text.addEventListener('input', paintQr);
+
+  el.replaceChildren(
+    card('Générateur de mots de passe', 'Généré localement avec le générateur aléatoire sécurisé du navigateur ; rien n’est envoyé au serveur.', h('div', { class: 'stack' },
+      h('div', { class: 'row' }, h('label', { class: 'field' }, h('span', null, 'Longueur'), len), ...checks.map((c) => c.node)),
+      h('div', { class: 'row' }, out),
+      entropy,
+      h('div', { class: 'row' },
+        h('button', { class: 'btn btn-primary btn-sm', onClick: gen }, icon('wand', 14), 'Générer'),
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => out.textContent && navigator.clipboard.writeText(out.textContent).then(() => toast('Copié')) }, icon('copy', 14), 'Copier')))),
+    card('Générateur de QR code', 'Le QR code est calculé dans votre navigateur.', h('div', { class: 'stack' }, text, qr)));
+  gen();
+}
+
+// ---- Webhooks (admin) ------------------------------------------------------------------
+
+async function renderWebhooks(el, created = null) {
+  const data = await A.attempt(() => api.get('/admin/webhooks'));
+  if (!data) return;
+  const name = h('input', { class: 'input', placeholder: 'Nom (ex. Notification Discord)', maxlength: '80' });
+  const url = h('input', { class: 'input', placeholder: 'https://…', maxlength: '500' });
+  const boxes = data.events.map((ev) => ({ ev, box: h('input', { type: 'checkbox', checked: ev === 'page.created' || ev === 'page.updated' }) }));
+  const refresh = (secret) => renderWebhooks(el, secret);
+
+  const create = async () => {
+    const events = boxes.filter((b) => b.box.checked).map((b) => b.ev);
+    const made = await A.attempt(() => api.post('/admin/webhooks', { name: name.value.trim(), url: url.value.trim(), events }));
+    if (made) refresh(made);
+  };
+
+  el.replaceChildren(...[
+    created && h('div', { class: 'notice success stack' },
+      h('strong', null, 'Webhook créé. Copiez le secret de signature maintenant : il ne sera plus affiché.'),
+      h('div', { class: 'row' }, h('code', { class: 'token-value' }, created.secret),
+        h('button', { class: 'btn btn-ghost btn-sm', onClick: () => navigator.clipboard.writeText(created.secret).then(() => toast('Secret copié')) }, icon('copy', 14), 'Copier'))),
+    card('Webhooks', 'Notifiez un service externe (Discord, n8n, CI…) quand une page change. Chaque envoi est signé (en-tête X-Notabene-Signature, HMAC-SHA256) et ne contient que des identifiants, jamais le contenu des pages.',
+      data.items.length
+        ? h('div', { class: 'table' }, data.items.map((w) => h('div', { class: 'table-row' },
+          h('span', { class: 'grow' }, h('strong', null, w.name), h('small', null, `${w.url} · ${w.events.join(', ')}`)),
+          w.enabled ? pill(w.lastStatus ? `HTTP ${w.lastStatus}` : 'Actif', w.failures ? 'warn' : 'ok') : pill('Désactivé', 'off'),
+          h('button', {
+            class: 'btn btn-ghost btn-sm',
+            onClick: async () => {
+              const r = await A.attempt(() => api.post(`/admin/webhooks/${w.id}/test`));
+              if (r) toast(r.ok ? `Test réussi (HTTP ${r.status})` : `Échec du test (${r.status || 'injoignable'})`, { kind: r.ok ? undefined : 'error' });
+              refresh();
+            },
+          }, 'Tester'),
+          !w.enabled && h('button', { class: 'btn btn-ghost btn-sm', onClick: async () => { await A.attempt(() => api.patch(`/admin/webhooks/${w.id}`, { enabled: true })); refresh(); } }, 'Réactiver'),
+          h('button', {
+            class: 'icon-btn danger', title: 'Supprimer',
+            onClick: async () => {
+              if (await confirmModal({ title: 'Supprimer ce webhook ?', message: w.name, confirm: 'Supprimer', danger: true })) { await A.attempt(() => api.del(`/admin/webhooks/${w.id}`)); refresh(); }
+            },
+          }, icon('trash')))))
+        : h('p', { class: 'muted' }, 'Aucun webhook configuré.')),
+    card('Nouveau webhook', 'HTTPS obligatoire ; les adresses internes sont refusées (WEBHOOK_ALLOW_PRIVATE=true pour les autoriser en réseau local). Un webhook est désactivé après 10 échecs consécutifs.', h('div', { class: 'stack' },
+      name, url,
+      h('div', { class: 'row wrap' }, boxes.map((b) => h('label', { class: 'row' }, b.box, b.ev))),
+      h('div', null, h('button', { class: 'btn btn-primary btn-sm', onClick: create }, icon('plus', 15), 'Créer le webhook'))))].filter(Boolean));
+}
+
 // ---- Page -----------------------------------------------------------------------------
 
 const SECTIONS = [
@@ -451,10 +580,12 @@ const SECTIONS = [
   { group: 'Compte', id: 'tokens', label: 'Jetons d’API', ico: 'key', render: renderTokens },
   { group: 'Fonctionnalités', id: 'ai', label: 'Recherche IA', ico: 'sparkle', render: renderAi },
   { group: 'Fonctionnalités', id: 'diagrams', label: 'Diagrammes', ico: 'diamond', render: renderDiagrams },
+  { group: 'Fonctionnalités', id: 'tools', label: 'Outils', ico: 'qrcode', render: renderTools },
   { group: 'Fonctionnalités', id: 'api', label: 'API REST', ico: 'code', render: renderApi },
   { group: 'Fonctionnalités', id: 'embed', label: 'Intégration portfolio', ico: 'globe', render: renderEmbed },
   { group: 'Administration', id: 'spaces', label: 'Espaces', ico: 'folder', admin: true, render: renderSpaces },
   { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', admin: true, render: renderAuth },
+  { group: 'Administration', id: 'webhooks', label: 'Webhooks', ico: 'webhook', admin: true, render: renderWebhooks },
   { group: 'Administration', id: 'users', label: 'Utilisateurs', ico: 'users', admin: true, render: renderUsers },
   { group: 'Administration', id: 'audit', label: 'Journal d’audit', ico: 'file', admin: true, render: renderAudit },
   { group: 'Administration', id: 'instance', label: 'Instance', ico: 'settings', admin: true, render: renderInstance },

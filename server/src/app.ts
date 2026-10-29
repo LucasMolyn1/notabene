@@ -25,6 +25,7 @@ import coreRoutes from './routes/core.js';
 import pageRoutes from './routes/pages.js';
 import spaceRoutes from './routes/spaces.js';
 import tokenRoutes from './routes/tokens.js';
+import webhookRoutes from './routes/webhooks.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -187,6 +188,7 @@ export async function buildApp({ config, db, logger = false, clientDir }: AppOpt
   await app.register(tokenRoutes, { prefix: '/api/v1' });
   await app.register(aiRoutes, { prefix: '/api/v1' });
   await app.register(adminRoutes, { prefix: '/api/v1' });
+  await app.register(webhookRoutes, { prefix: '/api/v1' });
   app.get('/healthz', { schema: { hide: true } }, async () => ({ ok: true }));
 
   // Front compilé (production) : fichiers statiques + repli SPA.
