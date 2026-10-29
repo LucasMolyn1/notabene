@@ -170,6 +170,9 @@ function renderApi(el) {
         h('a', { class: 'btn btn-ghost btn-sm', href: '/api/docs', target: '_blank', rel: 'noopener' }, 'Swagger UI ↗'),
         h('a', { class: 'btn btn-ghost btn-sm', href: '/api/docs/json', target: '_blank', rel: 'noopener' }, 'OpenAPI JSON ↗'))],
     ]), h('button', { class: 'btn btn-primary btn-sm', onClick: () => A.go('/settings/tokens') }, icon('code', 14), 'Gérer mes jetons')),
+    card('Serveur MCP', 'Connectez un assistant IA (Claude, etc.) au wiki via le Model Context Protocol. Les droits sont ceux du jeton : une portée read suffit pour chercher et lire, write permet de créer des pages.', h('div', { class: 'stack' },
+      kv([['Point d’accès', copyable(`${location.origin}/mcp`)], ['Transport', 'HTTP (POST, JSON-RPC 2.0), jeton Bearer obligatoire'], ['Outils', 'list_spaces, list_pages, search_pages, get_page, create_page']]),
+      h('pre', { class: 'code-sample' }, `claude mcp add --transport http notabene ${location.origin}/mcp \\\n  --header "Authorization: Bearer nb_…"`))),
     card('Exemples', null, h('pre', { class: 'code-sample' }, [
       'export NOTABENE_TOKEN="nb_…"',
       '',
