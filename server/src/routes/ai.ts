@@ -6,6 +6,7 @@ import { buildContext, SYSTEM_PROMPT } from '../ai/rag.js';
 import { LlmError, streamCompletion } from '../ai/llm.js';
 import { aiSettingsInput, isAiReady, loadAiSettings, publicAiSettings, saveAiSettings } from '../ai/settings.js';
 import { readableSpaceIds } from '../lib/access.js';
+import { filterReadable } from '../lib/page-acl.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/http.js';
 
@@ -24,7 +25,7 @@ export default async function aiRoutes(app: FastifyInstance) {
     if (!isAiReady(db)) throw new HttpError(503, 'La recherche IA n’est pas configurée');
     const { question } = req.body as { question: string };
     const settings = loadAiSettings(db, box);
-    const { sources, user } = buildContext(db, question, readableSpaceIds(db, req));
+    const { sources, user } = buildContext(db, question, readableSpaceIds(db, req), (items) => filterReadable(db, req.auth, items));
     audit(db, req, 'ai.ask', null, { chars: question.length, sources: sources.length, provider: settings.provider });
 
     const controller = new AbortController();

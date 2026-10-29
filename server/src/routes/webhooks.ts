@@ -19,12 +19,15 @@ const view = (r: Row) => ({
   createdAt: r.created_at, lastStatus: r.last_status, lastAt: r.last_at, failures: r.failures,
 });
 
-export default async function webhookRoutes(app: FastifyInstance) {
+// `start: false` pour les versions suivantes de l'API : la livraison des webhooks ne doit être démarrée qu'une fois.
+export default async function webhookRoutes(app: FastifyInstance, opts: { start?: boolean } = {}) {
   const { db, box, config } = app;
   const tags = ['webhooks'];
   const allow = config.WEBHOOK_ALLOW_PRIVATE;
-  const stop = startWebhooks(db, app.bus, box, allow);
-  app.addHook('onClose', async () => { stop(); });
+  if (opts.start !== false) {
+    const stop = startWebhooks(db, app.bus, box, allow);
+    app.addHook('onClose', async () => { stop(); });
+  }
 
   const find = (id: string) => {
     const row = db.prepare('SELECT * FROM webhooks WHERE id = ?').get(id) as Row | undefined;

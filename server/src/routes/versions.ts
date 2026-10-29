@@ -1,4 +1,4 @@
-// Versionnement de l'API : seule v1 est servie ; v2 et v3 sont déclarées pour la découverte.
+// Versionnement de l'API : v1 (dépréciée), v2 et v3 (stables) sont servies côte à côte.
 // Une version « deprecated » reçoit les en-têtes Deprecation/Sunset (RFC 9745 / RFC 8594).
 import type { FastifyInstance } from 'fastify';
 
@@ -13,24 +13,22 @@ export interface ApiVersion {
 }
 
 export const API_VERSIONS: ApiVersion[] = [
-  { id: 'v1', status: 'stable', basePath: '/api/v1', notes: 'Pages, espaces, recherche, jetons, IA, administration, webhooks.' },
-  { id: 'v2', status: 'planned', basePath: '/api/v2', notes: 'Prévue : pagination par curseur, filtres, ETag/If-Match sur les pages, évènements et webhooks étendus.' },
-  { id: 'v3', status: 'planned', basePath: '/api/v3', notes: 'Prévue : ressources collaboratives (commentaires, permissions fines par page), GraphQL optionnel.' },
+  { id: 'v1', status: 'deprecated', basePath: '/api/v1', sunset: 'Sat, 01 May 2027 00:00:00 GMT', notes: 'Remplacée par v2 et v3 ; utilisée par le client web et le serveur MCP jusqu’à leur migration.' },
+  { id: 'v2', status: 'stable', basePath: '/api/v2', notes: 'Pagination par curseur et filtres, ETag/If-Match sur les pages, erreurs RFC 9457, évènements de webhooks étendus.' },
+  { id: 'v3', status: 'stable', basePath: '/api/v3', notes: 'Tout v2, plus commentaires de page et permissions fines par page. GraphQL non fourni.' },
 ];
+
+// En-têtes de dépréciation d'après l'URL : appelé par le hook racine de l'application (un hook de plugin
+// n'atteindrait pas les routes des autres plugins).
+export function deprecationHeaders(url: string): Record<string, string> {
+  const version = API_VERSIONS.find((v) => url.startsWith(`${v.basePath}/`));
+  if (version?.status !== 'deprecated') return {};
+  return { deprecation: 'true', ...(version.sunset ? { sunset: version.sunset } : {}), link: '</api/versions>; rel="deprecation"' };
+}
 
 export default async function versionRoutes(app: FastifyInstance) {
   app.get('/api/versions', { schema: { tags: ['meta'], summary: 'Versions de l’API et leur état' } }, async () => ({
-    current: API_VERSIONS.find((v) => v.status === 'stable')?.id,
+    current: [...API_VERSIONS].reverse().find((v) => v.status === 'stable')?.id,
     versions: API_VERSIONS,
   }));
-
-  app.addHook('onSend', async (req, reply, payload) => {
-    const version = API_VERSIONS.find((v) => req.url.startsWith(`${v.basePath}/`));
-    if (version?.status === 'deprecated') {
-      reply.header('deprecation', 'true');
-      if (version.sunset) reply.header('sunset', version.sunset);
-      reply.header('link', '</api/versions>; rel="deprecation"');
-    }
-    return payload;
-  });
 }

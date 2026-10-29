@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { can, requireAuth } from '../auth/context.js';
 import { isAiReady } from '../ai/settings.js';
 import { readableSpaceIds } from '../lib/access.js';
+import { canReadPage } from '../lib/page-acl.js';
+import { getPageRow } from '../lib/pages.js';
 import type { AppEvent } from '../lib/events.js';
 import { idSchema } from '../lib/http.js';
 
@@ -54,6 +56,8 @@ export default async function coreRoutes(app: FastifyInstance) {
       if (event.type === 'space.changed') spaces = new Set(readableSpaceIds(db, req));
       if (event.type === 'presence' && !authed) return;
       if (event.spaceId && !spaces.has(event.spaceId)) return;
+      // Page restreinte : l'événement n'est diffusé qu'à ceux qui y ont accès (page détruite : plus de restriction à appliquer).
+      if (event.pageId && getPageRow(db, event.pageId) && !canReadPage(db, req.auth, event.pageId)) return;
       res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
     };
     res.write('retry: 5000\n\n');

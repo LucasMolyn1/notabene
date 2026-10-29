@@ -6,7 +6,7 @@ import type { DB } from '../db.js';
 import type { SecretBox } from './crypto.js';
 import type { AppEvent, EventBus } from './events.js';
 
-export const WEBHOOK_EVENTS = ['page.created', 'page.updated', 'page.trashed', 'page.restored', 'page.deleted', 'page.moved', 'space.changed'] as const;
+export const WEBHOOK_EVENTS = ['page.created', 'page.updated', 'page.trashed', 'page.restored', 'page.deleted', 'page.moved', 'space.changed', 'page.permissions', 'comment.created', 'comment.updated', 'comment.deleted'] as const;
 
 const MAX_FAILURES = 10;
 

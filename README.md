@@ -130,6 +130,8 @@ curl -H "Authorization: Bearer $NOTABENE_TOKEN" "https://wiki.example.com/api/v1
 curl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v1/pages/<id>/export
 ```
 
+**Versions** : utilisez `/api/v3` (courante) ou `/api/v2`. `/api/v1` est dépréciée (fin le 1er mai 2027) mais reste servie ; le client web et le serveur MCP l'utilisent encore. Les versions et leur état sont sur `GET /api/versions`. La v2 apporte la pagination par curseur, `ETag`/`If-Match` et les erreurs RFC 9457 ; la v3 ajoute les commentaires et les permissions par page (voir `docs/API-VERSIONING.md`).
+
 Principales routes : `GET/POST /spaces`, `GET/POST /pages`, `GET/PATCH/DELETE /pages/:id`, `POST /pages/:id/move`, `GET /pages/:id/versions`, `GET /search`, `POST /ai/ask` (SSE). Le détail complet est sur **`/api/docs`**.
 
 ## Recherche IA

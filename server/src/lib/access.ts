@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { can } from '../auth/context.js';
 import type { DB } from '../db.js';
 import { HttpError } from './http.js';
+import { canReadPage, canWritePage } from './page-acl.js';
 import { getPageRow, type PageRow } from './pages.js';
 
 export interface SpaceRow {
@@ -40,5 +41,14 @@ export function loadReadablePage(db: DB, req: FastifyRequest, id: string, { allo
   if (!row || (!allowTrashed && row.deleted_at) || !readableSpaceIds(db, req).includes(row.space_id)) {
     throw new HttpError(404, 'Page introuvable');
   }
+  // Page restreinte : introuvable pour qui n'y a pas accès (on ne révèle pas son existence).
+  if (!canReadPage(db, req.auth, id)) throw new HttpError(404, 'Page introuvable');
+  return row;
+}
+
+// Page lisible ET modifiable : un accès en lecture seule (permission fine) donne 403.
+export function loadWritablePage(db: DB, req: FastifyRequest, id: string, opts?: { allowTrashed?: boolean }): PageRow {
+  const row = loadReadablePage(db, req, id, opts);
+  if (!canWritePage(db, req.auth, id)) throw new HttpError(403, 'Accès en lecture seule sur cette page');
   return row;
 }

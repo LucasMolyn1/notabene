@@ -49,8 +49,8 @@ function excerpt(text: string, terms: string[]): string {
   return out.slice(0, PER_DOC);
 }
 
-export function buildContext(db: DB, question: string, spaceIds: string[]) {
-  const results = searchPages(db, question, spaceIds, MAX_DOCS, 'OR');
+export function buildContext(db: DB, question: string, spaceIds: string[], visible: <T extends { id: string }>(items: T[]) => T[] = (items) => items) {
+  const results = visible(searchPages(db, question, spaceIds, MAX_DOCS * 3, 'OR')).slice(0, MAX_DOCS);
   const terms = (question.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).slice(0, 10);
   const sources: Source[] = [];
   let budget = TOTAL;

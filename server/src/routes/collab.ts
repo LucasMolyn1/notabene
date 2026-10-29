@@ -1,7 +1,7 @@
 // WebSocket de co-édition : GET /collab/:id (cookie de session, rôle rédacteur, origine contrôlée).
 import type { FastifyInstance } from 'fastify';
 import { requireScope } from '../auth/context.js';
-import { loadReadablePage } from '../lib/access.js';
+import { loadWritablePage } from '../lib/access.js';
 import { CollabHub } from '../lib/collab.js';
 import { HttpError, idParams } from '../lib/http.js';
 
@@ -23,7 +23,7 @@ export default async function collabRoutes(app: FastifyInstance) {
       if (req.headers.origin !== publicOrigin) throw new HttpError(403, 'Origine non autorisée');
       if (req.auth?.via !== 'session') throw new HttpError(401, 'Session requise');
       requireScope(req, 'write');
-      loadReadablePage(db, req, (req.params as { id: string }).id);
+      loadWritablePage(db, req, (req.params as { id: string }).id);
     },
   }, (socket, req) => {
     const user = req.auth!.user;
