@@ -21,7 +21,10 @@ WORKDIR /app
 COPY --from=build --chown=node:node /app/package.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
-RUN mkdir -p /data && chown node:node /data
+# npm et yarn ne servent pas à l'exécution : on les retire (moins de surface, et leurs dépendances
+# embarquées ne sont plus signalées par les scanners d'image).
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /opt/yarn* /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+ && mkdir -p /data && chown node:node /data
 USER node
 EXPOSE 3000
 VOLUME ["/data"]
