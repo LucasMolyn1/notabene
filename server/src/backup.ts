@@ -1,6 +1,10 @@
 // Sauvegarde et restauration de la base SQLite.
-// CLI : node dist/server/backup.js backup [dossier] | verify <fichier> | restore <fichier> --yes
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
+// CLI : node dist/server/backup.js backup [dossier] | verify <fichier> | restore <fichier> --yes | keygen
+// Chiffrement : BACKUP_AGE_RECIPIENT (clé publique age) chiffre chaque sauvegarde ; la clé privée n'est nécessaire
+// qu'à la vérification et à la restauration (BACKUP_AGE_IDENTITY_FILE).
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { Decrypter, Encrypter, generateIdentity, identityToRecipient } from 'age-encryption';
 import { basename, dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import Database from 'better-sqlite3';
@@ -26,6 +30,51 @@ export async function backupTo(db: DB, file: string): Promise<void> {
   chmodSync(file, 0o600);
 }
 
+// ---- Chiffrement des sauvegardes (age) ---------------------------------------------------------
+// Le fichier est lu en mémoire : prévu pour des bases de quelques centaines de Mo au plus.
+export async function encryptFile(file: string, recipient: string): Promise<string> {
+  const enc = new Encrypter();
+  enc.addRecipient(recipient);
+  const out = `${file}.age`;
+  writeFileSync(out, await enc.encrypt(readFileSync(file)), { mode: 0o600 });
+  rmSync(file); // le clair ne reste jamais à côté du chiffré
+  return out;
+}
+
+export async function decryptFile(file: string, identity: string, dest: string): Promise<void> {
+  const dec = new Decrypter();
+  dec.addIdentity(identity.trim());
+  writeFileSync(dest, await dec.decrypt(readFileSync(file)), { mode: 0o600 });
+}
+
+export async function newBackupKeys() {
+  const identity = await generateIdentity();
+  return { identity, recipient: await identityToRecipient(identity) };
+}
+
+// En production, une sauvegarde en clair doit être un choix explicite.
+export function assertBackupAllowed(env: NodeJS.ProcessEnv): void {
+  if (env.NODE_ENV === 'production' && !env.BACKUP_AGE_RECIPIENT && env.BACKUP_ALLOW_PLAINTEXT !== 'true') {
+    throw new Error('Sauvegarde refusée : en production elle doit être chiffrée. Définissez BACKUP_AGE_RECIPIENT (clé publique age, voir « keygen »), ou BACKUP_ALLOW_PLAINTEXT=true pour accepter le clair.');
+  }
+}
+
+// Donne un fichier de base lisible : déchiffre dans un dossier temporaire si besoin. `cleanup` efface cette copie.
+export async function readableBackup(file: string, env: NodeJS.ProcessEnv = process.env): Promise<{ path: string; cleanup: () => void }> {
+  if (!file.endsWith('.age')) return { path: file, cleanup: () => undefined };
+  const identityFile = env.BACKUP_AGE_IDENTITY_FILE;
+  if (!identityFile) throw new Error('Sauvegarde chiffrée : indiquez la clé privée avec BACKUP_AGE_IDENTITY_FILE.');
+  const dir = mkdtempSync(resolve(tmpdir(), 'nb-restore-'));
+  const path = resolve(dir, 'notabene.db');
+  try {
+    await decryptFile(file, readFileSync(identityFile, 'utf8'), path);
+  } catch {
+    rmSync(dir, { recursive: true, force: true });
+    throw new Error('Déchiffrement impossible : mauvaise clé privée ou fichier corrompu.');
+  }
+  return { path, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
 // Vérifie qu'un fichier est une base Notabene saine avant de l'utiliser.
 export function verifyBackup(file: string): { users: number; pages: number; version: number } {
   const db = new Database(file, { readonly: true, fileMustExist: true });
@@ -43,7 +92,7 @@ export function verifyBackup(file: string): { users: number; pages: number; vers
 
 // Conserve les `keep` sauvegardes les plus récentes du dossier.
 export function pruneBackups(dir: string, keep: number): string[] {
-  const files = readdirSync(dir).filter((f) => /^notabene-\d{8}-\d{6}\.db$/.test(f)).sort();
+  const files = readdirSync(dir).filter((f) => /^notabene-\d{8}-\d{6}\.db(\.age)?$/.test(f)).sort();
   const old = files.slice(0, Math.max(0, files.length - keep));
   for (const f of old) for (const ext of ['', '-wal', '-shm']) rmSync(resolve(dir, f + ext), { force: true });
   return old;
@@ -69,31 +118,42 @@ async function main(argv: string[]) {
   const dbFile = resolve(dataDir, 'notabene.db');
   const keep = Number(process.env.BACKUP_KEEP ?? 14);
 
-  if (cmd === 'backup') {
+  if (cmd === 'keygen') {
+    const k = await newBackupKeys();
+    console.log(`Clé publique (à mettre dans BACKUP_AGE_RECIPIENT sur le serveur) :\n${k.recipient}\n\nClé privée (à garder HORS du serveur, par exemple dans un gestionnaire de secrets ; sans elle, les sauvegardes sont perdues) :\n${k.identity}`);
+  } else if (cmd === 'backup') {
+    assertBackupAllowed(process.env);
     const dir = resolve(arg ?? resolve(dataDir, 'backups'));
     const db = new Database(dbFile, { fileMustExist: true });
     try {
-      const file = resolve(dir, backupName());
+      let file = resolve(dir, backupName());
       await backupTo(db, file);
       const info = verifyBackup(file);
-      console.log(`Sauvegarde créée : ${file} (${Math.round(statSync(file).size / 1024)} Ko, ${info.pages} pages, ${info.users} utilisateurs)`);
+      if (process.env.BACKUP_AGE_RECIPIENT) file = await encryptFile(file, process.env.BACKUP_AGE_RECIPIENT);
+      console.log(`Sauvegarde créée${process.env.BACKUP_AGE_RECIPIENT ? ' (chiffrée)' : ''} : ${file} (${Math.round(statSync(file).size / 1024)} Ko, ${info.pages} pages, ${info.users} utilisateurs)`);
       const removed = pruneBackups(dir, keep);
       if (removed.length) console.log(`Anciennes sauvegardes supprimées : ${removed.length} (conservées : ${keep})`);
     } finally {
       db.close();
     }
   } else if (cmd === 'verify' && arg) {
-    const info = verifyBackup(resolve(arg));
-    console.log(`OK : ${basename(arg)} (${info.pages} pages, ${info.users} utilisateurs, schéma v${info.version})`);
+    const src = await readableBackup(resolve(arg));
+    try {
+      const info = verifyBackup(src.path);
+      console.log(`OK : ${basename(arg)} (${info.pages} pages, ${info.users} utilisateurs, schéma v${info.version})`);
+    } finally { src.cleanup(); }
   } else if (cmd === 'restore' && arg) {
     if (!argv.includes('--yes')) {
       console.error('La restauration remplace la base actuelle. Arrêtez le serveur puis relancez avec --yes.');
       process.exit(2);
     }
-    const { previous } = restoreFrom(resolve(arg), dbFile);
-    console.log(`Base restaurée depuis ${arg}.${previous ? ` Ancienne base conservée : ${previous}` : ''} Redémarrez le serveur.`);
+    const src = await readableBackup(resolve(arg));
+    try {
+      const { previous } = restoreFrom(src.path, dbFile);
+      console.log(`Base restaurée depuis ${arg}.${previous ? ` Ancienne base conservée : ${previous}` : ''} Redémarrez le serveur.`);
+    } finally { src.cleanup(); }
   } else {
-    console.error('Usage : backup [dossier] | verify <fichier> | restore <fichier> --yes');
+    console.error('Usage : backup [dossier] | verify <fichier> | restore <fichier> --yes | keygen');
     process.exit(1);
   }
 }
