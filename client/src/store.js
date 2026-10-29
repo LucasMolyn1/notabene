@@ -1,7 +1,7 @@
 // Cache local de l'arborescence (métadonnées des pages et espaces), alimenté par l'API.
 // Les lectures sont synchrones sur le cache ; les écritures passent par l'API puis
 // mettent le cache à jour. Les contenus de pages sont chargés à la demande.
-import { api } from './api.js';
+import { api, listAll } from './api.js';
 
 const listeners = new Set();
 const state = { spaces: [], pages: new Map() };
@@ -20,7 +20,7 @@ export const store = {
   subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
 
   async load() {
-    const [spaces, pages] = await Promise.all([api.get('/spaces'), api.get('/pages')]);
+    const [spaces, pages] = await Promise.all([api.get('/spaces'), listAll('/pages')]);
     state.spaces = spaces;
     state.pages = new Map(pages.map((p) => [p.id, p]));
     emit({ type: 'load' });
@@ -81,8 +81,10 @@ export const store = {
     return page.id;
   },
 
+  // `baseVersion` : version connue de la page, envoyée en If-Match (v2+ : 412 si elle a changé entre-temps).
   async updatePage(id, patch) {
-    const meta = await api.patch(`/pages/${id}`, patch);
+    const { baseVersion, ...body } = patch;
+    const meta = await api.patch(`/pages/${id}`, body, baseVersion ? { 'If-Match': `"${baseVersion}"` } : undefined);
     setMeta(meta);
     emit({ type: 'page', id, source: 'local' });
     return meta;
@@ -145,7 +147,7 @@ export const store = {
     return meta;
   },
 
-  search: (q) => api.get(`/search?q=${encodeURIComponent(q)}&limit=20`),
+  search: async (q) => (await api.get(`/search?q=${encodeURIComponent(q)}&limit=20`)).items,
 
   // ---- Espaces ----------------------------------------------------------
   async createSpace(input) {

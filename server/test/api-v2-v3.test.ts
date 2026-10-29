@@ -96,6 +96,17 @@ describe('API v2', () => {
   });
 });
 
+describe('API v3 : administration', () => {
+  it('crée un compte local sous /api/v3 et /api/v1', async () => {
+    const admin = await login('admin@example.com');
+    for (const v of ['v1', 'v3']) {
+      const res = await call(admin, 'POST', `/api/${v}/admin/local-users`, { email: `new-${v}@example.com`, name: 'N', role: 'reader', password: 'Un-mot-de-passe-solide-1' });
+      expect(res.statusCode, v).toBe(201);
+    }
+    expect((await call(await login('ed1@example.com'), 'POST', '/api/v3/admin/local-users', { email: 'x@example.com', name: 'X', role: 'reader', password: 'Un-mot-de-passe-solide-1' })).statusCode).toBe(403);
+  });
+});
+
 describe('API v3 : commentaires', () => {
   const pageId = () => (db.prepare("SELECT id FROM pages WHERE title = 'Bienvenue sur Notabene'").get() as { id: string }).id;
 

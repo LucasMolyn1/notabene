@@ -136,7 +136,7 @@ async function renderTokens(el, created = null) {
       h('div', { class: 'row' },
         h('code', { class: 'token-value' }, created.token),
         h('button', { class: 'btn btn-ghost btn-sm', onClick: () => navigator.clipboard.writeText(created.token).then(() => toast('Jeton copié')) }, icon('copy', 14), 'Copier')),
-      h('pre', { class: 'code-sample' }, `curl -H "Authorization: Bearer $NOTABENE_TOKEN" \\\n  ${location.origin}/api/v1/spaces`)),
+      h('pre', { class: 'code-sample' }, `curl -H "Authorization: Bearer $NOTABENE_TOKEN" \\\n  ${location.origin}/api/v3/spaces`)),
     card('Nouveau jeton', 'Les portées sont limitées par votre rôle. Un jeton ne peut jamais en créer un autre.',
       h('div', { class: 'stack' },
         h('label', { class: 'field' }, h('span', null, 'Nom'), name),
@@ -168,7 +168,7 @@ async function renderTokens(el, created = null) {
 // ---- API REST ----------------------------------------------------------------------
 
 function renderApi(el) {
-  const base = `${location.origin}/api/v1`;
+  const base = `${location.origin}/api/v3`;
   el.replaceChildren(
     card('Point d’accès', null, kv([
       ['URL de base', copyable(base)],
@@ -487,7 +487,7 @@ async function renderAudit(el) {
 
 async function downloadBackup() {
   try {
-    const res = await fetch('/api/v1/admin/backup', { credentials: 'same-origin' });
+    const res = await fetch('/api/v3/admin/backup', { credentials: 'same-origin' });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || `Erreur ${res.status}`);
     const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '')?.[1] || 'notabene.db';
     const url = URL.createObjectURL(await res.blob());

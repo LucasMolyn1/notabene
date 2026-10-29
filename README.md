@@ -12,7 +12,7 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | **Diagrammes** | **Mermaid** (texte, rendu en direct), **Excalidraw** (dessin), **Draw.io** (instance auto-hébergée) |
 | **Recherche** | Plein texte SQLite FTS5 insensible aux accents (`⌘K`) |
 | **IA** | Onglet « Demander à l’IA » dans `⌘K` : réponses sourcées à partir des pages lisibles par l’utilisateur ; **Claude** ou tout endpoint **compatible OpenAI** (OpenAI, Mistral, Ollama, LM Studio…) |
-| **API REST** | `/api/v1`, jetons personnels à portées (`read`, `write`, `ai`, `admin`) et expiration, documentation OpenAPI sur `/api/docs` |
+| **API REST** | `/api/v3`, jetons personnels à portées (`read`, `write`, `ai`, `admin`) et expiration, documentation OpenAPI sur `/api/docs` |
 | **Collaboration** | Mise à jour en temps réel (SSE), présence des lecteurs, détection des modifications concurrentes, historique des versions |
 | **Organisation** | Glisser-déposer, favoris, corbeille, export Markdown / HTML, intégration iframe pour un portfolio |
 
@@ -125,12 +125,12 @@ Les fournisseurs d’identité (OIDC/Authentik, LDAP, SAML), le serveur d’e-ma
 2. Appelez l’API :
 
 ```bash
-curl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v1/spaces
-curl -H "Authorization: Bearer $NOTABENE_TOKEN" "https://wiki.example.com/api/v1/search?q=deploiement"
-curl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v1/pages/<id>/export
+curl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v3/spaces
+curl -H "Authorization: Bearer $NOTABENE_TOKEN" "https://wiki.example.com/api/v3/search?q=deploiement"
+curl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v3/pages/<id>/export
 ```
 
-**Versions** : utilisez `/api/v3` (courante) ou `/api/v2`. `/api/v1` est dépréciée (fin le 1er mai 2027) mais reste servie ; le client web et le serveur MCP l'utilisent encore. Les versions et leur état sont sur `GET /api/versions`. La v2 apporte la pagination par curseur, `ETag`/`If-Match` et les erreurs RFC 9457 ; la v3 ajoute les commentaires et les permissions par page (voir `docs/API-VERSIONING.md`).
+**Versions** : utilisez `/api/v3` (courante) ou `/api/v2`. `/api/v3` est dépréciée (fin le 1er mai 2027) mais reste servie ; le client web et le serveur MCP l'utilisent encore. Les versions et leur état sont sur `GET /api/versions`. La v2 apporte la pagination par curseur, `ETag`/`If-Match` et les erreurs RFC 9457 ; la v3 ajoute les commentaires et les permissions par page (voir `docs/API-VERSIONING.md`).
 
 Principales routes : `GET/POST /spaces`, `GET/POST /pages`, `GET/PATCH/DELETE /pages/:id`, `POST /pages/:id/move`, `GET /pages/:id/versions`, `GET /search`, `POST /ai/ask` (SSE). Le détail complet est sur **`/api/docs`**.
 
