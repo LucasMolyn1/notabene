@@ -829,3 +829,11 @@ select.input { height: 36px; }
 .plain-list { margin: 0 0 8px; padding-left: 18px; display: grid; gap: 4px; color: var(--text-2); font-size: 13.5px; }
 .prov-form .field.row, .field.row { display: flex; flex-direction: row; align-items: center; gap: 8px; }
 .field.row input[type='checkbox'] { width: auto; margin: 0; }
+
+/* Notifications */
+.bell { position: relative; }
+.bell-badge { position: absolute; top: 0; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 10.5px; font-weight: 700; line-height: 16px; text-align: center; }
+.bell-badge[hidden] { display: none; }
+.icon-btn.on { color: var(--accent); }
+.notif { display: flex; text-decoration: none; color: inherit; }
+.notif.unread { background: color-mix(in srgb, var(--accent) 8%, transparent); }

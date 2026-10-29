@@ -10,6 +10,7 @@ import { toast, confirmModal, openModal } from './ui.js';
 import { qrSvg } from './qr.js';
 import { securityCard } from './local-auth.js';
 import { embedOriginsCard, providerCard } from './provider-settings.js';
+import { preferencesCard } from './notifications.js';
 import { openDrawio, openExcalidraw } from './diagrams.js';
 import { beginView, setView, topbar } from './views.js';
 import * as A from './actions.js';
@@ -49,6 +50,7 @@ async function renderProfile(el) {
   const perms = [['read', 'Lire les pages'], ['write', 'Créer et modifier des pages'], ['ai', 'Utiliser la recherche IA'], ['admin', 'Administrer l’instance']];
   const sessionsBox = h('div', null, loadingEl());
   const security = session.config.auth.local ? await securityCard(card) : null;
+  const notifPrefs = await preferencesCard(card);
   el.replaceChildren(...[
     card(null, null, h('div', { class: 'profile' },
       h('span', { class: 'avatar xl static', style: { '--c': colorFor(u.id) } }, initials(u.name)),
@@ -59,6 +61,7 @@ async function renderProfile(el) {
     card('Permissions', 'Votre rôle est attribué par vos groupes (fournisseur d’identité, annuaire) ou par un administrateur pour les comptes locaux.',
       h('ul', { class: 'perm-list' }, perms.map(([key, label]) => h('li', { class: session.can(key) ? 'ok' : 'off' }, icon(session.can(key) ? 'check' : 'x', 14), ' ', label)))),
     security,
+    notifPrefs,
     card('Sessions actives', 'Chaque navigateur connecté ouvre une session distincte, valable au maximum la durée configurée.', sessionsBox),
     card('Déconnexion', null, h('button', { class: 'btn btn-ghost', onClick: () => session.logout() }, icon('move', 15), 'Se déconnecter'))].filter(Boolean));
 

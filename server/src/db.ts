@@ -198,6 +198,35 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX page_comments_page ON page_comments(page_id, created_at);
   `,
+  `
+  -- Notifications : suivi de pages, boîte de réception, préférences d'e-mail.
+  CREATE TABLE page_watch (
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    page_id         TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    created_at      INTEGER NOT NULL,
+    last_emailed_at INTEGER,
+    PRIMARY KEY (user_id, page_id)
+  );
+  CREATE INDEX page_watch_page ON page_watch(page_id);
+
+  CREATE TABLE notifications (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type       TEXT NOT NULL CHECK (type IN ('comment', 'reply', 'page.updated')),
+    page_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    actor_id   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    count      INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    read_at    INTEGER
+  );
+  CREATE INDEX notifications_user ON notifications(user_id, created_at DESC);
+
+  CREATE TABLE notification_prefs (
+    user_id        TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    email_comments INTEGER NOT NULL DEFAULT 1,
+    email_changes  INTEGER NOT NULL DEFAULT 0
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {

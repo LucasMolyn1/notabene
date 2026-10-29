@@ -55,6 +55,8 @@ export default async function coreRoutes(app: FastifyInstance) {
     const send = (event: AppEvent) => {
       if (event.type === 'space.changed') spaces = new Set(readableSpaceIds(db, req));
       if (event.type === 'presence' && !authed) return;
+      // Notification : uniquement pour son destinataire.
+      if (event.type === 'notification' && (event.data as { userId?: string } | undefined)?.userId !== req.auth?.user.id) return;
       if (event.spaceId && !spaces.has(event.spaceId)) return;
       // Page restreinte : l'événement n'est diffusé qu'à ceux qui y ont accès (page détruite : plus de restriction à appliquer).
       if (event.pageId && getPageRow(db, event.pageId) && !canReadPage(db, req.auth, event.pageId)) return;

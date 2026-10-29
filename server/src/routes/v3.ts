@@ -7,7 +7,8 @@ import { loadReadablePage } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
 import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
-import { entriesOf, governingPage, pageLevel } from '../lib/page-acl.js';
+import { getPrefs, watch } from '../lib/notifications.js';
+import { entriesOf, filterReadable, governingPage, pageLevel } from '../lib/page-acl.js';
 
 interface CommentRow {
   id: string; page_id: string; parent_id: string | null; author_id: string | null; author_name: string | null; body: string;
@@ -149,5 +150,81 @@ export default async function v3Routes(app: FastifyInstance) {
     app.collab?.evictAll();
     bus.publish({ type: 'page.permissions', spaceId: page.space_id, pageId: page.id, by: { id: req.auth!.user.id, name: req.auth!.user.name } });
     return { restricted: entries.length > 0, entries };
+  });
+
+  // ---- Notifications ---------------------------------------------------------------------
+  interface NotifRow { id: string; type: string; page_id: string; title: string; icon: string; space_id: string; actor_id: string | null; actor_name: string | null; count: number; created_at: number; read_at: number | null }
+  const inbox = (userId: string, unreadOnly: boolean, after: { c: number; i: string } | null, max: number) => db.prepare(
+    `SELECT n.id, n.type, n.page_id, p.title, p.icon, p.space_id, n.actor_id, u.name AS actor_name, n.count, n.created_at, n.read_at
+     FROM notifications n JOIN pages p ON p.id = n.page_id LEFT JOIN users u ON u.id = n.actor_id
+     WHERE n.user_id = ? AND p.deleted_at IS NULL AND (? = 0 OR n.read_at IS NULL)
+       AND (? IS NULL OR n.created_at < ? OR (n.created_at = ? AND n.id < ?))
+     ORDER BY n.created_at DESC, n.id DESC LIMIT ?`,
+  ).all(userId, unreadOnly ? 1 : 0, after ? 1 : null, after?.c ?? 0, after?.c ?? 0, after?.i ?? '', max) as NotifRow[];
+  // Accès relu à la lecture : une page devenue restreinte disparaît de la boîte de réception.
+  const visible = (req: Parameters<typeof requireAuth>[0], rows: NotifRow[]) => filterReadable(db, req.auth, rows.map((r) => ({ ...r, id: r.page_id, nid: r.id }))).map((r) => ({ ...r, id: r.nid }));
+  const toItem = (r: NotifRow) => ({
+    id: r.id, type: r.type, count: r.count, createdAt: r.created_at, read: !!r.read_at,
+    page: { id: r.page_id, title: r.title, icon: r.icon, spaceId: r.space_id },
+    actor: r.actor_id ? { id: r.actor_id, name: r.actor_name } : null,
+  });
+
+  app.get('/notifications', {
+    schema: { tags: ['notifications'], summary: 'Boîte de réception (pagination par curseur)', querystring: pageQuery.extend({ unread: z.enum(['true', 'false']).default('false') }) },
+  }, async (req) => {
+    const auth = requireAuth(req);
+    const q = req.query as { cursor?: string; limit: number; unread: 'true' | 'false' };
+    const after = decodeCursor(q.cursor, z.object({ c: z.number(), i: z.string() }));
+    const rows = visible(req, inbox(auth.user.id, q.unread === 'true', after, q.limit + 1) as NotifRow[]) as unknown as NotifRow[];
+    const items = rows.slice(0, q.limit);
+    const last = items.at(-1);
+    return { items: items.map(toItem), nextCursor: rows.length > q.limit && last ? encodeCursor({ c: last.created_at, i: last.id }) : null };
+  });
+
+  app.get('/notifications/unread-count', { schema: { tags: ['notifications'], summary: 'Nombre de notifications non lues' } }, async (req) => {
+    const auth = requireAuth(req);
+    return { unread: visible(req, inbox(auth.user.id, true, null, 500)).length };
+  });
+
+  app.post('/notifications/read', {
+    schema: { tags: ['notifications'], summary: 'Marquer comme lues (ids, ou all)', body: z.object({ ids: z.array(idSchema).max(200).optional(), all: z.boolean().optional() }).refine((b) => b.all || b.ids?.length, 'ids ou all requis') },
+  }, async (req) => {
+    const auth = requireAuth(req);
+    const b = req.body as { ids?: string[]; all?: boolean };
+    const now = Date.now();
+    let changes = 0;
+    if (b.all) changes = db.prepare('UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL').run(now, auth.user.id).changes;
+    else for (const id of b.ids!) changes += db.prepare('UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ? AND read_at IS NULL').run(now, id, auth.user.id).changes;
+    return { updated: changes };
+  });
+
+  const prefsBody = z.object({ emailComments: z.boolean(), emailChanges: z.boolean() });
+  app.get('/notifications/preferences', { schema: { tags: ['notifications'], summary: 'Préférences d’e-mail' } }, async (req) =>
+    ({ ...getPrefs(db, requireAuth(req).user.id), emailAvailable: app.mail.enabled }));
+  app.put('/notifications/preferences', { schema: { tags: ['notifications'], summary: 'Modifier les préférences d’e-mail', body: prefsBody } }, async (req) => {
+    const auth = requireAuth(req);
+    const b = req.body as z.output<typeof prefsBody>;
+    db.prepare(
+      `INSERT INTO notification_prefs (user_id, email_comments, email_changes) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET email_comments = excluded.email_comments, email_changes = excluded.email_changes`,
+    ).run(auth.user.id, b.emailComments ? 1 : 0, b.emailChanges ? 1 : 0);
+    return { ...b, emailAvailable: app.mail.enabled };
+  });
+
+  // ---- Suivi de page ---------------------------------------------------------------------
+  const isWatching = (userId: string, pageId: string) => !!db.prepare('SELECT 1 FROM page_watch WHERE user_id = ? AND page_id = ?').get(userId, pageId);
+  app.get('/pages/:id/watch', { schema: { tags: ['notifications'], summary: 'Suis-je cette page ?', params: idParams } }, async (req) => {
+    const auth = requireAuth(req);
+    return { watching: isWatching(auth.user.id, loadReadablePage(db, req, (req.params as { id: string }).id).id) };
+  });
+  app.put('/pages/:id/watch', { schema: { tags: ['notifications'], summary: 'Suivre une page', params: idParams } }, async (req) => {
+    const auth = requireAuth(req);
+    watch(db, auth.user.id, loadReadablePage(db, req, (req.params as { id: string }).id).id);
+    return { watching: true };
+  });
+  app.delete('/pages/:id/watch', { schema: { tags: ['notifications'], summary: 'Ne plus suivre une page', params: idParams } }, async (req) => {
+    const auth = requireAuth(req);
+    db.prepare('DELETE FROM page_watch WHERE user_id = ? AND page_id = ?').run(auth.user.id, (req.params as { id: string }).id);
+    return { watching: false };
   });
 }

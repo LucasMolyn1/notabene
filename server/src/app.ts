@@ -14,6 +14,7 @@ import type { Config } from './config.js';
 import type { DB } from './db.js';
 import { OidcClient } from './auth/oidc.js';
 import { Mailer } from './lib/mail.js';
+import { startNotifications } from './lib/notifications.js';
 import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
 import pagesV2 from './routes/pages-v2.js';
@@ -87,6 +88,8 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   const bus = new EventBus();
   app.decorate('bus', bus);
   app.decorate('presence', new Presence(bus));
+  const stopNotifications = startNotifications(db, bus, app.mail, () => rt.get());
+  app.addHook('onClose', async () => { stopNotifications(); });
   app.decorate('oidc', new OidcClient(() => rt.get(), db));
   app.decorateRequest('auth', null);
 

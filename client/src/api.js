@@ -28,6 +28,15 @@ export async function request(method, url, body) {
 }
 
 const v1 = (path) => `/api/v1${path}`;
+const v3 = (path) => `/api/v3${path}`;
+
+// Fonctions de la v3 (notifications, commentaires, permissions).
+export const api3 = {
+  get: (path) => request('GET', v3(path)),
+  post: (path, body = {}) => request('POST', v3(path), body),
+  put: (path, body = {}) => request('PUT', v3(path), body),
+  del: (path) => request('DELETE', v3(path)),
+};
 
 export const api = {
   get: (path) => request('GET', v1(path)),
@@ -38,7 +47,7 @@ export const api = {
 };
 
 // Flux d'événements temps réel (reconnexion automatique gérée par EventSource).
-const EVENT_TYPES = ['page.created', 'page.updated', 'page.moved', 'page.trashed', 'page.restored', 'page.deleted', 'space.changed', 'presence'];
+const EVENT_TYPES = ['page.created', 'page.updated', 'page.moved', 'page.trashed', 'page.restored', 'page.deleted', 'space.changed', 'presence', 'notification'];
 
 export function openEvents(onEvent) {
   const source = new EventSource(v1('/events'));
