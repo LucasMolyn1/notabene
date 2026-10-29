@@ -5,26 +5,11 @@ import { isIP } from 'node:net';
 import type { DB } from '../db.js';
 import type { SecretBox } from './crypto.js';
 import type { AppEvent, EventBus } from './events.js';
+import { isBlockedAddress, safeFetch } from './net-guard.js';
 
 export const WEBHOOK_EVENTS = ['page.created', 'page.updated', 'page.trashed', 'page.restored', 'page.deleted', 'page.moved', 'space.changed', 'page.permissions', 'comment.created', 'comment.updated', 'comment.deleted'] as const;
 
 const MAX_FAILURES = 10;
-
-function isPrivateAddress(ip: string): boolean {
-  if (ip.includes(':')) {
-    const v = ip.toLowerCase();
-    const mapped = /^::ffff:(?:(\d+\.\d+\.\d+\.\d+)|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/.exec(v);
-    if (mapped) {
-      if (mapped[1]) return isPrivateAddress(mapped[1]);
-      const hi = parseInt(mapped[2]!, 16);
-      const lo = parseInt(mapped[3]!, 16);
-      return isPrivateAddress(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
-    }
-    return v === '::1' || v === '::' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe80');
-  }
-  const [a, b] = ip.split('.').map(Number) as [number, number];
-  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
-}
 
 // Vérifie le schéma et refuse les adresses internes (sauf WEBHOOK_ALLOW_PRIVATE).
 export async function assertSafeUrl(raw: string, allowPrivate: boolean): Promise<URL> {
@@ -34,7 +19,7 @@ export async function assertSafeUrl(raw: string, allowPrivate: boolean): Promise
   if (!allowPrivate) {
     const host = url.hostname.replace(/^\[|\]$/g, '');
     const addrs = isIP(host) ? [host] : (await lookup(host, { all: true })).map((r) => r.address);
-    if (!addrs.length || addrs.some(isPrivateAddress)) throw new Error('Adresse interne refusée');
+    if (!addrs.length || addrs.some(isBlockedAddress)) throw new Error('Adresse interne refusée');
   }
   return url;
 }
@@ -51,7 +36,8 @@ export async function deliver(db: DB, box: SecretBox, allowPrivate: boolean, hoo
   try {
     const url = await assertSafeUrl(hook.url, allowPrivate);
     const secret = box.open(hook.secret, `webhook:${hook.id}`);
-    const res = await fetch(url, {
+    // Connexion épinglée sur l'adresse vérifiée (net-guard) : pas de rebinding DNS entre le contrôle et l'envoi.
+    const res = await safeFetch(url, {
       method: 'POST',
       redirect: 'error',
       signal: AbortSignal.timeout(5000),
@@ -63,7 +49,7 @@ export async function deliver(db: DB, box: SecretBox, allowPrivate: boolean, hoo
         'x-notabene-signature': `sha256=${sign(secret, ts, body)}`,
       },
       body,
-    });
+    }, allowPrivate);
     status = res.status;
   } catch {
     status = 0;
