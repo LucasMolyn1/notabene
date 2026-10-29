@@ -16,6 +16,7 @@ import { showSettings } from './settings.js';
 import { h } from './util.js';
 import { icon } from './icons.js';
 import { showMfaSetup, showResetPassword } from './local-auth.js';
+import { refreshUnread } from './notifications.js';
 import * as A from './actions.js';
 
 // L'accès est contrôlé par la session, pas par la route demandée.
@@ -96,9 +97,10 @@ async function boot() {
   if (params.has('auth_error')) history.replaceState(null, '', `/${location.hash}`);
   if (!store.space(prefs.space)) { prefs.space = store.spaces[0]?.id ?? null; savePrefs(); }
 
-  if (session.user) presence.enable(session.user.id);
+  if (session.user) { presence.enable(session.user.id); refreshUnread(); }
   openEvents((type, evt) => {
     if (type === 'presence') { presence.receive(evt.data); return; }
+    if (type === 'notification') { refreshUnread(); return; }
     // Nos propres sauvegardes reviennent aussi : inutile de recharger si la version est déjà connue.
     if (type === 'page.updated' && (store.page(evt.pageId)?.version ?? 0) >= (evt.version ?? 0)) return;
     store.scheduleRefresh(evt);

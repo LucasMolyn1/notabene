@@ -52,6 +52,10 @@ export const mails = {
     subject: 'Notabene : invitation à rejoindre le wiki',
     text: `Bonjour ${oneLine(name)},\n\nUn compte Notabene a été créé pour vous. Choisissez votre mot de passe via ce lien (valable ${hours} heures, utilisable une seule fois) :\n${url}\n`,
   }),
+  notification: (subject: string, text: string): Omit<Mail, 'to'> => ({
+    subject,
+    text: `${text}\n\nVous pouvez régler ces e-mails dans Paramètres > Profil > Notifications.`,
+  }),
   alert: (what: string): Omit<Mail, 'to'> => ({
     subject: 'Notabene : alerte de sécurité sur votre compte',
     text: `${what}\n\nSi vous n'êtes pas à l'origine de cette action, contactez un administrateur sans attendre.`,

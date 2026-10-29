@@ -10,6 +10,7 @@ import { presence, colorFor } from './presence.js';
 import { openMenu, openModal, toast, pageIcon } from './ui.js';
 import { openPalette } from './palette.js';
 import { forgotPasswordForm, ldapLoginForm, localLoginForm } from './local-auth.js';
+import { bellButton, watchButton } from './notifications.js';
 import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
@@ -36,15 +37,15 @@ export function topbar(left, right = []) {
   return h('header', { class: 'topbar' },
     !app.embed && h('button', { class: 'icon-btn sb-open', title: `Barre latérale (${modKey}\\)`, onClick: A.toggleSidebar }, icon('panel')),
     left,
-    h('div', { class: 'topbar-right' }, right));
+    h('div', { class: 'topbar-right' }, right, !app.embed && bellButton()));
 }
 
 function crumbsFor(page) {
   const space = store.space(page.spaceId);
   const parts = [
     space && h('a', { class: 'crumb', href: `#/s/${space.id}` }, h('span', { class: 'crumb-ico' }, icon(space.icon || 'folder', 14)), space.name),
-    ...store.ancestors(page.id).map((a) => h('a', { class: 'crumb', href: `#/p/${a.id}` }, a.icon && h('span', { class: 'crumb-ico' }, a.icon), a.title || 'Sans titre')),
-    h('span', { class: 'crumb current' }, page.icon && h('span', { class: 'crumb-ico' }, page.icon), page.title || 'Sans titre'),
+    ...store.ancestors(page.id).map((a) => h('a', { class: 'crumb', href: `#/p/${a.id}` }, a.icon && h('span', { class: 'crumb-ico' }, pageIcon(a.icon, 14)), a.title || 'Sans titre')),
+    h('span', { class: 'crumb current' }, page.icon && h('span', { class: 'crumb-ico' }, pageIcon(page.icon, 14)), page.title || 'Sans titre'),
   ].filter(Boolean);
   return parts.flatMap((p, i) => (i ? [h('span', { class: 'crumb-sep' }, '/'), p] : [p]));
 }
@@ -111,7 +112,7 @@ function mountPage(page) {
   const scroller = h('div', { class: 'scroller' }, wrap);
 
   main().replaceChildren(
-    topbar(crumbsEl, app.embed ? [] : [presenceEl, saveEl, starBtn, modeBtn, histBtn, moreBtn]),
+    topbar(crumbsEl, app.embed ? [] : [presenceEl, saveEl, watchButton(id), starBtn, modeBtn, histBtn, moreBtn]),
     scroller,
   );
 
@@ -287,7 +288,7 @@ function mountPage(page) {
       starBtn.classList.toggle('on', !!p.favorite);
       starBtn.title = p.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris';
     }
-    iconBtn.textContent = p.icon || '';
+    iconBtn.replaceChildren(...(p.icon ? [pageIcon(p.icon, 40)] : []));
     iconBtn.hidden = !p.icon;
     addIconBtn.hidden = !!p.icon || readOnly();
     wrap.classList.toggle('full', !!p.fullWidth);
