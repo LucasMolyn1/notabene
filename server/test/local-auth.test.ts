@@ -141,3 +141,38 @@ describe('connexion locale', () => {
     expect(self.statusCode).toBe(400);
   });
 });
+
+describe('MFA imposée', () => {
+  it('bloque l’API tant que le compte local n’a pas de MFA, puis libère l’accès', async () => {
+    const strictDb = openDb(':memory:');
+    const strict = await buildApp({ config: loadConfig({ ...env, LOCAL_REQUIRE_MFA: 'true' }), db: strictDb, clientDir: '/nonexistent' });
+    strictDb.prepare('INSERT INTO users (id, sub, email, name, role, created_at, password_hash) VALUES (?,?,?,?,?,?,?)')
+      .run('u1', 'local:a@example.com', 'a@example.com', 'A', 'admin', Date.now(), await hashPassword('Sup3r-secret-pass'));
+    const login = await strict.inject({ method: 'POST', url: '/auth/local/login', payload: { email: 'a@example.com', password: 'Sup3r-secret-pass' } });
+    const cookies = { nb_session: login.cookies.find((c) => c.name === 'nb_session')!.value };
+    const me = (await strict.inject({ method: 'GET', url: '/api/v1/me', cookies })).json();
+    expect(me.mfaSetupRequired).toBe(true);
+    const blocked = await strict.inject({ method: 'GET', url: '/api/v1/spaces', cookies });
+    expect(blocked.statusCode).toBe(403);
+    expect(blocked.json().mfaSetupRequired).toBe(true);
+
+    const h = { 'x-csrf-token': me.csrf };
+    const setup = (await strict.inject({ method: 'POST', url: '/auth/mfa/setup', cookies, headers: h, payload: {} })).json();
+    const code = totpCode(base32Decode(setup.secret), Math.floor(Date.now() / 30_000));
+    expect((await strict.inject({ method: 'POST', url: '/auth/mfa/enable', cookies, headers: h, payload: { code } })).statusCode).toBe(200);
+    expect((await strict.inject({ method: 'GET', url: '/api/v1/spaces', cookies })).statusCode).toBe(200);
+    await strict.close();
+    strictDb.close();
+  });
+});
+
+describe('MFA côté OIDC', () => {
+  it('reconnaît les valeurs amr qui prouvent un second facteur', async () => {
+    const { hasMfaClaim } = await import('../src/auth/oidc.js');
+    expect(hasMfaClaim({ amr: ['pwd', 'otp'] })).toBe(true);
+    expect(hasMfaClaim({ amr: ['mfa'] })).toBe(true);
+    expect(hasMfaClaim({ amr: ['pwd'] })).toBe(false);
+    expect(hasMfaClaim({})).toBe(false);
+    expect(hasMfaClaim({ amr: 'mfa' })).toBe(false);
+  });
+});

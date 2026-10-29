@@ -48,6 +48,8 @@ npm run dev                            # API sur :3000, interface sur http://loc
 - Mots de passe : 12 caractères minimum, hachés avec scrypt.
 - Double authentification TOTP optionnelle (FreeOTP, Aegis, Google Authenticator…) avec 10 codes de secours à usage unique.
 - Verrouillage de 15 minutes après 5 échecs, limitation de débit par adresse IP, sessions fermées lors d’un changement de mot de passe.
+- `LOCAL_REQUIRE_MFA=true` impose la double authentification : un compte local sans TOTP ne voit qu’un écran d’activation, l’API (jetons compris) lui répond 403 jusqu’à l’activation.
+- `OIDC_REQUIRE_MFA=true` refuse les connexions OIDC dont l’ID token ne contient pas de valeur `amr` prouvant un second facteur (`mfa`, `otp`, `hwk`…). Le fournisseur doit émettre ce claim ; la méthode la plus fiable reste d’exiger la MFA dans le flux d’authentification d’Authentik lui-même.
 - Les rôles des comptes locaux se gèrent dans l’application ; ceux des comptes OIDC restent issus des groupes.
 
 En développement, `DEV_LOGIN=true` permet de se connecter en admin, éditeur ou lecteur sans fournisseur d’identité. Le serveur **refuse de démarrer** si cette option est active en production.

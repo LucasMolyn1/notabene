@@ -44,6 +44,9 @@ const schema = z
 
     // Comptes locaux (e-mail + mot de passe, MFA TOTP) : alternative ou complément à OIDC.
     AUTH_LOCAL: bool('false'),
+    // Impose la double authentification : comptes locaux (TOTP obligatoire) et OIDC (claim `amr` exigé).
+    LOCAL_REQUIRE_MFA: bool('false'),
+    OIDC_REQUIRE_MFA: bool('false'),
 
     // Connexion de développement sans IdP. Interdite en production.
     DEV_LOGIN: bool('false'),

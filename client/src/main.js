@@ -15,6 +15,7 @@ import { showLogin, showMissing, showPage, showSpace, notifyStore, toastAuthErro
 import { showSettings } from './settings.js';
 import { h } from './util.js';
 import { icon } from './icons.js';
+import { showMfaSetup } from './local-auth.js';
 import * as A from './actions.js';
 
 // L'accès est contrôlé par la session, pas par la route demandée.
@@ -67,6 +68,11 @@ async function boot() {
   document.body.classList.toggle('sb-collapsed', !prefs.sidebar);
 
   await session.load();
+  if (session.mfaSetupRequired) {
+    document.body.classList.add('no-sidebar');
+    await showMfaSetup(document.getElementById('main'), () => session.logout());
+    return;
+  }
   const params = new URLSearchParams(location.search);
   const wantsLogin = params.has('login') || params.has('dev_login');
   await store.load();

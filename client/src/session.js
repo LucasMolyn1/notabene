@@ -3,6 +3,7 @@ import { api, request, setCsrf } from './api.js';
 
 export const session = {
   user: null,
+  mfaSetupRequired: false,
   permissions: { read: false, write: false, ai: false, admin: false },
   config: { auth: { oidc: false, devLogin: false, local: false, setupRequired: false }, drawioUrl: null, ai: false },
 
@@ -10,6 +11,7 @@ export const session = {
     const [config, me] = await Promise.all([api.get('/config'), api.get('/me')]);
     this.config = config;
     this.user = me.user;
+    this.mfaSetupRequired = !!me.mfaSetupRequired;
     this.permissions = me.permissions;
     setCsrf(me.csrf);
   },

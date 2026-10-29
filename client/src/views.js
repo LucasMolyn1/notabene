@@ -425,6 +425,7 @@ const AUTH_ERRORS = {
   forbidden: 'Votre compte n’appartient à aucun groupe autorisé. Demandez l’accès à un administrateur.',
   callback: 'La connexion a échoué. Réessayez.',
   access_denied: 'Connexion annulée.',
+  mfa_required: 'Une double authentification est exigée : activez-la sur votre compte du fournisseur d’identité, puis reconnectez-vous.',
 };
 
 export function showLogin() {

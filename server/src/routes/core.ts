@@ -21,6 +21,7 @@ export default async function coreRoutes(app: FastifyInstance) {
     return {
       user: auth?.user ?? null,
       via: auth?.via ?? null,
+      mfaSetupRequired: !!auth?.mfaPending,
       csrf: auth?.via === 'session' ? auth.csrf : null,
       permissions: {
         read: can(auth, 'read'),

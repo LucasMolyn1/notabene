@@ -61,7 +61,7 @@ export function localLoginForm(setupRequired) {
 }
 
 // Carte « Sécurité » du profil : mot de passe et double authentification (TOTP).
-export async function securityCard(card) {
+export async function securityCard(card, { onEnabled } = {}) {
   const status = await request('GET', '/auth/local/me').catch(() => null);
   if (!status?.local) return null;
   const body = h('div', { class: 'stack' });
@@ -90,7 +90,7 @@ export async function securityCard(card) {
       h('pre', { class: 'code-sample' }, codes.join('\n')),
       h('div', { class: 'row' },
         h('button', { class: 'btn btn-ghost btn-sm', onClick: () => navigator.clipboard.writeText(codes.join('\n')).then(() => toast('Codes copiés')) }, icon('copy', 14), 'Copier'),
-        h('button', { class: 'btn btn-primary btn-sm', onClick: () => render() }, 'J’ai enregistré ces codes'))));
+        h('button', { class: 'btn btn-primary btn-sm', onClick: () => (onEnabled ? onEnabled() : render()) }, 'J’ai enregistré ces codes'))));
 
   const mfaSetup = async () => {
     const { secret, uri } = await request('POST', '/auth/mfa/setup');
@@ -132,5 +132,15 @@ export async function securityCard(card) {
           h('div', null, h('button', { class: 'btn btn-primary btn-sm', onClick: () => mfaSetup().catch((e) => toast(e.message, { kind: 'error' })) }, icon('shield', 14), 'Activer'))));
   }
   await render();
-  return card('Sécurité du compte', 'Comptes locaux : mot de passe haché (scrypt) et second facteur optionnel.', body);
+  return card('Sécurité du compte', 'Mot de passe haché (scrypt) et second facteur TOTP.', body);
+}
+
+// Écran affiché tant qu'un compte local n'a pas activé la double authentification (LOCAL_REQUIRE_MFA).
+export async function showMfaSetup(main, logout) {
+  const card = (title, desc, body) => h('section', { class: 'set-card' }, h('header', { class: 'set-card-head' }, h('h3', null, title), h('p', { class: 'muted' }, desc)), body);
+  const sec = await securityCard(card, { onEnabled: () => location.reload() });
+  main.replaceChildren(h('div', { class: 'login' }, h('div', { class: 'settings set-main', style: { width: 'min(520px, 100%)', textAlign: 'left' } },
+    h('div', { class: 'notice warning' }, 'Votre administrateur exige la double authentification. Activez-la pour accéder au wiki.'),
+    sec,
+    h('div', null, h('button', { class: 'btn btn-ghost btn-sm', onClick: logout }, 'Se déconnecter')))));
 }

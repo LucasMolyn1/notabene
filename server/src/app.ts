@@ -149,6 +149,15 @@ export async function buildApp({ config, db, logger = false, clientDir }: AppOpt
       const csrf = req.headers['x-csrf-token'];
       if (typeof csrf !== 'string' || !safeEqual(csrf, req.auth.csrf!)) throw new HttpError(403, 'Jeton CSRF invalide');
     }
+
+    if (config.LOCAL_REQUIRE_MFA && req.auth) {
+      const row = db.prepare('SELECT password_hash IS NOT NULL AS local, totp_enabled AS mfa FROM users WHERE id = ?').get(req.auth.user.id) as { local: number; mfa: number } | undefined;
+      req.auth.mfaPending = !!row?.local && !row.mfa;
+      const path = req.url.split('?')[0]!;
+      if (req.auth.mfaPending && /^\/(api\/|mcp)/.test(path) && !/^\/api\/v1\/(me|config)$/.test(path)) {
+        throw new HttpError(403, 'Activez la double authentification pour continuer', { mfaSetupRequired: true });
+      }
+    }
   });
 
   app.addHook('onSend', async (_req, reply, payload) => {

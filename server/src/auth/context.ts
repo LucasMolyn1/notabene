@@ -21,6 +21,8 @@ export interface Auth {
   csrf?: string;
   sessionHash?: string;
   tokenId?: string;
+  // Compte local sans MFA alors que LOCAL_REQUIRE_MFA est actif : seules l'activation de la MFA et /me restent permises.
+  mfaPending?: boolean;
 }
 
 declare module 'fastify' {
