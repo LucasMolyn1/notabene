@@ -119,6 +119,11 @@ Les fournisseurs d’identité (OIDC/Authentik, LDAP, SAML), le serveur d’e-ma
 - **Verrouillage** : `CONFIG_LOCKED=true` fige tout dans l’environnement ; les réglages enregistrés en base sont ignorés et l’interface passe en lecture seule.
 - **E-mail** : avec SMTP (TLS obligatoire), « mot de passe oublié » (lien à usage unique de 30 minutes, réponse identique que le compte existe ou non), invitations (lien de 72 h, l’administrateur ne connaît jamais le mot de passe) et alertes de sécurité (verrouillage, mot de passe modifié, MFA activée ou désactivée). Sans SMTP, rien ne change : un administrateur réinitialise les mots de passe.
 
+## Sessions et documentation de l’API
+
+- Une session dure au plus `SESSION_TTL_HOURS` (12 h) et se ferme après `SESSION_IDLE_MINUTES` (120 min) sans activité.
+- La documentation interactive `/api/docs` décrit toute la surface de l'API : elle est réservée aux utilisateurs connectés par défaut (`API_DOCS=auth`). `API_DOCS=public` l'ouvre, `API_DOCS=off` la désactive.
+
 ## Utiliser l’API
 
 1. Menu utilisateur → **Jetons d’API** → choisissez les portées et la durée (le jeton n’est affiché qu’une fois).

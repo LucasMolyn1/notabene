@@ -170,7 +170,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     const bearer = header === undefined ? undefined : /^Bearer\s+(\S+)$/.exec(header)?.[1];
     const cookie = req.cookies[cookieName];
     if (header !== undefined && !bearer) throw new HttpError(401, 'Jeton d’API invalide, expiré ou révoqué');
-    req.auth = bearer ? verifyApiToken(db, bearer) : cookie ? sessionAuth(db, cookie) : null;
+    req.auth = bearer ? verifyApiToken(db, bearer) : cookie ? sessionAuth(db, cookie, config.SESSION_IDLE_MINUTES * 60_000) : null;
     if (bearer && !req.auth) throw new HttpError(401, 'Jeton d’API invalide, expiré ou révoqué');
 
     // CSRF : décidé d'après le mode d'authentification résolu côté serveur (les jetons Bearer n'y sont pas exposés).
@@ -217,7 +217,14 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
       return { schema: out as typeof schema, url };
     },
   });
-  await app.register(swaggerUi, { routePrefix: '/api/docs', staticCSP: true });
+  if (config.API_DOCS !== 'off') {
+    await app.register(swaggerUi, {
+      routePrefix: '/api/docs',
+      staticCSP: true,
+      // Par défaut la documentation n'est pas publique : elle décrit toute la surface de l'API.
+      uiHooks: { onRequest: async (req) => { if (config.API_DOCS === 'auth' && !req.auth) throw new HttpError(401, 'Authentification requise'); } },
+    });
+  }
 
   await app.register(authRoutes);
   await app.register(localAuthRoutes, { prefix: '' });

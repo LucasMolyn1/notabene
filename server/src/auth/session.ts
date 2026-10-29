@@ -27,7 +27,8 @@ interface SessionRow {
   role: Role;
 }
 
-export function sessionAuth(db: DB, token: string): Auth | null {
+// `idleMs` : durée maximale sans activité (0 = pas de limite d'inactivité).
+export function sessionAuth(db: DB, token: string, idleMs = 0): Auth | null {
   if (!token || token.length > 128) return null;
   const row = db.prepare(
     `SELECT s.id_hash, s.csrf, s.expires_at, s.last_seen_at, u.id AS user_id, u.name, u.email, u.role
@@ -35,6 +36,10 @@ export function sessionAuth(db: DB, token: string): Auth | null {
   ).get(sha256(token)) as SessionRow | undefined;
   const now = Date.now();
   if (!row || row.expires_at <= now) return null;
+  if (idleMs > 0 && now - row.last_seen_at > idleMs) {
+    db.prepare('DELETE FROM sessions WHERE id_hash = ?').run(row.id_hash);
+    return null;
+  }
   if (now - row.last_seen_at > 60_000) db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id_hash = ?').run(now, row.id_hash);
   return {
     user: { id: row.user_id, name: row.name, email: row.email, role: row.role },

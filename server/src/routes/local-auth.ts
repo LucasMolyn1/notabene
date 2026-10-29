@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { requireAuth } from '../auth/context.js';
-import { createSession, sessionCookieName } from '../auth/session.js';
+import { createSession, destroySession, sessionCookieName } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
 import { randomToken, safeEqual, sha256 } from '../lib/crypto.js';
 import { HttpError, idParams, newId } from '../lib/http.js';
@@ -61,7 +61,10 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     return `${config.PUBLIC_URL}/#/reset/${token}`;
   };
 
-  const startSession = (reply: FastifyReply, userId: string) => {
+  const startSession = (req: FastifyRequest, reply: FastifyReply, userId: string) => {
+    // Une nouvelle connexion remplace la session précédente du navigateur (pas de session orpheline).
+    const previous = req.cookies[cookieName];
+    if (previous) destroySession(db, previous);
     const s = createSession(db, userId, null, config.SESSION_TTL_HOURS);
     reply.setCookie(cookieName, s.token, { ...cookieOptions, expires: new Date(s.expiresAt) });
   };
@@ -115,7 +118,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     db.prepare('INSERT INTO users (id, sub, email, name, role, created_at, last_login_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(id, `local:${b.email}`, b.email, b.name, 'admin', now, now, await hashPassword(b.password));
     setupCode = null;
-    startSession(reply, id);
+    startSession(req, reply, id);
     audit(db, req, 'auth.local.setup', id);
     return reply.code(201).send({ redirect: '/' });
   });
@@ -148,7 +151,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
       if (!checkSecondFactor(user, b.code)) return fail('mfa');
     }
     db.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL, last_login_at = ? WHERE id = ?').run(now, user.id);
-    startSession(reply, user.id);
+    startSession(req, reply, user.id);
     audit(db, req, 'auth.login', user.id, { role: user.role, method: 'local', mfa: !!user.totp_enabled });
     return { redirect: '/' };
   });
