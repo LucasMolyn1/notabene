@@ -19,7 +19,7 @@ import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
 import pagesV2 from './routes/pages-v2.js';
 import v3Routes from './routes/v3.js';
-import { sessionAuth, sessionCookieName } from './auth/session.js';
+import { sessionAuth as sessionAuthWithIdle, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
 import { SecretBox, safeEqual } from './lib/crypto.js';
 import { EventBus, Presence } from './lib/events.js';
@@ -163,6 +163,8 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   });
 
   // Identité : jeton API (Authorization: Bearer) ou cookie de session, puis contrôle CSRF.
+  // Résolution de session avec la limite d'inactivité configurée.
+  const sessionAuth = (database: DB, token: string) => sessionAuthWithIdle(database, token, config.SESSION_IDLE_MINUTES * 60_000);
   const cookieName = sessionCookieName(config.secureCookies);
   const publicOrigin = new URL(config.PUBLIC_URL).origin;
   app.addHook('onRequest', async (req) => {
@@ -170,7 +172,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     const bearer = header === undefined ? undefined : /^Bearer\s+(\S+)$/.exec(header)?.[1];
     const cookie = req.cookies[cookieName];
     if (header !== undefined && !bearer) throw new HttpError(401, 'Jeton d’API invalide, expiré ou révoqué');
-    req.auth = bearer ? verifyApiToken(db, bearer) : cookie ? sessionAuth(db, cookie, config.SESSION_IDLE_MINUTES * 60_000) : null;
+    req.auth = bearer ? verifyApiToken(db, bearer) : cookie ? sessionAuth(db, cookie) : null;
     if (bearer && !req.auth) throw new HttpError(401, 'Jeton d’API invalide, expiré ou révoqué');
 
     // CSRF : décidé d'après le mode d'authentification résolu côté serveur (les jetons Bearer n'y sont pas exposés).
