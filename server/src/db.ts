@@ -143,6 +143,16 @@ const MIGRATIONS: string[] = [
     failures    INTEGER NOT NULL DEFAULT 0
   );
   `,
+  `
+  ALTER TABLE users ADD COLUMN password_hash  TEXT;
+  ALTER TABLE users ADD COLUMN totp_secret    TEXT;
+  ALTER TABLE users ADD COLUMN totp_enabled   INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN totp_last_step INTEGER;
+  ALTER TABLE users ADD COLUMN recovery_codes TEXT;
+  ALTER TABLE users ADD COLUMN failed_logins  INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN locked_until   INTEGER;
+  ALTER TABLE users ADD COLUMN disabled       INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export function openDb(file: string): DB {

@@ -42,6 +42,9 @@ const schema = z
     OIDC_DEFAULT_ROLE: z.enum(['reader', 'none']).default('none'),
     SESSION_TTL_HOURS: z.coerce.number().min(1).max(24 * 30).default(12),
 
+    // Comptes locaux (e-mail + mot de passe, MFA TOTP) : alternative ou complément à OIDC.
+    AUTH_LOCAL: bool('false'),
+
     // Connexion de développement sans IdP. Interdite en production.
     DEV_LOGIN: bool('false'),
 
@@ -53,7 +56,7 @@ const schema = z
     if (c.DEV_LOGIN && c.NODE_ENV === 'production') {
       ctx.addIssue({ code: 'custom', path: ['DEV_LOGIN'], message: 'interdit quand NODE_ENV=production' });
     }
-    if (!c.DEV_LOGIN && !(c.OIDC_ISSUER && c.OIDC_CLIENT_ID && c.OIDC_CLIENT_SECRET)) {
+    if (!c.DEV_LOGIN && !c.AUTH_LOCAL && !(c.OIDC_ISSUER && c.OIDC_CLIENT_ID && c.OIDC_CLIENT_SECRET)) {
       ctx.addIssue({ code: 'custom', path: ['OIDC_ISSUER'], message: 'OIDC_ISSUER, OIDC_CLIENT_ID et OIDC_CLIENT_SECRET sont requis' });
     }
     if (c.NODE_ENV === 'production' && !c.PUBLIC_URL.startsWith('https://') && !c.ALLOW_INSECURE_HTTP) {

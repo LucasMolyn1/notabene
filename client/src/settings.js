@@ -6,8 +6,9 @@ import { store } from './store.js';
 import { session } from './session.js';
 import { prefs, savePrefs, setTheme } from './prefs.js';
 import { colorFor } from './presence.js';
-import { toast, confirmModal } from './ui.js';
-import qrcode from 'qrcode-generator';
+import { toast, confirmModal, openModal } from './ui.js';
+import { qrSvg } from './qr.js';
+import { securityCard } from './local-auth.js';
 import { openDrawio, openExcalidraw } from './diagrams.js';
 import { beginView, setView, topbar } from './views.js';
 import * as A from './actions.js';
@@ -46,17 +47,19 @@ async function renderProfile(el) {
   const u = session.user;
   const perms = [['read', 'Lire les pages'], ['write', 'Créer et modifier des pages'], ['ai', 'Utiliser la recherche IA'], ['admin', 'Administrer l’instance']];
   const sessionsBox = h('div', null, loadingEl());
-  el.replaceChildren(
+  const security = session.config.auth.local ? await securityCard(card) : null;
+  el.replaceChildren(...[
     card(null, null, h('div', { class: 'profile' },
       h('span', { class: 'avatar xl static', style: { '--c': colorFor(u.id) } }, initials(u.name)),
       h('div', null,
         h('h2', null, u.name),
         h('p', { class: 'muted' }, u.email || 'Adresse e-mail non communiquée par le fournisseur'),
-        h('div', { class: 'row' }, pill(ROLE_LABELS[u.role], 'accent'), pill(session.config.auth.oidc ? 'Connecté via Authentik (OIDC)' : 'Connexion de développement'))))),
+        h('div', { class: 'row' }, pill(ROLE_LABELS[u.role], 'accent'), pill(security ? 'Compte local' : session.config.auth.oidc ? 'Connecté via Authentik (OIDC)' : 'Connexion de développement'))))),
     card('Permissions', 'Votre rôle est attribué par vos groupes Authentik et recalculé à chaque connexion.',
       h('ul', { class: 'perm-list' }, perms.map(([key, label]) => h('li', { class: session.can(key) ? 'ok' : 'off' }, icon(session.can(key) ? 'check' : 'x', 14), ' ', label)))),
+    security,
     card('Sessions actives', 'Chaque navigateur connecté ouvre une session distincte, valable au maximum la durée configurée.', sessionsBox),
-    card('Déconnexion', null, h('button', { class: 'btn btn-ghost', onClick: () => session.logout() }, icon('move', 15), 'Se déconnecter')));
+    card('Déconnexion', null, h('button', { class: 'btn btn-ghost', onClick: () => session.logout() }, icon('move', 15), 'Se déconnecter'))].filter(Boolean));
 
   const sessions = await A.attempt(() => api.get('/sessions'));
   if (!sessions) return;
@@ -397,15 +400,54 @@ async function renderUsers(el) {
   el.replaceChildren(loadingEl());
   const users = await A.attempt(() => api.get('/admin/users'));
   if (!users) return;
-  el.replaceChildren(card(`Utilisateurs (${users.length})`, 'Les comptes sont créés à la première connexion ; les rôles se gèrent dans Authentik.',
-    h('div', { class: 'table' }, users.map((u) => h('div', { class: 'table-row' },
-      h('span', { class: 'avatar static', style: { '--c': colorFor(u.id) } }, initials(u.name)),
-      h('span', { class: 'grow' }, h('strong', null, u.name), h('small', null, `${u.email || 'sans e-mail'} · ${u.lastLoginAt ? `connecté ${timeAgo(u.lastLoginAt)}` : 'jamais connecté'}${u.tokens ? ` · ${u.tokens} jeton(s)` : ''}`)),
-      pill(ROLE_LABELS[u.role] || u.role, u.role === 'admin' ? 'accent' : ''))))));
+  const local = session.config.auth.local;
+  const refresh = () => renderUsers(el);
+  const patch = async (u, body, done) => { if (await A.attempt(() => api.patch(`/admin/local-users/${u.id}`, body))) { toast(done); refresh(); } };
+
+  const resetPassword = (u) => {
+    const pwd = h('input', { class: 'input', type: 'password', autocomplete: 'new-password', maxlength: '256' });
+    openModal({
+      title: `Nouveau mot de passe : ${u.name}`,
+      body: h('div', { class: 'stack' }, h('p', { class: 'muted' }, '12 caractères minimum. Les sessions de la personne seront fermées.'), pwd),
+      actions: [{ label: 'Annuler' }, { label: 'Réinitialiser', primary: true, onClick: async () => { if (!pwd.value) return false; await patch(u, { password: pwd.value }, 'Mot de passe réinitialisé'); return undefined; } }],
+    });
+    setTimeout(() => pwd.focus(), 30);
+  };
+
+  const row = (u) => h('div', { class: 'table-row' },
+    h('span', { class: 'avatar static', style: { '--c': colorFor(u.id) } }, initials(u.name)),
+    h('span', { class: 'grow' }, h('strong', null, u.name), h('small', null, `${u.email || 'sans e-mail'} · ${u.lastLoginAt ? `connecté ${timeAgo(u.lastLoginAt)}` : 'jamais connecté'}${u.tokens ? ` · ${u.tokens} jeton(s)` : ''}`)),
+    u.local && u.mfa && pill('MFA', 'ok'),
+    u.disabled && pill('Désactivé', 'off'),
+    u.local && u.id !== session.user.id
+      ? h('select', { class: 'input input-sm', 'aria-label': 'Rôle', onChange: (e) => patch(u, { role: e.target.value }, 'Rôle modifié') },
+        Object.entries(ROLE_LABELS).map(([value, label]) => h('option', { value, selected: value === u.role }, label)))
+      : pill(ROLE_LABELS[u.role] || u.role, u.role === 'admin' ? 'accent' : ''),
+    u.local && u.id !== session.user.id && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => patch(u, { disabled: !u.disabled }, u.disabled ? 'Compte réactivé' : 'Compte désactivé') }, u.disabled ? 'Réactiver' : 'Désactiver'),
+    u.local && u.mfa && h('button', { class: 'btn btn-ghost btn-sm', onClick: async () => { if (await confirmModal({ title: 'Réinitialiser la double authentification ?', message: u.name, confirm: 'Réinitialiser', danger: true })) patch(u, { resetMfa: true }, 'MFA réinitialisée'); } }, 'Réinit. MFA'),
+    u.local && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => resetPassword(u) }, 'Mot de passe'));
+
+  const mail = h('input', { class: 'input', type: 'email', placeholder: 'E-mail', maxlength: '200', autocomplete: 'off' });
+  const name = h('input', { class: 'input', placeholder: 'Nom', maxlength: '120', autocomplete: 'off' });
+  const pass = h('input', { class: 'input', type: 'password', placeholder: 'Mot de passe initial (12 car. min.)', maxlength: '256', autocomplete: 'new-password' });
+  const roleSel = h('select', { class: 'input' }, Object.entries(ROLE_LABELS).map(([value, label]) => h('option', { value, selected: value === 'editor' }, label)));
+
+  el.replaceChildren(...[
+    card(`Utilisateurs (${users.length})`, local ? 'Comptes locaux (gérés ici) et comptes fédérés (rôles issus d’Authentik).' : 'Les comptes sont créés à la première connexion ; les rôles se gèrent dans Authentik.',
+      h('div', { class: 'table' }, users.map(row))),
+    local && card('Nouveau compte local', 'Communiquez le mot de passe initial par un canal sûr ; la personne peut ensuite le changer et activer la double authentification.', h('div', { class: 'stack' },
+      h('div', { class: 'row wrap' }, mail, name, roleSel), pass,
+      h('div', null, h('button', {
+        class: 'btn btn-primary btn-sm',
+        onClick: async () => {
+          if (await A.attempt(() => api.post('/admin/local-users', { email: mail.value, name: name.value, role: roleSel.value, password: pass.value }))) { toast('Compte créé'); refresh(); }
+        },
+      }, icon('plus', 15), 'Créer le compte')))),
+  ].filter(Boolean));
 }
 
 const AUDIT_LABELS = {
-  'auth.login': 'Connexion', 'auth.logout': 'Déconnexion', 'auth.denied': 'Accès refusé', 'auth.sessions.revoke': 'Sessions fermées',
+  'auth.login': 'Connexion', 'auth.logout': 'Déconnexion', 'auth.local.failed': 'Échec de connexion', 'auth.local.setup': 'Installation initiale', 'auth.local.password': 'Mot de passe modifié', 'auth.mfa.enable': 'MFA activée', 'auth.mfa.disable': 'MFA désactivée', 'user.create': 'Compte créé', 'user.update': 'Compte modifié', 'auth.denied': 'Accès refusé', 'auth.sessions.revoke': 'Sessions fermées',
   'token.create': 'Jeton créé', 'token.revoke': 'Jeton révoqué', 'settings.ai': 'Réglages IA', 'ai.ask': 'Question IA',
   'space.create': 'Espace créé', 'space.delete': 'Espace supprimé', 'space.visibility': 'Visibilité modifiée',
   'page.destroy': 'Page supprimée définitivement', 'trash.empty': 'Corbeille vidée',
@@ -491,23 +533,7 @@ function renderTools(el) {
     qr.replaceChildren();
     if (!text.value.trim()) return;
     try {
-      const code = qrcode(0, 'M');
-      code.addData(text.value);
-      code.make();
-      const n = code.getModuleCount();
-      let d = '';
-      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (code.isDark(y, x)) d += `M${x + 4} ${y + 4}h1v1h-1z`;
-      const ns = 'http://www.w3.org/2000/svg';
-      const svg = document.createElementNS(ns, 'svg');
-      svg.setAttribute('viewBox', `0 0 ${n + 8} ${n + 8}`);
-      svg.setAttribute('width', '220');
-      svg.setAttribute('role', 'img');
-      svg.setAttribute('aria-label', 'QR code');
-      const bg = document.createElementNS(ns, 'rect');
-      bg.setAttribute('width', '100%'); bg.setAttribute('height', '100%'); bg.setAttribute('fill', '#fff');
-      const path = document.createElementNS(ns, 'path');
-      path.setAttribute('d', d); path.setAttribute('fill', '#000');
-      svg.append(bg, path);
+      const svg = qrSvg(text.value);
       qr.append(svg, h('button', { class: 'btn btn-ghost btn-sm', onClick: () => download('qrcode.svg', new XMLSerializer().serializeToString(svg), 'image/svg+xml') }, icon('download', 14), 'Télécharger (SVG)'));
     } catch {
       qr.append(h('p', { class: 'hint' }, 'Texte trop long pour un QR code.'));

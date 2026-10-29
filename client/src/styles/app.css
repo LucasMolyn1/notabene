@@ -810,3 +810,5 @@ select.input { height: 36px; }
 .pw-out { display: block; padding: 10px 12px; background: var(--bg-soft, #f5f4f1); border-radius: 8px; word-break: break-all; min-height: 1.5em; font-size: 15px; }
 .qr-out { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .qr-out svg { border: 1px solid var(--border, #e3e3e0); border-radius: 8px; }
+.login-form { width: 100%; text-align: left; }
+.login-form[hidden], .login-form [hidden] { display: none; }

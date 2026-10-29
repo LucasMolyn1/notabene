@@ -161,8 +161,8 @@ function treeNode(page, depth, activeId, canWrite) {
 
 function accountBox() {
   if (!session.user) {
-    const { oidc, devLogin } = session.config.auth;
-    if (!oidc && !devLogin) return null;
+    const { oidc, devLogin, local } = session.config.auth;
+    if (!oidc && !devLogin && !local) return null;
     return h('a', { class: 'btn btn-primary btn-block', href: oidc ? session.loginUrl() : '/?login' }, icon('users', 15), 'Se connecter');
   }
   const u = session.user;

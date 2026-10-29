@@ -11,7 +11,7 @@ export default async function coreRoutes(app: FastifyInstance) {
   const { db, config } = app;
 
   app.get('/config', { schema: { tags: ['session'], summary: 'Configuration publique de l’instance', security: [] } }, async () => ({
-    auth: { oidc: !!app.oidc, devLogin: config.DEV_LOGIN },
+    auth: { oidc: !!app.oidc, devLogin: config.DEV_LOGIN, local: config.AUTH_LOCAL, setupRequired: config.AUTH_LOCAL && !(app.db.prepare("SELECT 1 FROM users WHERE role = 'admin' AND password_hash IS NOT NULL LIMIT 1").get()) },
     drawioUrl: config.DRAWIO_URL ?? null,
     ai: isAiReady(db),
   }));

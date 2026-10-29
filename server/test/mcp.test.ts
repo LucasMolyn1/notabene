@@ -83,3 +83,11 @@ describe('serveur MCP', () => {
     expect((await call(reader, [rpc('ping')])).json().error.code).toBe(-32600);
   });
 });
+
+describe('versions d’API', () => {
+  it('liste les versions et leur état', async () => {
+    const res = (await app.inject({ method: 'GET', url: '/api/versions' })).json();
+    expect(res.current).toBe('v1');
+    expect(res.versions.map((v: { id: string }) => v.id)).toEqual(['v1', 'v2', 'v3']);
+  });
+});

@@ -22,10 +22,12 @@ import adminRoutes from './routes/admin.js';
 import aiRoutes from './routes/ai.js';
 import authRoutes from './routes/auth.js';
 import coreRoutes from './routes/core.js';
+import localAuthRoutes from './routes/local-auth.js';
 import mcpRoutes from './routes/mcp.js';
 import pageRoutes from './routes/pages.js';
 import spaceRoutes from './routes/spaces.js';
 import tokenRoutes from './routes/tokens.js';
+import versionRoutes from './routes/versions.js';
 import webhookRoutes from './routes/webhooks.js';
 
 declare module 'fastify' {
@@ -177,6 +179,7 @@ export async function buildApp({ config, db, logger = false, clientDir }: AppOpt
   await app.register(swaggerUi, { routePrefix: '/api/docs', staticCSP: true });
 
   await app.register(authRoutes);
+  await app.register(localAuthRoutes, { prefix: '' });
   await app.register(coreRoutes, { prefix: '/api/v1' });
   await app.register(spaceRoutes, { prefix: '/api/v1' });
   await app.register(pageRoutes, { prefix: '/api/v1' });
@@ -185,6 +188,7 @@ export async function buildApp({ config, db, logger = false, clientDir }: AppOpt
   await app.register(adminRoutes, { prefix: '/api/v1' });
   await app.register(webhookRoutes, { prefix: '/api/v1' });
   await app.register(mcpRoutes);
+  await app.register(versionRoutes);
   app.get('/healthz', { schema: { hide: true } }, async () => ({ ok: true }));
 
   // Front compilé (production) : fichiers statiques + repli SPA.

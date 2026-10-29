@@ -54,11 +54,11 @@ export default async function adminRoutes(app: FastifyInstance) {
 
   app.get('/admin/users', { preHandler: guard('admin'), schema: { tags: ['admin'], summary: 'Utilisateurs (rôles issus des groupes OIDC)' } }, async () =>
     (db.prepare(
-      `SELECT u.id, u.name, u.email, u.role, u.created_at, u.last_login_at,
+      `SELECT u.id, u.name, u.email, u.role, u.created_at, u.last_login_at, u.disabled, u.totp_enabled, (u.password_hash IS NOT NULL) AS is_local,
               (SELECT COUNT(*) FROM api_tokens t WHERE t.user_id = u.id AND t.revoked_at IS NULL AND t.expires_at > ?) AS tokens
        FROM users u ORDER BY u.last_login_at DESC`,
-    ).all(Date.now()) as { id: string; name: string; email: string | null; role: string; created_at: number; last_login_at: number | null; tokens: number }[])
-      .map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, createdAt: u.created_at, lastLoginAt: u.last_login_at, tokens: u.tokens })));
+    ).all(Date.now()) as { id: string; name: string; email: string | null; role: string; created_at: number; last_login_at: number | null; tokens: number; disabled: number; totp_enabled: number; is_local: number }[])
+      .map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, createdAt: u.created_at, lastLoginAt: u.last_login_at, tokens: u.tokens, disabled: !!u.disabled, mfa: !!u.totp_enabled, local: !!u.is_local })));
 
   app.get('/admin/audit', {
     preHandler: guard('admin'),

@@ -41,6 +41,15 @@ cp .env.development.example .env       # puis renseignez ENCRYPTION_KEY (openssl
 npm run dev                            # API sur :3000, interface sur http://localhost:5173
 ```
 
+### Comptes locaux (sans fournisseur d’identité)
+
+`AUTH_LOCAL=true` active la connexion par e-mail et mot de passe, seule ou en complément d’OIDC. Au premier démarrage, sans administrateur local, le serveur affiche un **code d’installation** dans ses journaux ; il se saisit sur la page de connexion pour créer le compte administrateur. Ensuite, les administrateurs créent les comptes dans Paramètres > Utilisateurs.
+
+- Mots de passe : 12 caractères minimum, hachés avec scrypt.
+- Double authentification TOTP optionnelle (FreeOTP, Aegis, Google Authenticator…) avec 10 codes de secours à usage unique.
+- Verrouillage de 15 minutes après 5 échecs, limitation de débit par adresse IP, sessions fermées lors d’un changement de mot de passe.
+- Les rôles des comptes locaux se gèrent dans l’application ; ceux des comptes OIDC restent issus des groupes.
+
 En développement, `DEV_LOGIN=true` permet de se connecter en admin, éditeur ou lecteur sans fournisseur d’identité. Le serveur **refuse de démarrer** si cette option est active en production.
 
 | Commande | Rôle |
