@@ -17,6 +17,7 @@
     "build:server": "tsc -p server/tsconfig.json",
     "start": "node dist/server/index.js",
     "backup": "node dist/server/backup.js backup",
+    "create-admin": "node dist/server/cli.js create-admin",
     "typecheck": "tsc -p server/tsconfig.json --noEmit",
     "test": "vitest run",
     "audit:deps": "npm audit --omit=dev --audit-level=high"
