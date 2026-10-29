@@ -33,6 +33,7 @@
     "@fastify/swagger-ui": "^6.1.2",
     "@fastify/websocket": "^11.3.4",
     "@node-saml/node-saml": "^5.2.0",
+    "age-encryption": "^0.3.1",
     "better-sqlite3": "^13.0.3",
     "fastify": "^5.12.7",
     "ldapts": "^9.2.0",

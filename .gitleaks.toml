@@ -1,0 +1,7 @@
+# Règles gitleaks par défaut, sauf pour les fixtures de test (mots de passe et clés factices).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fixtures de test : valeurs factices"
+paths = ['''server/test/.*''']

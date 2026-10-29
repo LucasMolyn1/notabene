@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
-import { backupTo, pruneBackups, restoreFrom, verifyBackup } from '../src/backup.js';
+import { assertBackupAllowed, backupTo, decryptFile, encryptFile, newBackupKeys, pruneBackups, readableBackup, restoreFrom, verifyBackup } from '../src/backup.js';
 import { loadConfig } from '../src/config.js';
 import { openDb } from '../src/db.js';
 import { seedDemo } from '../src/seed.js';
@@ -73,5 +73,51 @@ describe('route de téléchargement', () => {
     expect(ok.rawPayload.subarray(0, 15).toString()).toBe('SQLite format 3');
     await app.close();
     db.close();
+  });
+
+  describe('chiffrement age', () => {
+    it('chiffre une sauvegarde, la vérifie et la restaure avec la clé privée', async () => {
+      const dbFile = resolve(dir, 'notabene.db');
+      const db = openDb(dbFile);
+      seedDemo(db);
+      const pages = (db.prepare('SELECT COUNT(*) AS n FROM pages').get() as { n: number }).n;
+      const plain = resolve(dir, 'b', 'notabene-20260101-000000.db');
+      await backupTo(db, plain);
+      const keys = await newBackupKeys();
+      const enc = await encryptFile(plain, keys.recipient);
+      expect(enc).toBe(`${plain}.age`);
+      expect(existsSync(plain)).toBe(false); // jamais de clair à côté
+      expect(readFileSync(enc).subarray(0, 15).toString('latin1')).not.toContain('SQLite format');
+      expect(readFileSync(enc).includes(Buffer.from('Bienvenue sur Notabene'))).toBe(false);
+
+      const keyFile = resolve(dir, 'identity.txt');
+      writeFileSync(keyFile, keys.identity);
+      const src = await readableBackup(enc, { BACKUP_AGE_IDENTITY_FILE: keyFile });
+      expect(verifyBackup(src.path).pages).toBe(pages);
+      src.cleanup();
+      expect(existsSync(src.path)).toBe(false);
+
+      // Mauvaise clé : échec net, rien ne reste.
+      const other = resolve(dir, 'other.txt');
+      writeFileSync(other, (await newBackupKeys()).identity);
+      await expect(readableBackup(enc, { BACKUP_AGE_IDENTITY_FILE: other })).rejects.toThrow(/Déchiffrement impossible/);
+      await expect(readableBackup(enc, {})).rejects.toThrow(/BACKUP_AGE_IDENTITY_FILE/);
+      await expect(decryptFile(enc, (await newBackupKeys()).identity, resolve(dir, 'x.db'))).rejects.toThrow();
+      db.close();
+    });
+
+    it('la rotation traite aussi les fichiers chiffrés', () => {
+      const d = resolve(dir, 'rot');
+      mkdirSync(d);
+      for (const n of ['20260101-000000.db.age', '20260102-000000.db.age', '20260103-000000.db']) writeFileSync(resolve(d, `notabene-${n}`), 'x');
+      expect(pruneBackups(d, 2)).toEqual(['notabene-20260101-000000.db.age']);
+    });
+
+    it('refuse une sauvegarde en clair en production sans choix explicite', () => {
+      expect(() => assertBackupAllowed({ NODE_ENV: 'production' })).toThrow(/chiffrée/);
+      expect(() => assertBackupAllowed({ NODE_ENV: 'production', BACKUP_AGE_RECIPIENT: 'age1x' })).not.toThrow();
+      expect(() => assertBackupAllowed({ NODE_ENV: 'production', BACKUP_ALLOW_PLAINTEXT: 'true' })).not.toThrow();
+      expect(() => assertBackupAllowed({ NODE_ENV: 'development' })).not.toThrow();
+    });
   });
 });
