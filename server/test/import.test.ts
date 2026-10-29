@@ -26,6 +26,12 @@ describe('conversion Markdown', () => {
     expect(body).toBe('# Corps');
   });
 
+  it('ignore les clés d’en-tête non prévues, dont __proto__', () => {
+    const { meta } = parseFrontMatter('---\n__proto__: x\nconstructor: y\ntitle: T\n---\ncorps');
+    expect(Object.keys(meta)).toEqual(['title']);
+    expect(Object.getPrototypeOf(meta)).toBe(Object.prototype);
+  });
+
   it('convertit titres, listes, tâches, tableaux, code et diagrammes', () => {
     const md = '# T1\n\n#### Profond\n\ntexte **gras** et `code` et [site](https://example.com)\n\n- a\n- b\n\n1. un\n2. deux\n\n- [x] fait\n- [ ] à faire\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n```ts\nconst x = 1;\n```\n\n```mermaid\nflowchart LR\n A-->B\n```\n\n```plantuml\n@startuml\nA->B\n@enduml\n```\n\n---\n';
     const doc = markdownToDoc(md, stats());

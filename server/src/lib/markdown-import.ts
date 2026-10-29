@@ -16,10 +16,11 @@ export const IMPORT_LIMITS = { files: 2000, fileBytes: 1_000_000, totalBytes: 25
 export function parseFrontMatter(text: string): { meta: Record<string, string>; body: string } {
   const m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
   if (!m) return { meta: {}, body: text };
+  // Seules les clés utiles sont retenues (liste blanche) : un nom de propriété venant du fichier n'est jamais utilisé tel quel.
   const meta: Record<string, string> = {};
   for (const line of m[1]!.split(/\r?\n/)) {
-    const kv = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(line);
-    if (kv) meta[kv[1]!] = kv[2]!.trim().replace(/^(['"])(.*)\1$/, '$2');
+    const kv = /^(title|description|published|date|dateCreated|tags|editor):\s*(.*)$/.exec(line);
+    if (kv) Object.defineProperty(meta, kv[1]!, { value: kv[2]!.trim().replace(/^(['"])(.*)\1$/, '$2'), enumerable: true, writable: true, configurable: true });
   }
   return { meta, body: text.slice(m[0].length) };
 }
