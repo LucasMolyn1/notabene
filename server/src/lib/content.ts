@@ -73,6 +73,7 @@ const NODES: Record<string, AttrRules> = {
   callout: { type: oneOf('info', 'warning', 'success', 'danger') },
   pageLink: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined) },
   mermaid: { code: str(50_000) },
+  plantuml: { code: str(50_000) },
   excalidraw: { scene: str(MAX_DIAGRAM), svg: isSvgDataUrl },
   drawio: { xml: str(MAX_DIAGRAM), svg: isSvgDataUrl },
 };
@@ -154,7 +155,7 @@ export function docText(node: DocNode | undefined): string {
   if (!node) return '';
   if (node.type === 'text') return node.text ?? '';
   if (node.type === 'hardBreak') return ' ';
-  if (node.type === 'mermaid') return ` ${String(node.attrs?.code ?? '')} `;
+  if (node.type === 'mermaid' || node.type === 'plantuml') return ` ${String(node.attrs?.code ?? '')} `;
   const sep = TEXT_BLOCKS.has(node.type) ? '' : ' ';
   const out = (node.content ?? []).map(docText).join(sep);
   return node.type === 'doc' ? out.replace(/\s+/g, ' ').trim() : out;

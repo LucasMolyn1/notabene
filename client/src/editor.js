@@ -13,7 +13,7 @@ import { icon } from './icons.js';
 import { store } from './store.js';
 import { session } from './session.js';
 import { toast, pageIcon } from './ui.js';
-import { DEFAULT_MERMAID, DrawIo, Excalidraw, Mermaid, openDrawio, openExcalidraw } from './diagrams.js';
+import { DEFAULT_MERMAID, DEFAULT_PLANTUML, DrawIo, Excalidraw, Mermaid, PlantUml, openDrawio, openExcalidraw } from './diagrams.js';
 
 // ---- Nœuds personnalisés -------------------------------------------------
 
@@ -150,6 +150,7 @@ function baseExtensions() {
     Callout,
     PageLink,
     Mermaid,
+    PlantUml,
     Excalidraw,
     DrawIo,
   ];
@@ -222,6 +223,10 @@ const SLASH_ITEMS = [
   {
     group: 'Diagrammes', title: 'Mermaid', desc: 'Schéma décrit en texte (flux, séquence…)', ico: 'diamond', keys: 'mermaid diagramme flowchart sequence schema',
     run: chainCmd((c) => c.insertContent({ type: 'mermaid', attrs: { code: DEFAULT_MERMAID } })),
+  },
+  {
+    group: 'Diagrammes', title: 'PlantUML', desc: 'Diagrammes UML décrits en texte (classes, séquence…)', ico: 'code', keys: 'plantuml uml diagramme classe sequence',
+    run: chainCmd((c) => c.insertContent({ type: 'plantuml', attrs: { code: DEFAULT_PLANTUML } })),
   },
   {
     group: 'Diagrammes', title: 'Excalidraw', desc: 'Dessin à main levée', ico: 'pencil', keys: 'excalidraw dessin croquis sketch whiteboard',

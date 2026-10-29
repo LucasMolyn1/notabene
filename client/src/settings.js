@@ -298,6 +298,7 @@ function renderDiagrams(el) {
   el.replaceChildren(
     card('Outils disponibles', 'Insérez un diagramme dans n’importe quelle page avec le menu « / ».', h('div', { class: 'stack' },
       tool('diamond', 'Mermaid', 'Schémas décrits en texte : organigrammes, séquences, Gantt, classes… Rendu sécurisé (mode strict).', status(true, 'Intégré'), '/mermaid'),
+      tool('code', 'PlantUML', 'Diagrammes UML (séquence, classes, composants…) décrits en texte. Moteur servi par votre serveur, rendu dans le navigateur ; les directives !include sont refusées.', status(true, 'Intégré'), '/plantuml'),
       tool('pencil', 'Excalidraw', 'Dessin à main levée, chargé à la demande. Polices servies par votre serveur.', status(true, 'Intégré'), '/excalidraw',
         () => openExcalidraw({ scene: '', svg: '' }, scratch('Excalidraw'))),
       tool('hexagon', 'Draw.io', drawio ? `Instance auto-hébergée : ${drawio}` : 'Nécessite le conteneur Draw.io et la variable DRAWIO_URL.',

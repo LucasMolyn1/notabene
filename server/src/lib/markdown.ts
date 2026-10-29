@@ -37,6 +37,7 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
       case 'blockquote': return quote(blocks(node.content));
       case 'callout': return quote(`[!${ALERT[String(a.type)] ?? 'NOTE'}]\n${blocks(node.content)}`);
       case 'codeBlock': return `\`\`\`${a.language ?? ''}\n${(node.content ?? []).map((t) => t.text).join('')}\n\`\`\``;
+      case 'plantuml': return `\`\`\`plantuml\n${a.code ?? ''}\n\`\`\``;
       case 'mermaid': return `\`\`\`mermaid\n${a.code ?? ''}\n\`\`\``;
       case 'excalidraw': return '_[Dessin Excalidraw]_';
       case 'drawio': return '_[Diagramme Draw.io]_';
