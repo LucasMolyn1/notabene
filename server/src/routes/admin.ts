@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard, requireAuth } from '../auth/context.js';
-import { backupName, backupTo } from '../backup.js';
+import { backupName, backupTo, encryptFile } from '../backup.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/http.js';
 
@@ -82,13 +82,15 @@ export default async function adminRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     if (req.auth?.via !== 'session') throw new HttpError(403, 'Disponible uniquement depuis l’interface web');
     const dir = mkdtempSync(resolve(tmpdir(), 'nb-backup-'));
-    const name = backupName();
-    const file = resolve(dir, name);
+    let name = backupName();
+    let file = resolve(dir, name);
     await backupTo(db, file);
+    // Destinataire age configuré : le téléchargement est chiffré comme les sauvegardes planifiées.
+    if (process.env.BACKUP_AGE_RECIPIENT) { file = await encryptFile(file, process.env.BACKUP_AGE_RECIPIENT); name = `${name}.age`; }
     audit(db, req, 'backup.download', null);
     const stream = createReadStream(file);
     stream.on('close', () => rmSync(dir, { recursive: true, force: true }));
-    return reply.header('content-type', 'application/vnd.sqlite3').header('content-disposition', `attachment; filename="${name}"`).send(stream);
+    return reply.header('content-type', name.endsWith('.age') ? 'application/octet-stream' : 'application/vnd.sqlite3').header('content-disposition', `attachment; filename="${name}"`).send(stream);
   });
 
   // Sessions de l'utilisateur courant (navigateur uniquement).
