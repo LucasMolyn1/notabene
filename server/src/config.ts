@@ -48,6 +48,9 @@ const schema = z
     SESSION_IDLE_MINUTES: z.coerce.number().min(5).max(24 * 60).default(120),
     // Documentation interactive de l'API : auth (connectés seulement, défaut), public, off.
     API_DOCS: z.enum(['auth', 'public', 'off']).default('auth'),
+    // Versions d'API héritées encore servies, séparées par des virgules (v1, v2). Vide : seule la v3 est servie.
+    API_LEGACY_VERSIONS: z.string().default('').transform((v) => v.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean))
+      .pipe(z.array(z.enum(['v1', 'v2']))),
 
     // Comptes locaux (e-mail + mot de passe, MFA TOTP) : alternative ou complément à OIDC.
     AUTH_LOCAL: bool('false'),

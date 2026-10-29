@@ -81,7 +81,7 @@ describe('import dans un espace', () => {
 
 describe('route d’import', () => {
   it('est réservée aux administrateurs', async () => {
-    const app: FastifyInstance = await buildApp({ config: loadConfig({ NODE_ENV: 'test', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), DEV_LOGIN: 'true', SEED_DEMO: 'false' }), db, clientDir: '/nonexistent' });
+    const app: FastifyInstance = await buildApp({ config: loadConfig({ NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), DEV_LOGIN: 'true', SEED_DEMO: 'false' }), db, clientDir: '/nonexistent' });
     const login = async (role: string) => {
       const r = await app.inject({ method: 'POST', url: '/auth/dev-login', payload: { role } });
       const cookies = { nb_session: r.cookies.find((c) => c.name === 'nb_session')!.value };

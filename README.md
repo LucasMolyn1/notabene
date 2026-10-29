@@ -135,7 +135,7 @@ curl -H "Authorization: Bearer $NOTABENE_TOKEN" "https://wiki.example.com/api/v3
 curl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v3/pages/<id>/export
 ```
 
-**Versions** : utilisez `/api/v3` (courante) ou `/api/v2`. `/api/v3` est dépréciée (fin le 1er mai 2027) mais reste servie ; le client web et le serveur MCP l'utilisent encore. Les versions et leur état sont sur `GET /api/versions`. La v2 apporte la pagination par curseur, `ETag`/`If-Match` et les erreurs RFC 9457 ; la v3 ajoute les commentaires et les permissions par page (voir `docs/API-VERSIONING.md`).
+**Versions** : l'API courante est `/api/v3`, la seule servie par défaut. `/api/v1` et `/api/v2` sont dépréciées (fin le 1er mai 2027) et **désactivées** : `API_LEGACY_VERSIONS=v1,v2` les réactive le temps de migrer vos scripts, avec les en-têtes `Deprecation`/`Sunset` et un journal d'avertissement par appelant (jeton, user-agent, une ligne par heure) pour savoir qui les utilise encore. Les versions et leur état sont sur `GET /api/versions`. La v2 apportait la pagination par curseur, `ETag`/`If-Match` et les erreurs RFC 9457 ; la v3 y ajoute les commentaires, les permissions par page et les notifications (voir `docs/API-VERSIONING.md`).
 
 Principales routes : `GET/POST /spaces`, `GET/POST /pages`, `GET/PATCH/DELETE /pages/:id`, `POST /pages/:id/move`, `GET /pages/:id/versions`, `GET /search`, `POST /ai/ask` (SSE). Le détail complet est sur **`/api/docs`**.
 

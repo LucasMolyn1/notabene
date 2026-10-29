@@ -4,7 +4,7 @@ import { guard } from '../auth/context.js';
 import { audit } from '../lib/audit.js';
 import { randomToken } from '../lib/crypto.js';
 import { HttpError, idParams, newId } from '../lib/http.js';
-import { assertSafeUrl, deliver, startWebhooks, WEBHOOK_EVENTS } from '../lib/webhooks.js';
+import { assertSafeUrl, deliver, WEBHOOK_EVENTS } from '../lib/webhooks.js';
 
 const body = z.object({
   name: z.string().trim().min(1).max(80),
@@ -19,15 +19,11 @@ const view = (r: Row) => ({
   createdAt: r.created_at, lastStatus: r.last_status, lastAt: r.last_at, failures: r.failures,
 });
 
-// `start: false` pour les versions suivantes de l'API : la livraison des webhooks ne doit être démarrée qu'une fois.
-export default async function webhookRoutes(app: FastifyInstance, opts: { start?: boolean } = {}) {
+// La livraison des webhooks est démarrée une seule fois par app.ts, indépendamment des versions d'API servies.
+export default async function webhookRoutes(app: FastifyInstance) {
   const { db, box, config } = app;
   const tags = ['webhooks'];
   const allow = config.WEBHOOK_ALLOW_PRIVATE;
-  if (opts.start !== false) {
-    const stop = startWebhooks(db, app.bus, box, allow);
-    app.addHook('onClose', async () => { stop(); });
-  }
 
   const find = (id: string) => {
     const row = db.prepare('SELECT * FROM webhooks WHERE id = ?').get(id) as Row | undefined;

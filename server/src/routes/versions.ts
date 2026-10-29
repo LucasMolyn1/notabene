@@ -2,7 +2,7 @@
 // Une version « deprecated » reçoit les en-têtes Deprecation/Sunset (RFC 9745 / RFC 8594).
 import type { FastifyInstance } from 'fastify';
 
-export type VersionStatus = 'stable' | 'deprecated' | 'planned';
+export type VersionStatus = 'stable' | 'deprecated' | 'disabled';
 
 export interface ApiVersion {
   id: string;
@@ -13,8 +13,8 @@ export interface ApiVersion {
 }
 
 export const API_VERSIONS: ApiVersion[] = [
-  { id: 'v1', status: 'deprecated', basePath: '/api/v1', sunset: 'Sat, 01 May 2027 00:00:00 GMT', notes: 'Remplacée par v2 et v3 ; utilisée par le client web et le serveur MCP jusqu’à leur migration.' },
-  { id: 'v2', status: 'stable', basePath: '/api/v2', notes: 'Pagination par curseur et filtres, ETag/If-Match sur les pages, erreurs RFC 9457, évènements de webhooks étendus.' },
+  { id: 'v1', status: 'deprecated', basePath: '/api/v1', sunset: 'Sat, 01 May 2027 00:00:00 GMT', notes: 'Dépréciée : désactivée par défaut (API_LEGACY_VERSIONS=v1 pour la réactiver).' },
+  { id: 'v2', status: 'deprecated', basePath: '/api/v2', sunset: 'Sat, 01 May 2027 00:00:00 GMT', notes: 'Dépréciée : désactivée par défaut (API_LEGACY_VERSIONS=v2). Tout est repris par la v3.' },
   { id: 'v3', status: 'stable', basePath: '/api/v3', notes: 'Tout v2, plus commentaires de page et permissions fines par page. GraphQL non fourni.' },
 ];
 
@@ -27,8 +27,9 @@ export function deprecationHeaders(url: string): Record<string, string> {
 }
 
 export default async function versionRoutes(app: FastifyInstance) {
+  // Une version héritée non activée (API_LEGACY_VERSIONS) est annoncée « disabled ».
   app.get('/api/versions', { schema: { tags: ['meta'], summary: 'Versions de l’API et leur état' } }, async () => ({
     current: [...API_VERSIONS].reverse().find((v) => v.status === 'stable')?.id,
-    versions: API_VERSIONS,
+    versions: API_VERSIONS.map((v) => (v.status === 'deprecated' && !app.config.API_LEGACY_VERSIONS.includes(v.id as 'v1' | 'v2') ? { ...v, status: 'disabled' as VersionStatus, sunset: undefined } : v)),
   }));
 }
