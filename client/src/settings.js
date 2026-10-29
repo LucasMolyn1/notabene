@@ -448,7 +448,7 @@ async function renderUsers(el) {
 }
 
 const AUDIT_LABELS = {
-  'auth.login': 'Connexion', 'auth.logout': 'Déconnexion', 'auth.local.failed': 'Échec de connexion', 'auth.local.setup': 'Installation initiale', 'auth.local.password': 'Mot de passe modifié', 'auth.mfa.enable': 'MFA activée', 'auth.mfa.disable': 'MFA désactivée', 'backup.download': 'Sauvegarde téléchargée', 'user.create': 'Compte créé', 'user.update': 'Compte modifié', 'auth.denied': 'Accès refusé', 'auth.sessions.revoke': 'Sessions fermées',
+  'auth.login': 'Connexion', 'auth.logout': 'Déconnexion', 'auth.local.failed': 'Échec de connexion', 'auth.local.setup': 'Installation initiale', 'auth.local.password': 'Mot de passe modifié', 'auth.mfa.enable': 'MFA activée', 'auth.mfa.disable': 'MFA désactivée', 'backup.download': 'Sauvegarde téléchargée', 'import.markdown': 'Import Markdown', 'user.create': 'Compte créé', 'user.update': 'Compte modifié', 'auth.denied': 'Accès refusé', 'auth.sessions.revoke': 'Sessions fermées',
   'token.create': 'Jeton créé', 'token.revoke': 'Jeton révoqué', 'settings.ai': 'Réglages IA', 'ai.ask': 'Question IA',
   'space.create': 'Espace créé', 'space.delete': 'Espace supprimé', 'space.visibility': 'Visibilité modifiée',
   'page.destroy': 'Page supprimée définitivement', 'trash.empty': 'Corbeille vidée',
@@ -620,6 +620,54 @@ async function renderWebhooks(el, created = null) {
       h('div', null, h('button', { class: 'btn btn-primary btn-sm', onClick: create }, icon('plus', 15), 'Créer le webhook'))))].filter(Boolean));
 }
 
+// ---- Import Markdown / Wiki.js (admin) -------------------------------------------------
+
+function renderImport(el) {
+  const NEW = '__new__';
+  const spaceSel = h('select', { class: 'input' },
+    store.spaces.map((s) => h('option', { value: s.id }, s.name)),
+    h('option', { value: NEW }, 'Créer un nouvel espace…'));
+  const newName = h('input', { class: 'input', placeholder: 'Nom du nouvel espace', maxlength: '80', hidden: true });
+  spaceSel.addEventListener('change', () => { newName.hidden = spaceSel.value !== NEW; });
+  const folder = h('input', { type: 'file', webkitdirectory: '', multiple: true, class: 'input' });
+  const files = h('input', { type: 'file', multiple: true, accept: '.md,.markdown,text/markdown', class: 'input' });
+  const summary = h('div', { class: 'stack' });
+  const go = h('button', { class: 'btn btn-primary', type: 'button' }, icon('upload', 15), 'Importer');
+
+  go.addEventListener('click', async () => {
+    const picked = [...folder.files, ...files.files].filter((f) => /\.(md|markdown)$/i.test(f.name));
+    if (!picked.length) { toast('Sélectionnez un dossier ou des fichiers Markdown (.md).', { kind: 'error' }); return; }
+    go.disabled = true;
+    summary.replaceChildren(h('p', { class: 'muted' }, `Lecture de ${picked.length} fichier(s)…`));
+    try {
+      const payload = await Promise.all(picked.map(async (f) => ({ path: f.webkitRelativePath || f.name, content: await f.text() })));
+      let spaceId = spaceSel.value;
+      if (spaceId === NEW) spaceId = await store.createSpace({ name: newName.value.trim() || 'Import', icon: 'folder', description: '', visibility: 'private' });
+      const r = await api.post('/admin/import/markdown', { spaceId, files: payload });
+      summary.replaceChildren(h('div', { class: 'notice success stack' },
+        h('strong', null, 'Import terminé'),
+        h('p', null, `${r.pages} page(s) et ${r.folders} dossier(s) créés. Liens internes : ${r.links.resolved} résolus, ${r.links.unresolved} introuvables (laissés en texte).`),
+        r.images ? h('p', null, `${r.images} image(s) référencée(s) par chemin n’ont pas été importées (remplacées par « [Image : nom] »).`) : null,
+        h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => A.go(`/s/${spaceId}`) }, 'Ouvrir l’espace')));
+    } catch (err) {
+      summary.replaceChildren(h('div', { class: 'notice warning' }, err.message || 'Import impossible.'));
+    } finally {
+      go.disabled = false;
+    }
+  });
+
+  el.replaceChildren(
+    card('Importer du Markdown', 'Pour migrer depuis Wiki.js : activez le stockage « Local File System » ou « Git » (Administration > Stockage), lancez une synchronisation, puis sélectionnez ici le dossier obtenu. La hiérarchie, les titres (en-tête YAML), les tableaux, listes, blocs de code, diagrammes Mermaid / PlantUML, encadrés et liens internes sont conservés.', h('div', { class: 'stack' },
+      h('label', { class: 'field' }, h('span', null, 'Espace de destination'), spaceSel), newName,
+      h('label', { class: 'field' }, h('span', null, 'Dossier (ses sous-dossiers sont lus)'), folder),
+      h('label', { class: 'field' }, h('span', null, 'ou fichiers .md individuels'), files),
+      go, summary)),
+    card('Limites', null, h('ul', { class: 'perm-list' },
+      h('li', null, '2000 fichiers, 1 Mo par fichier et 25 Mo au total par import.'),
+      h('li', null, 'Les images référencées par chemin relatif ne sont pas importées ; seules les images en https ou intégrées (data) le sont.'),
+      h('li', null, 'Le HTML brut est ignoré. Un import crée toujours de nouvelles pages : il ne remplace rien.'))));
+}
+
 // ---- Page -----------------------------------------------------------------------------
 
 const SECTIONS = [
@@ -634,6 +682,7 @@ const SECTIONS = [
   { group: 'Administration', id: 'spaces', label: 'Espaces', ico: 'folder', admin: true, render: renderSpaces },
   { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', admin: true, render: renderAuth },
   { group: 'Administration', id: 'webhooks', label: 'Webhooks', ico: 'webhook', admin: true, render: renderWebhooks },
+  { group: 'Administration', id: 'import', label: 'Import', ico: 'upload', admin: true, render: renderImport },
   { group: 'Administration', id: 'users', label: 'Utilisateurs', ico: 'users', admin: true, render: renderUsers },
   { group: 'Administration', id: 'audit', label: 'Journal d’audit', ico: 'file', admin: true, render: renderAudit },
   { group: 'Administration', id: 'instance', label: 'Instance', ico: 'settings', admin: true, render: renderInstance },

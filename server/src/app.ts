@@ -22,6 +22,7 @@ import adminRoutes from './routes/admin.js';
 import aiRoutes from './routes/ai.js';
 import authRoutes from './routes/auth.js';
 import coreRoutes from './routes/core.js';
+import importRoutes from './routes/import.js';
 import localAuthRoutes from './routes/local-auth.js';
 import mcpRoutes from './routes/mcp.js';
 import pageRoutes from './routes/pages.js';
@@ -196,6 +197,7 @@ export async function buildApp({ config, db, logger = false, clientDir }: AppOpt
   await app.register(aiRoutes, { prefix: '/api/v1' });
   await app.register(adminRoutes, { prefix: '/api/v1' });
   await app.register(webhookRoutes, { prefix: '/api/v1' });
+  await app.register(importRoutes, { prefix: '/api/v1' });
   await app.register(mcpRoutes);
   await app.register(versionRoutes);
   app.get('/healthz', { schema: { hide: true } }, async () => ({ ok: true }));
