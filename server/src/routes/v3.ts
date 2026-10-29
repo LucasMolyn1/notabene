@@ -175,7 +175,17 @@ export default async function v3Routes(app: FastifyInstance) {
     const auth = requireAuth(req);
     const q = req.query as { cursor?: string; limit: number; unread: 'true' | 'false' };
     const after = decodeCursor(q.cursor, z.object({ c: z.number(), i: z.string() }));
-    const rows = visible(req, inbox(auth.user.id, q.unread === 'true', after, q.limit + 1) as NotifRow[]) as unknown as NotifRow[];
+    // Les pages devenues restreintes sont filtrées après lecture : on relit par lots jusqu'à remplir la page demandée.
+    const rows: NotifRow[] = [];
+    let cursor = after;
+    for (let round = 0; round < 20 && rows.length <= q.limit; round++) {
+      const batch = inbox(auth.user.id, q.unread === 'true', cursor, q.limit * 2);
+      if (!batch.length) break;
+      rows.push(...(visible(req, batch) as unknown as NotifRow[]));
+      const last = batch.at(-1)!;
+      cursor = { c: last.created_at, i: last.id };
+      if (batch.length < q.limit * 2) break;
+    }
     const items = rows.slice(0, q.limit);
     const last = items.at(-1);
     return { items: items.map(toItem), nextCursor: rows.length > q.limit && last ? encodeCursor({ c: last.created_at, i: last.id }) : null };

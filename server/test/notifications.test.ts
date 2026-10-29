@@ -129,4 +129,23 @@ describe('notifications', () => {
   it('exige d’être connecté', async () => {
     expect((await app.inject({ method: 'GET', url: '/api/v3/notifications' })).statusCode).toBe(401);
   });
+
+  it('remplit la page demandée malgré les pages restreintes (pagination)', async () => {
+    const [admin, ed1, ed2] = [await login('admin@example.com'), await login('ed1@example.com'), await login('ed2@example.com')];
+    const hidden = (db.prepare("SELECT id FROM pages WHERE title = 'Onboarding'").get() as { id: string }).id;
+    const open = pageId();
+    await call(ed2, 'PUT', `/api/v3/pages/${open}/watch`);
+    await call(ed2, 'PUT', `/api/v3/pages/${hidden}/watch`);
+    // 6 notifications sur la page cachée (récentes), 3 sur la page ouverte (anciennes).
+    for (let i = 0; i < 3; i++) await call(ed1, 'POST', `/api/v3/pages/${open}/comments`, { body: `o${i}` });
+    await new Promise((r) => setTimeout(r, 5));
+    for (let i = 0; i < 6; i++) await call(ed1, 'POST', `/api/v3/pages/${hidden}/comments`, { body: `h${i}` });
+    await call(admin, 'PUT', `/api/v3/pages/${hidden}/permissions`, { entries: [{ userId: 'ed1', level: 'write' }] });
+    const first = await inbox(ed2, '?limit=2');
+    expect(first.items).toHaveLength(2);
+    expect(first.items.every((i) => i.page.title === 'Bienvenue sur Notabene')).toBe(true);
+    const second = await inbox(ed2, `?limit=2&cursor=${first.nextCursor}`);
+    expect(second.items.length).toBeGreaterThan(0);
+    expect(JSON.stringify([first, second])).not.toContain('Onboarding');
+  });
 });

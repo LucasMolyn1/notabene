@@ -10,7 +10,12 @@ export class ApiError extends Error {
   }
 }
 
+// Seules les routes de l'application sont appelables : un identifiant tiré de l'URL de la page
+// (par exemple « ../ ») ne peut pas détourner la requête vers un autre chemin.
+const SAFE_URL = /^\/(api|auth)\/[A-Za-z0-9_\-./?=&%,:+]*$/;
+
 export async function request(method, url, body, extraHeaders = {}) {
+  if (!SAFE_URL.test(url) || url.includes('..') || url.includes('//')) throw new ApiError(400, 'Adresse de requête invalide', null);
   const headers = { ...extraHeaders };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (csrf && method !== 'GET') headers['X-CSRF-Token'] = csrf;
