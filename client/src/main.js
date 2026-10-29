@@ -12,14 +12,18 @@ import { prefs, savePrefs, app } from './prefs.js';
 import { presence } from './presence.js';
 import { renderSidebar } from './sidebar.js';
 import { showLogin, showMissing, showPage, showSpace, notifyStore, toastAuthError } from './views.js';
+import { showSettings } from './settings.js';
 import { h } from './util.js';
 import * as A from './actions.js';
 
 function route() {
   const path = location.hash.slice(1) || '/';
   let m;
-  if (!store.spaces.length) { showNoSpace(); scheduleSidebar(); return; }
-  if ((m = path.match(/^\/p\/([A-Za-z0-9_-]+)/))) showPage(m[1]);
+  if ((m = path.match(/^\/settings(?:\/([a-z-]+))?$/))) {
+    if (session.user) showSettings(m[1]);
+    else showLogin();
+  } else if (!store.spaces.length) { showNoSpace(); scheduleSidebar(); return; }
+  else if ((m = path.match(/^\/p\/([A-Za-z0-9_-]+)/))) showPage(m[1]);
   else if ((m = path.match(/^\/s\/([A-Za-z0-9_-]+)/))) showSpace(m[1]);
   else if (path !== '/') showMissing(null);
   else {

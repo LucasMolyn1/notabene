@@ -84,15 +84,4 @@ export default async function aiRoutes(app: FastifyInstance) {
       clearTimeout(timer);
     }
   });
-
-  app.get('/admin/audit', {
-    preHandler: guard('admin'),
-    schema: { tags: ['admin'], summary: 'Journal d’audit', querystring: z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) }) },
-  }, async (req) => {
-    const { limit } = req.query as { limit: number };
-    return db.prepare(
-      `SELECT a.id, a.at, a.action, a.target, a.ip, a.meta, u.name AS user FROM audit_log a
-       LEFT JOIN users u ON u.id = a.user_id ORDER BY a.id DESC LIMIT ?`,
-    ).all(limit);
-  });
 }

@@ -41,6 +41,7 @@ export function sessionAuth(db: DB, token: string): Auth | null {
     via: 'session',
     scopes: new Set(ALL_SCOPES),
     csrf: row.csrf,
+    sessionHash: row.id_hash,
   };
 }
 

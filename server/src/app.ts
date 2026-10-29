@@ -18,6 +18,7 @@ import { verifyApiToken } from './auth/tokens.js';
 import { SecretBox, safeEqual } from './lib/crypto.js';
 import { EventBus, Presence } from './lib/events.js';
 import { HttpError } from './lib/http.js';
+import adminRoutes from './routes/admin.js';
 import aiRoutes from './routes/ai.js';
 import authRoutes from './routes/auth.js';
 import coreRoutes from './routes/core.js';
@@ -185,6 +186,7 @@ export async function buildApp({ config, db, logger = false, clientDir }: AppOpt
   await app.register(pageRoutes, { prefix: '/api/v1' });
   await app.register(tokenRoutes, { prefix: '/api/v1' });
   await app.register(aiRoutes, { prefix: '/api/v1' });
+  await app.register(adminRoutes, { prefix: '/api/v1' });
   app.get('/healthz', { schema: { hide: true } }, async () => ({ ok: true }));
 
   // Front compilé (production) : fichiers statiques + repli SPA.
