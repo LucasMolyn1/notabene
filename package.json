@@ -40,6 +40,7 @@
     "marked": "^18.1.2",
     "nodemailer": "^10.3.1",
     "openid-client": "^6.8.8",
+    "undici": "^8.12.3",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.33",
     "zod": "^4.6.7"
