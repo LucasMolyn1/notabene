@@ -52,6 +52,36 @@ npm run dev                            # API sur :3000, interface sur http://loc
 - `OIDC_REQUIRE_MFA=true` refuse les connexions OIDC dont l’ID token ne contient pas de valeur `amr` prouvant un second facteur (`mfa`, `otp`, `hwk`…). Le fournisseur doit émettre ce claim ; la méthode la plus fiable reste d’exiger la MFA dans le flux d’authentification d’Authentik lui-même.
 - Les rôles des comptes locaux se gèrent dans l’application ; ceux des comptes OIDC restent issus des groupes.
 
+### LDAP / Active Directory
+
+`LDAP_URL` active la connexion par identifiant d’annuaire. Notabene cherche l’utilisateur avec un compte de service, puis vérifie son mot de passe par une liaison (bind) avec son propre DN : aucun mot de passe d’annuaire n’est stocké.
+
+```env
+LDAP_URL=ldaps://ad.example.org
+LDAP_BIND_DN=CN=svc-notabene,OU=Services,DC=example,DC=org
+LDAP_BIND_PASSWORD=…
+LDAP_BASE_DN=DC=example,DC=org
+LDAP_USER_FILTER=(|(sAMAccountName={username})(mail={username}))   # défaut
+LDAP_ADMIN_GROUPS=wiki-admins                  # CN ou DN complet, comparés à memberOf
+LDAP_EDITOR_GROUPS=wiki-editors
+LDAP_TLS_CA_FILE=/data/ca.pem                  # si l’AC est interne (à monter dans le conteneur)
+```
+
+`ldaps://` ou `LDAP_STARTTLS=true` est obligatoire en production. Les mots de passe vides sont refusés (liaison anonyme), l’identifiant est échappé dans le filtre (RFC 4515) et le rôle est recalculé à chaque connexion d’après les groupes. Pour Active Directory, `memberOf` ne liste que les groupes directs.
+
+### SAML 2.0
+
+`SAML_ENTRY_POINT` active le SSO SAML (initié par Notabene uniquement).
+
+```env
+SAML_ENTRY_POINT=https://idp.example.org/saml/sso
+SAML_IDP_CERT_FILE=/data/idp-cert.pem          # ou SAML_IDP_CERT (PEM, \n pour les retours à la ligne)
+SAML_ADMIN_GROUPS=wiki-admins
+SAML_GROUPS_ATTRIBUTE=groups                   # nom de l’attribut portant les groupes
+```
+
+Déclarez chez le fournisseur : ACS `PUBLIC_URL/auth/saml/callback`, entity ID `PUBLIC_URL/auth/saml/metadata` (les métadonnées XML sont servies à cette adresse). L’**assertion doit être signée** ; l’audience, `InResponseTo`, les dates et le rejeu sont contrôlés. Un SSO initié par le fournisseur est refusé volontairement.
+
 En développement, `DEV_LOGIN=true` permet de se connecter en admin, éditeur ou lecteur sans fournisseur d’identité. Le serveur **refuse de démarrer** si cette option est active en production.
 
 | Commande | Rôle |

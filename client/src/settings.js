@@ -54,8 +54,8 @@ async function renderProfile(el) {
       h('div', null,
         h('h2', null, u.name),
         h('p', { class: 'muted' }, u.email || 'Adresse e-mail non communiquée par le fournisseur'),
-        h('div', { class: 'row' }, pill(ROLE_LABELS[u.role], 'accent'), pill(security ? 'Compte local' : session.config.auth.oidc ? 'Connecté via Authentik (OIDC)' : 'Connexion de développement'))))),
-    card('Permissions', 'Votre rôle est attribué par vos groupes Authentik et recalculé à chaque connexion.',
+        h('div', { class: 'row' }, pill(ROLE_LABELS[u.role], 'accent'), pill({ local: 'Compte local', ldap: 'Annuaire LDAP / AD', saml: 'SSO SAML', oidc: 'Connecté via Authentik (OIDC)', dev: 'Connexion de développement' }[session.provider] || 'Connecté'))))),
+    card('Permissions', 'Votre rôle est attribué par vos groupes (fournisseur d’identité, annuaire) ou par un administrateur pour les comptes locaux.',
       h('ul', { class: 'perm-list' }, perms.map(([key, label]) => h('li', { class: session.can(key) ? 'ok' : 'off' }, icon(session.can(key) ? 'check' : 'x', 14), ' ', label)))),
     security,
     card('Sessions actives', 'Chaque navigateur connecté ouvre une session distincte, valable au maximum la durée configurée.', sessionsBox),
@@ -448,7 +448,7 @@ async function renderUsers(el) {
 }
 
 const AUDIT_LABELS = {
-  'auth.login': 'Connexion', 'auth.logout': 'Déconnexion', 'auth.local.failed': 'Échec de connexion', 'auth.local.setup': 'Installation initiale', 'auth.local.password': 'Mot de passe modifié', 'auth.mfa.enable': 'MFA activée', 'auth.mfa.disable': 'MFA désactivée', 'backup.download': 'Sauvegarde téléchargée', 'import.markdown': 'Import Markdown', 'user.create': 'Compte créé', 'user.update': 'Compte modifié', 'auth.denied': 'Accès refusé', 'auth.sessions.revoke': 'Sessions fermées',
+  'auth.login': 'Connexion', 'auth.logout': 'Déconnexion', 'auth.local.failed': 'Échec de connexion', 'auth.ldap.failed': 'Échec de connexion LDAP', 'auth.saml.failed': 'Réponse SAML refusée', 'auth.local.setup': 'Installation initiale', 'auth.local.password': 'Mot de passe modifié', 'auth.mfa.enable': 'MFA activée', 'auth.mfa.disable': 'MFA désactivée', 'backup.download': 'Sauvegarde téléchargée', 'import.markdown': 'Import Markdown', 'user.create': 'Compte créé', 'user.update': 'Compte modifié', 'auth.denied': 'Accès refusé', 'auth.sessions.revoke': 'Sessions fermées',
   'token.create': 'Jeton créé', 'token.revoke': 'Jeton révoqué', 'settings.ai': 'Réglages IA', 'ai.ask': 'Question IA',
   'space.create': 'Espace créé', 'space.delete': 'Espace supprimé', 'space.visibility': 'Visibilité modifiée',
   'page.destroy': 'Page supprimée définitivement', 'trash.empty': 'Corbeille vidée',

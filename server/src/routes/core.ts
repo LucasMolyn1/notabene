@@ -7,11 +7,14 @@ import { readableSpaceIds } from '../lib/access.js';
 import type { AppEvent } from '../lib/events.js';
 import { idSchema } from '../lib/http.js';
 
+// Origine du compte d'après le préfixe de son identifiant (sub).
+const providerOf = (sub: string) => (sub.startsWith('local:') ? 'local' : sub.startsWith('ldap:') ? 'ldap' : sub.startsWith('saml:') ? 'saml' : sub.startsWith('dev-') ? 'dev' : 'oidc');
+
 export default async function coreRoutes(app: FastifyInstance) {
   const { db, config } = app;
 
   app.get('/config', { schema: { tags: ['session'], summary: 'Configuration publique de l’instance', security: [] } }, async () => ({
-    auth: { oidc: !!app.oidc, devLogin: config.DEV_LOGIN, local: config.AUTH_LOCAL, setupRequired: config.AUTH_LOCAL && !(app.db.prepare("SELECT 1 FROM users WHERE role = 'admin' AND password_hash IS NOT NULL LIMIT 1").get()) },
+    auth: { oidc: !!app.oidc, devLogin: config.DEV_LOGIN, local: config.AUTH_LOCAL, ldap: !!config.LDAP_URL, saml: !!config.SAML_ENTRY_POINT, setupRequired: config.AUTH_LOCAL && !(app.db.prepare("SELECT 1 FROM users WHERE role = 'admin' AND password_hash IS NOT NULL LIMIT 1").get()) },
     drawioUrl: config.DRAWIO_URL ?? null,
     ai: isAiReady(db),
   }));
@@ -22,6 +25,7 @@ export default async function coreRoutes(app: FastifyInstance) {
       user: auth?.user ?? null,
       via: auth?.via ?? null,
       mfaSetupRequired: !!auth?.mfaPending,
+      provider: auth ? providerOf((db.prepare('SELECT sub FROM users WHERE id = ?').get(auth.user.id) as { sub: string } | undefined)?.sub ?? '') : null,
       csrf: auth?.via === 'session' ? auth.csrf : null,
       permissions: {
         read: can(auth, 'read'),

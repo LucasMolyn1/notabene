@@ -27,6 +27,7 @@ import localAuthRoutes from './routes/local-auth.js';
 import mcpRoutes from './routes/mcp.js';
 import pageRoutes from './routes/pages.js';
 import spaceRoutes from './routes/spaces.js';
+import ssoRoutes from './routes/sso.js';
 import tokenRoutes from './routes/tokens.js';
 import versionRoutes from './routes/versions.js';
 import webhookRoutes from './routes/webhooks.js';
@@ -49,9 +50,11 @@ export interface AppOptions {
   db: DB;
   logger?: FastifyServerOptions['logger'];
   clientDir?: string;
+  // Annuaire LDAP injectable (tests) ; par défaut construit d'après LDAP_URL.
+  ldap?: import('./auth/ldap.js').LdapDirectory;
 }
 
-export async function buildApp({ config, db, logger = false, clientDir }: AppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, db, logger = false, clientDir, ldap }: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger === false ? false : {
       ...(typeof logger === 'object' ? logger : {}),
@@ -190,6 +193,7 @@ export async function buildApp({ config, db, logger = false, clientDir }: AppOpt
 
   await app.register(authRoutes);
   await app.register(localAuthRoutes, { prefix: '' });
+  await app.register(ssoRoutes, { ldap });
   await app.register(coreRoutes, { prefix: '/api/v1' });
   await app.register(spaceRoutes, { prefix: '/api/v1' });
   await app.register(pageRoutes, { prefix: '/api/v1' });

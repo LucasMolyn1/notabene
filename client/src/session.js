@@ -4,14 +4,16 @@ import { api, request, setCsrf } from './api.js';
 export const session = {
   user: null,
   mfaSetupRequired: false,
+  provider: null,
   permissions: { read: false, write: false, ai: false, admin: false },
-  config: { auth: { oidc: false, devLogin: false, local: false, setupRequired: false }, drawioUrl: null, ai: false },
+  config: { auth: { oidc: false, devLogin: false, local: false, setupRequired: false, ldap: false, saml: false }, drawioUrl: null, ai: false },
 
   async load() {
     const [config, me] = await Promise.all([api.get('/config'), api.get('/me')]);
     this.config = config;
     this.user = me.user;
     this.mfaSetupRequired = !!me.mfaSetupRequired;
+    this.provider = me.provider;
     this.permissions = me.permissions;
     setCsrf(me.csrf);
   },

@@ -144,3 +144,18 @@ export async function showMfaSetup(main, logout) {
     sec,
     h('div', null, h('button', { class: 'btn btn-ghost btn-sm', onClick: logout }, 'Se déconnecter')))));
 }
+
+// Connexion LDAP / Active Directory : identifiant de l'annuaire + mot de passe.
+export function ldapLoginForm() {
+  const error = h('div', { class: 'notice warning', hidden: true });
+  const user = input({ autocomplete: 'username', required: true, maxlength: '128' });
+  const pass = input({ type: 'password', autocomplete: 'current-password', required: true, maxlength: '256' });
+  const button = h('button', { class: 'btn btn-primary btn-lg', type: 'submit' }, 'Se connecter avec l’annuaire');
+  return h('form', { class: 'stack login-form', onSubmit: async (e) => {
+    e.preventDefault();
+    await submit(button, error, async () => {
+      const { redirect } = await request('POST', '/auth/ldap/login', { username: user.value, password: pass.value });
+      location.href = redirect || '/';
+    });
+  } }, field('Identifiant de l’annuaire', user), field('Mot de passe', pass), error, button);
+}
