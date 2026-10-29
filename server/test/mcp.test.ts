@@ -87,7 +87,11 @@ describe('serveur MCP', () => {
 describe('versions d’API', () => {
   it('liste les versions et leur état', async () => {
     const res = (await app.inject({ method: 'GET', url: '/api/versions' })).json();
-    expect(res.current).toBe('v1');
-    expect(res.versions.map((v: { id: string }) => v.id)).toEqual(['v1', 'v2', 'v3']);
+    expect(res.current).toBe('v3');
+    expect(res.versions.map((v: { id: string; status: string }) => [v.id, v.status])).toEqual([['v1', 'deprecated'], ['v2', 'stable'], ['v3', 'stable']]);
+    const v1 = await app.inject({ method: 'GET', url: '/api/v1/config' });
+    expect(v1.headers.deprecation).toBe('true');
+    expect(v1.headers.sunset).toMatch(/2027/);
+    expect((await app.inject({ method: 'GET', url: '/api/v2/config' })).headers.deprecation).toBeUndefined();
   });
 });

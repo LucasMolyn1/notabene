@@ -173,6 +173,31 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX password_resets_user ON password_resets(user_id);
   `,
+  `
+  -- Permissions fines par page : dès qu'une page (ou un ancêtre) a des entrées, seuls les utilisateurs listés y accèdent.
+  CREATE TABLE page_acl (
+    page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    level   TEXT NOT NULL CHECK (level IN ('read', 'write')),
+    PRIMARY KEY (page_id, user_id)
+  );
+  CREATE INDEX page_acl_user ON page_acl(user_id);
+
+  -- Commentaires de page : fils à un niveau, suppression logique.
+  CREATE TABLE page_comments (
+    id          TEXT PRIMARY KEY,
+    page_id     TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    parent_id   TEXT REFERENCES page_comments(id) ON DELETE CASCADE,
+    author_id   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    body        TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    resolved_at INTEGER,
+    resolved_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    deleted_at  INTEGER
+  );
+  CREATE INDEX page_comments_page ON page_comments(page_id, created_at);
+  `,
 ];
 
 export function openDb(file: string): DB {

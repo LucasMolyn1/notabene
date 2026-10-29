@@ -16,11 +16,14 @@ import { OidcClient } from './auth/oidc.js';
 import { Mailer } from './lib/mail.js';
 import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
+import pagesV2 from './routes/pages-v2.js';
+import v3Routes from './routes/v3.js';
 import { sessionAuth, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
 import { SecretBox, safeEqual } from './lib/crypto.js';
 import { EventBus, Presence } from './lib/events.js';
 import { HttpError } from './lib/http.js';
+import { problem, usesProblemFormat } from './lib/problem.js';
 import adminRoutes from './routes/admin.js';
 import aiRoutes from './routes/ai.js';
 import authRoutes from './routes/auth.js';
@@ -34,7 +37,7 @@ import pageRoutes from './routes/pages.js';
 import spaceRoutes from './routes/spaces.js';
 import ssoRoutes from './routes/sso.js';
 import tokenRoutes from './routes/tokens.js';
-import versionRoutes from './routes/versions.js';
+import versionRoutes, { deprecationHeaders } from './routes/versions.js';
 import webhookRoutes from './routes/webhooks.js';
 
 declare module 'fastify' {
@@ -93,24 +96,30 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     return result.success ? { value: result.data } : { error: result.error };
   });
 
+  // Format d'erreur : JSON historique en v1, problem+json (RFC 9457) à partir de la v2.
+  const fail = (req: { url: string }, reply: import('fastify').FastifyReply, status: number, legacy: Record<string, unknown>, extensions: Record<string, unknown> = {}) => {
+    const message = String(legacy.message ?? '');
+    if (usesProblemFormat(req.url)) {
+      return reply.status(status).type('application/problem+json').send(problem(status, message, req.url, { ...extensions, code: legacy.error }));
+    }
+    return reply.status(status).send({ ...legacy, ...extensions });
+  };
+
   app.setErrorHandler((err, req, reply) => {
     const error = err as Error & { statusCode?: number; validation?: unknown; validationContext?: string };
     if (err instanceof ZodError || error.validation) {
       const zerr = err instanceof ZodError ? err : null;
-      return reply.status(400).send({
-        error: 'validation',
-        message: 'Requête invalide',
-        issues: zerr?.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) ?? [],
-      });
+      const issues = zerr?.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) ?? [];
+      return fail(req, reply, 400, { error: 'validation', message: 'Requête invalide', issues }, usesProblemFormat(req.url) ? { errors: issues } : {});
     }
     if (err instanceof HttpError) {
-      return reply.status(err.statusCode).send({ error: 'http', message: err.message, ...(err.details ?? {}) });
+      return fail(req, reply, err.statusCode, { error: 'http', message: err.message }, err.details ?? {});
     }
     if (error.statusCode && error.statusCode < 500) {
-      return reply.status(error.statusCode).send({ error: 'http', message: error.message });
+      return fail(req, reply, error.statusCode, { error: 'http', message: error.message });
     }
     req.log.error({ err }, 'erreur interne');
-    return reply.status(500).send({ error: 'internal', message: 'Erreur interne' });
+    return fail(req, reply, 500, { error: 'internal', message: 'Erreur interne' });
   });
 
   await app.register(cookie);
@@ -181,6 +190,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
 
   app.addHook('onSend', async (_req, reply, payload) => {
     if (!reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
+    reply.headers(deprecationHeaders(_req.url));
     return payload;
   });
 
@@ -221,6 +231,22 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   await app.register(settingsRoutes, { prefix: '/api/v1', ldapFactory });
   await app.register(webhookRoutes, { prefix: '/api/v1' });
   await app.register(importRoutes, { prefix: '/api/v1' });
+  // v2 et v3 : mêmes ressources, logique et contrôles d'accès que v1 (lib/), avec les changements propres à chaque version.
+  const versioned = async (scope: FastifyInstance, opts: { version: 2 | 3 }) => {
+    await scope.register(coreRoutes);
+    await scope.register(spaceRoutes);
+    await scope.register(pageRoutes, { version: opts.version });
+    await scope.register(pagesV2);
+    await scope.register(tokenRoutes);
+    await scope.register(aiRoutes);
+    await scope.register(adminRoutes);
+    await scope.register(settingsRoutes, { ldapFactory });
+    await scope.register(webhookRoutes, { start: false });
+    await scope.register(importRoutes);
+    if (opts.version === 3) await scope.register(v3Routes);
+  };
+  await app.register(versioned, { prefix: '/api/v2', version: 2 });
+  await app.register(versioned, { prefix: '/api/v3', version: 3 });
   await app.register(mcpRoutes);
   await app.register(versionRoutes);
   app.get('/healthz', { schema: { hide: true } }, async () => ({ ok: true }));
@@ -243,7 +269,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     if (hasClient && req.method === 'GET' && !isApi) {
       return reply.header('cache-control', 'no-cache').sendFile('index.html');
     }
-    return reply.status(404).send({ error: 'not_found', message: 'Ressource introuvable' });
+    return fail(req, reply, 404, { error: 'not_found', message: 'Ressource introuvable' });
   });
 
   return app;

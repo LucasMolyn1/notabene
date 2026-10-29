@@ -230,6 +230,12 @@ export class CollabHub {
   }
 
   // Arrêt du serveur : sauvegarde toutes les salles.
+  // Ferme toutes les salles (code RELOAD) : les clients se reconnectent et repassent le contrôle d'accès
+  // (changement de permissions d'une page).
+  evictAll() {
+    for (const room of [...this.#rooms.values()]) this.#close(room, CLOSE.RELOAD, true);
+  }
+
   shutdown() {
     this.#unsubscribe();
     for (const room of [...this.#rooms.values()]) this.#close(room, 1001, false);
