@@ -1,6 +1,5 @@
 // Configuration modifiable depuis l'interface (admin) : intégration portfolio, OIDC, LDAP, SAML, SMTP.
 // Chaque écriture exige une nouvelle preuve d'identité, un test de connexion réussi (sauf intégration) et laisse une trace d'audit.
-import { createHmac, randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard } from '../auth/context.js';
@@ -8,6 +7,7 @@ import type { Config } from '../config.js';
 import { type ClientFactory, LdapDirectory } from '../auth/ldap.js';
 import { probeOidc } from '../auth/oidc.js';
 import { samlFor } from '../auth/saml.js';
+import { randomToken } from '../lib/crypto.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/http.js';
 import { mails } from '../lib/mail.js';
@@ -32,13 +32,10 @@ const canonical = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typ
 export default async function settingsRoutes(app: FastifyInstance, opts: { ldapFactory?: ClientFactory } = {}) {
   const { db, rt } = app;
   const tags = ['admin'];
-  // Tests réussis : empreinte (utilisateur + section + contenu exact) -> expiration. Valable une fois.
-  const passed = new Map<string, number>();
-  // Empreinte à clé aléatoire propre au processus : le contenu (secrets compris) n'est jamais haché « à nu ».
-  const fpKey = randomBytes(32);
-  const fingerprint = (userId: string, section: SectionName, body: z.output<typeof writeBody>) =>
-    createHmac('sha256', fpKey).update(canonical([userId, section, body.config, body.secrets])).digest('hex');
-  const sweep = () => { const now = Date.now(); for (const [k, exp] of passed) if (exp < now) passed.delete(k); };
+  // Tests réussis : identifiant aléatoire -> contenu exact testé (en mémoire seulement) + expiration. Valable une fois.
+  const passed = new Map<string, { content: string; exp: number }>();
+  const contentOf = (userId: string, section: SectionName, body: z.output<typeof writeBody>) => canonical([userId, section, body.config, body.secrets]);
+  const sweep = () => { const now = Date.now(); for (const [k, v] of passed) if (v.exp < now) passed.delete(k); };
 
   // Test de connexion propre à chaque section (table de correspondance, pas de branchement sur l'entrée).
   const testers: Record<SectionName, (cfg: Config) => Promise<string>> = {
@@ -106,8 +103,8 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
       return { ok: false, message: String((err as Error).message || 'échec').slice(0, 300), testId: null };
     }
     sweep();
-    const id = fingerprint(auth.user.id, section, body);
-    passed.set(id, Date.now() + TEST_TTL);
+    const id = randomToken(24);
+    passed.set(id, { content: contentOf(auth.user.id, section, body), exp: Date.now() + TEST_TTL });
     audit(db, req, 'settings.test', section);
     return { ok: true, message, testId: id };
   });
@@ -119,10 +116,9 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
     if (rt.locked) throw new HttpError(409, 'Configuration verrouillée par l’environnement (CONFIG_LOCKED).');
     await requireReauth(app, req, body.reauth);
     if (needsTest(section)) {
-      const id = fingerprint(auth.user.id, section, body);
-      const exp = passed.get(id);
-      if (!exp || exp < Date.now() || body.testId !== id) throw new HttpError(409, 'Testez la connexion avec cette configuration avant de l’enregistrer.');
-      passed.delete(id);
+      const hit = body.testId ? passed.get(body.testId) : undefined;
+      if (!hit || hit.exp < Date.now() || hit.content !== contentOf(auth.user.id, section, body)) throw new HttpError(409, 'Testez la connexion avec cette configuration avant de l’enregistrer.');
+      passed.delete(body.testId!);
     }
     const view = wrap(() => rt.save(section, body.config, secretsOf(section, body.secrets), auth.user.id));
     audit(db, req, `settings.${section}`, section, { enabled: view.enabled, secretsChanged: Object.keys(body.secrets) });
