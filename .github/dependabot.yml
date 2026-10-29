@@ -4,14 +4,45 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Laisse quelques jours à l'écosystème pour détecter une version compromise avant de la proposer.
+    cooldown:
+      default-days: 5
+      semver-major-days: 14
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: deps
     groups:
       tiptap:
         patterns: ['@tiptap/*']
+      fastify:
+        patterns: ['fastify', '@fastify/*']
+
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: deps
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: deps
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ['*']
