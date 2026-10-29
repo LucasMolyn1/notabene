@@ -167,7 +167,7 @@ function sectionForm(name, view, { onChange, extra = [] }) {
   const save = h('button', { class: 'btn btn-primary btn-sm', disabled: true }, 'Enregistrer');
   const test = h('button', { class: 'btn btn-ghost btn-sm', disabled }, 'Tester la connexion');
   const needsTest = () => name !== 'embed';
-  const sync = () => { save.disabled = disabled || (needsTest() && enabled.checked && !testId); };
+  const sync = () => { save.disabled = disabled || (needsTest() && !testId); };
   const dirty = () => { testId = null; result.hidden = true; sync(); };
   const form = h('div', { class: 'prov-form' },
     h('label', { class: 'field row' }, enabled, h('strong', null, 'Activé')),

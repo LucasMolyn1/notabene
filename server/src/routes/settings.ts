@@ -1,9 +1,10 @@
 // Configuration modifiable depuis l'interface (admin) : intégration portfolio, OIDC, LDAP, SAML, SMTP.
 // Chaque écriture exige une nouvelle preuve d'identité, un test de connexion réussi (sauf intégration) et laisse une trace d'audit.
-import { createHash } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard } from '../auth/context.js';
+import type { Config } from '../config.js';
 import { type ClientFactory, LdapDirectory } from '../auth/ldap.js';
 import { probeOidc } from '../auth/oidc.js';
 import { samlFor } from '../auth/saml.js';
@@ -33,9 +34,34 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
   const tags = ['admin'];
   // Tests réussis : empreinte (utilisateur + section + contenu exact) -> expiration. Valable une fois.
   const passed = new Map<string, number>();
+  // Empreinte à clé aléatoire propre au processus : le contenu (secrets compris) n'est jamais haché « à nu ».
+  const fpKey = randomBytes(32);
   const fingerprint = (userId: string, section: SectionName, body: z.output<typeof writeBody>) =>
-    createHash('sha256').update(canonical([userId, section, body.config, body.secrets])).digest('hex');
+    createHmac('sha256', fpKey).update(canonical([userId, section, body.config, body.secrets])).digest('hex');
   const sweep = () => { const now = Date.now(); for (const [k, exp] of passed) if (exp < now) passed.delete(k); };
+
+  // Test de connexion propre à chaque section (table de correspondance, pas de branchement sur l'entrée).
+  const testers: Record<SectionName, (cfg: Config) => Promise<string>> = {
+    embed: async () => 'Aucun test nécessaire.',
+    oidc: async (cfg) => {
+      const r = await probeOidc(cfg);
+      return `Fournisseur joint (${r.issuer}). Points d’accès : ${r.endpoints.join(', ')}. La connexion complète sera vérifiée à la première authentification.`;
+    },
+    ldap: async (cfg) => {
+      await new LdapDirectory(cfg, opts.ldapFactory).test();
+      return 'Liaison avec le compte de service réussie et racine de recherche lisible.';
+    },
+    saml: async (cfg) => {
+      samlFor(cfg).generateServiceProviderMetadata(null, null);
+      const res = await fetch(cfg.SAML_ENTRY_POINT!, { redirect: 'manual', signal: AbortSignal.timeout(6000) });
+      if (res.status >= 500) throw new Error(`le point d’entrée répond ${res.status}`);
+      return 'Certificat valide et point d’entrée joignable.';
+    },
+    smtp: async (cfg) => {
+      await app.mail.verify(cfg);
+      return 'Connexion SMTP et authentification réussies (aucun message envoyé).';
+    },
+  };
 
   const adminSession = (req: Parameters<ReturnType<typeof guard>>[0]) => {
     if (req.auth?.via !== 'session') throw new HttpError(403, 'Disponible uniquement depuis l’interface web');
@@ -69,26 +95,12 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
     const { section } = req.params as z.output<typeof sectionParams>;
     const body = req.body as z.output<typeof writeBody>;
     await requireReauth(app, req, body.reauth);
-    if (!needsTest(section) || !body.config.enabled) return { ok: true, message: 'Aucun test nécessaire.', testId: null };
-    const cfg = wrap(() => rt.candidate(section, body.config, secretsOf(section, body.secrets)));
+    if (!needsTest(section)) return { ok: true, message: 'Aucun test nécessaire.', testId: null };
+    // Configuration invalide : erreur 400 (avant le test réseau).
+    const cfg = body.config.enabled ? wrap(() => rt.candidate(section, body.config, secretsOf(section, body.secrets))) : null;
     let message: string;
     try {
-      if (section === 'oidc') {
-        const r = await probeOidc(cfg);
-        message = `Fournisseur joint (${r.issuer}). Points d’accès : ${r.endpoints.join(', ')}. La connexion complète sera vérifiée à la première authentification.`;
-      } else if (section === 'ldap') {
-        await new LdapDirectory(cfg, opts.ldapFactory).test();
-        message = 'Liaison avec le compte de service réussie et racine de recherche lisible.';
-      } else if (section === 'saml') {
-        const saml = samlFor(cfg);
-        saml.generateServiceProviderMetadata(null, null);
-        const res = await fetch(cfg.SAML_ENTRY_POINT!, { redirect: 'manual', signal: AbortSignal.timeout(6000) });
-        if (res.status >= 500) throw new Error(`le point d’entrée répond ${res.status}`);
-        message = 'Certificat valide et point d’entrée joignable.';
-      } else {
-        await app.mail.verify(cfg);
-        message = 'Connexion SMTP et authentification réussies (aucun message envoyé).';
-      }
+      message = cfg ? await testers[section](cfg) : 'Section désactivée : rien à tester.';
     } catch (err) {
       audit(db, req, 'settings.test.failed', section);
       return { ok: false, message: String((err as Error).message || 'échec').slice(0, 300), testId: null };
@@ -106,7 +118,7 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
     const body = req.body as z.output<typeof writeBody>;
     if (rt.locked) throw new HttpError(409, 'Configuration verrouillée par l’environnement (CONFIG_LOCKED).');
     await requireReauth(app, req, body.reauth);
-    if (needsTest(section) && body.config.enabled) {
+    if (needsTest(section)) {
       const id = fingerprint(auth.user.id, section, body);
       const exp = passed.get(id);
       if (!exp || exp < Date.now() || body.testId !== id) throw new HttpError(409, 'Testez la connexion avec cette configuration avant de l’enregistrer.');
