@@ -31,7 +31,7 @@ export default async function authRoutes(app: FastifyInstance) {
     schema: { hide: true, querystring: z.object({ returnTo: z.string().max(512).optional() }) },
   }, async (req, reply) => {
     const { returnTo } = req.query as { returnTo?: string };
-    if (!oidc) {
+    if (!oidc.enabled) {
       if (config.DEV_LOGIN) return reply.redirect(`/?dev_login=1&returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`);
       throw new HttpError(503, 'Fournisseur d’identité non configuré');
     }
@@ -40,17 +40,18 @@ export default async function authRoutes(app: FastifyInstance) {
   });
 
   app.get('/auth/callback', { config: authRateLimit, schema: { hide: true } }, async (req, reply) => {
-    if (!oidc) throw new HttpError(404, 'Introuvable');
+    if (!oidc.enabled) throw new HttpError(404, 'Introuvable');
     const url = new URL(req.url, config.PUBLIC_URL);
     const idpError = url.searchParams.get('error');
     if (idpError) return reply.redirect(`/?auth_error=${encodeURIComponent(idpError.replace(/[^a-z_]/gi, '').slice(0, 40))}`);
     try {
       const { profile, idToken, returnTo } = await oidc.handleCallback(url);
-      if (config.OIDC_REQUIRE_MFA && !hasMfaClaim(profile)) {
+      const live = app.rt.get();
+      if (live.OIDC_REQUIRE_MFA && !hasMfaClaim(profile)) {
         audit(db, req, 'auth.denied', String(profile.sub), { reason: 'mfa' });
         return reply.redirect('/?auth_error=mfa_required');
       }
-      const role = roleFromGroups(profile.groups, config);
+      const role = roleFromGroups(profile.groups, live);
       if (!role) {
         audit(db, req, 'auth.denied', String(profile.sub));
         return reply.redirect('/?auth_error=forbidden');
@@ -79,7 +80,7 @@ export default async function authRoutes(app: FastifyInstance) {
     if (token) {
       if (req.auth) audit(db, req, 'auth.logout', req.auth.user.id);
       const idToken = destroySession(db, token);
-      if (oidc) redirect = (await oidc.logoutUrl(idToken)) ?? '/';
+      if (oidc.enabled) redirect = (await oidc.logoutUrl(idToken)) ?? '/';
     }
     reply.clearCookie(cookieName, cookieOptions);
     return { redirect };

@@ -162,6 +162,17 @@ const MIGRATIONS: string[] = [
     updated_at   INTEGER NOT NULL
   );
   `,
+  `
+  -- Jetons à usage unique (réinitialisation de mot de passe, invitation) : seul le hash est stocké.
+  CREATE TABLE password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL CHECK (kind IN ('reset', 'invite')),
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX password_resets_user ON password_resets(user_id);
+  `,
 ];
 
 export function openDb(file: string): DB {
@@ -189,5 +200,6 @@ export function cleanup(db: DB) {
   const now = Date.now();
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
   db.prepare('DELETE FROM login_states WHERE expires_at < ?').run(now);
+  db.prepare('DELETE FROM password_resets WHERE expires_at < ?').run(now);
   db.prepare('DELETE FROM audit_log WHERE at < ?').run(now - 365 * 86_400_000);
 }

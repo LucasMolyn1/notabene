@@ -14,7 +14,7 @@ export default async function coreRoutes(app: FastifyInstance) {
   const { db, config } = app;
 
   app.get('/config', { schema: { tags: ['session'], summary: 'Configuration publique de l’instance', security: [] } }, async () => ({
-    auth: { oidc: !!app.oidc, devLogin: config.DEV_LOGIN, local: config.AUTH_LOCAL, ldap: !!config.LDAP_URL, saml: !!config.SAML_ENTRY_POINT, setupRequired: config.AUTH_LOCAL && !(app.db.prepare("SELECT 1 FROM users WHERE role = 'admin' AND password_hash IS NOT NULL LIMIT 1").get()) },
+    auth: { oidc: app.oidc.enabled, devLogin: config.DEV_LOGIN, local: config.AUTH_LOCAL, ldap: !!app.rt.get().LDAP_URL, saml: !!app.rt.get().SAML_ENTRY_POINT, mail: !!app.rt.get().SMTP_HOST, setupRequired: config.AUTH_LOCAL && !(app.db.prepare("SELECT 1 FROM users WHERE role = 'admin' AND password_hash IS NOT NULL LIMIT 1").get()) },
     drawioUrl: config.DRAWIO_URL ?? null,
     collab: config.COLLAB_ENABLED,
     ai: isAiReady(db),

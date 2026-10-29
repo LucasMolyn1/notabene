@@ -13,6 +13,9 @@ import { z, ZodError, type ZodType } from 'zod';
 import type { Config } from './config.js';
 import type { DB } from './db.js';
 import { OidcClient } from './auth/oidc.js';
+import { Mailer } from './lib/mail.js';
+import { RuntimeSettings } from './lib/runtime-settings.js';
+import settingsRoutes from './routes/settings.js';
 import { sessionAuth, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
 import { SecretBox, safeEqual } from './lib/crypto.js';
@@ -41,7 +44,9 @@ declare module 'fastify' {
     box: SecretBox;
     bus: EventBus;
     presence: Presence;
-    oidc: OidcClient | null;
+    oidc: OidcClient;
+    rt: RuntimeSettings;
+    mail: Mailer;
   }
 }
 
@@ -54,9 +59,12 @@ export interface AppOptions {
   clientDir?: string;
   // Annuaire LDAP injectable (tests) ; par défaut construit d'après LDAP_URL.
   ldap?: import('./auth/ldap.js').LdapDirectory;
+  // Injections pour les tests : client LDAP du test de connexion, expéditeur d'e-mails.
+  ldapFactory?: import('./auth/ldap.js').ClientFactory;
+  mailer?: Mailer;
 }
 
-export async function buildApp({ config, db, logger = false, clientDir, ldap }: AppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, db, logger = false, clientDir, ldap, ldapFactory, mailer }: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger === false ? false : {
       ...(typeof logger === 'object' ? logger : {}),
@@ -68,11 +76,15 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap }: 
 
   app.decorate('db', db);
   app.decorate('config', config);
-  app.decorate('box', new SecretBox(config.ENCRYPTION_KEY));
+  const box = new SecretBox(config.ENCRYPTION_KEY);
+  app.decorate('box', box);
+  const rt = new RuntimeSettings(config, db, box);
+  app.decorate('rt', rt);
+  app.decorate('mail', mailer ?? new Mailer(() => rt.get()));
   const bus = new EventBus();
   app.decorate('bus', bus);
   app.decorate('presence', new Presence(bus));
-  app.decorate('oidc', config.OIDC_ISSUER ? new OidcClient(config, db) : null);
+  app.decorate('oidc', new OidcClient(() => rt.get(), db));
   app.decorateRequest('auth', null);
 
   // Validation des entrées par schémas Zod.
@@ -119,7 +131,8 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap }: 
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'"],
-        frameAncestors: ["'self'", ...config.EMBED_ALLOWED_ORIGINS],
+        // Liste relue à chaque réponse : elle se modifie depuis les paramètres sans redémarrage.
+        frameAncestors: [() => ["'self'", ...rt.get().EMBED_ALLOWED_ORIGINS].join(' ')],
         ...(config.secureCookies ? { upgradeInsecureRequests: [] } : {}),
       },
     },
@@ -205,6 +218,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap }: 
   await app.register(tokenRoutes, { prefix: '/api/v1' });
   await app.register(aiRoutes, { prefix: '/api/v1' });
   await app.register(adminRoutes, { prefix: '/api/v1' });
+  await app.register(settingsRoutes, { prefix: '/api/v1', ldapFactory });
   await app.register(webhookRoutes, { prefix: '/api/v1' });
   await app.register(importRoutes, { prefix: '/api/v1' });
   await app.register(mcpRoutes);

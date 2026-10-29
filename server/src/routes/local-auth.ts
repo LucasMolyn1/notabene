@@ -6,11 +6,14 @@ import { z } from 'zod';
 import { requireAuth } from '../auth/context.js';
 import { createSession, sessionCookieName } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
-import { randomToken, safeEqual } from '../lib/crypto.js';
+import { randomToken, safeEqual, sha256 } from '../lib/crypto.js';
 import { HttpError, idParams, newId } from '../lib/http.js';
+import { mails } from '../lib/mail.js';
 import { dummyHash, hashPassword, passwordProblem, verifyPassword } from '../lib/password.js';
 import { newTotpSecret, otpauthUri, verifyTotp } from '../lib/totp.js';
 
+const RESET_TTL_MIN = 30;
+const INVITE_TTL_H = 72;
 const MAX_FAILURES = 5;
 const LOCK_MS = 15 * 60_000;
 const strict = { rateLimit: { max: 10, timeWindow: '1 minute', keyGenerator: (req: { ip: string }) => req.ip } };
@@ -42,6 +45,21 @@ export default async function localAuthRoutes(app: FastifyInstance) {
 
   const userById = (id: string) => db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined;
   const userByEmail = (mail: string) => db.prepare('SELECT * FROM users WHERE sub = ?').get(`local:${mail}`) as UserRow | undefined;
+
+  // Alerte par e-mail (si SMTP configuré) : jamais bloquante, jamais d'erreur renvoyée à l'appelant.
+  const notify = (user: { email: string | null }, what: string) => {
+    if (!user.email || !app.mail.enabled) return;
+    void app.mail.send({ to: user.email, ...mails.alert(what) }).catch((err) => app.log.warn({ err }, 'alerte e-mail non envoyée'));
+  };
+  // Crée un jeton à usage unique ; l'ancien jeton du même compte est invalidé.
+  const issueToken = (userId: string, kind: 'reset' | 'invite') => {
+    const token = randomToken(32);
+    const now = Date.now();
+    db.prepare('DELETE FROM password_resets WHERE user_id = ?').run(userId);
+    db.prepare('INSERT INTO password_resets (token_hash, user_id, kind, created_at, expires_at) VALUES (?, ?, ?, ?, ?)')
+      .run(sha256(token), userId, kind, now, now + (kind === 'invite' ? INVITE_TTL_H * 3_600_000 : RESET_TTL_MIN * 60_000));
+    return `${config.PUBLIC_URL}/#/reset/${token}`;
+  };
 
   const startSession = (reply: FastifyReply, userId: string) => {
     const s = createSession(db, userId, null, config.SESSION_TTL_HOURS);
@@ -120,6 +138,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
         db.prepare('UPDATE users SET failed_logins = ?, locked_until = ? WHERE id = ?').run(failures >= MAX_FAILURES ? 0 : failures, failures >= MAX_FAILURES ? now + LOCK_MS : null, user.id);
       }
       audit(db, req, 'auth.local.failed', user?.id ?? null, { reason });
+      if (user && user.failed_logins + 1 >= MAX_FAILURES) notify(user, 'Votre compte Notabene a été verrouillé 15 minutes après plusieurs tentatives de connexion échouées.');
       throw new HttpError(401, 'Identifiants invalides');
     };
     if (!user || !user.password_hash || !valid || user.disabled) return fail('password');
@@ -153,6 +172,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(await hashPassword(b.next), user.id);
     const { changes } = closeOtherSessions(user.id, auth.sessionHash);
     audit(db, req, 'auth.local.password', user.id, { closedSessions: changes });
+    notify(user, 'Le mot de passe de votre compte Notabene vient d’être modifié.');
     return { ok: true, closedSessions: changes };
   });
 
@@ -172,6 +192,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     const codes = newRecoveryCodes();
     db.prepare('UPDATE users SET totp_enabled = 1, totp_last_step = ?, recovery_codes = ? WHERE id = ?').run(step, JSON.stringify(codes.map(hashCode)), user.id);
     audit(db, req, 'auth.mfa.enable', user.id);
+    notify(user, 'La double authentification vient d’être activée sur votre compte Notabene.');
     return { recoveryCodes: codes };
   });
 
@@ -185,6 +206,45 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     if (!(await verifyPassword(b.password, user.password_hash)) || !checkSecondFactor(user, b.code)) throw new HttpError(403, 'Mot de passe ou code incorrect');
     db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_last_step = NULL, recovery_codes = NULL WHERE id = ?').run(user.id);
     audit(db, req, 'auth.mfa.disable', user.id);
+    notify(user, 'La double authentification vient d’être désactivée sur votre compte Notabene.');
+    return { ok: true };
+  });
+
+  // ---- Mot de passe oublié (nécessite SMTP) -------------------------------------------------
+  // Réponse identique que le compte existe ou non ; l'envoi n'est pas attendu (pas d'écart de temps observable).
+  app.post('/auth/local/forgot', { config: strict, schema: { hide: true, body: z.object({ email }) } }, async (req, reply) => {
+    sameOrigin(req);
+    if (!app.mail.enabled) throw new HttpError(404, 'Introuvable');
+    const user = userByEmail((req.body as { email: string }).email);
+    if (user?.password_hash && !user.disabled && user.email) {
+      const recent = db.prepare('SELECT 1 FROM password_resets WHERE user_id = ? AND created_at > ?').get(user.id, Date.now() - 60_000);
+      if (!recent) {
+        const url = issueToken(user.id, 'reset');
+        audit(db, req, 'auth.local.forgot', user.id);
+        void app.mail.send({ to: user.email, ...mails.reset(url, RESET_TTL_MIN) }).catch((err) => app.log.warn({ err }, 'e-mail de réinitialisation non envoyé'));
+      }
+    }
+    return reply.code(202).send({ ok: true });
+  });
+
+  app.post('/auth/local/reset', {
+    config: strict,
+    schema: { hide: true, body: z.object({ token: z.string().min(20).max(100), password }) },
+  }, async (req) => {
+    sameOrigin(req);
+    const b = req.body as { token: string; password: string };
+    const row = db.prepare('SELECT user_id, expires_at FROM password_resets WHERE token_hash = ?').get(sha256(b.token)) as { user_id: string; expires_at: number } | undefined;
+    const user = row && row.expires_at > Date.now() ? userById(row.user_id) : undefined;
+    if (!user || !user.password_hash || user.disabled) throw new HttpError(400, 'Lien invalide ou expiré');
+    const problem = passwordProblem(b.password, user.email ?? undefined);
+    if (problem) throw new HttpError(400, problem);
+    const hash = await hashPassword(b.password);
+    // Consommation atomique : un lien ne sert qu'une fois, même en cas de requêtes simultanées.
+    if (db.prepare('DELETE FROM password_resets WHERE token_hash = ?').run(sha256(b.token)).changes !== 1) throw new HttpError(400, 'Lien invalide ou expiré');
+    db.prepare('UPDATE users SET password_hash = ?, failed_logins = 0, locked_until = NULL WHERE id = ?').run(hash, user.id);
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
+    audit(db, req, 'auth.local.reset', user.id);
+    notify(user, 'Le mot de passe de votre compte Notabene vient d’être réinitialisé.');
     return { ok: true };
   });
 
@@ -197,17 +257,32 @@ export default async function localAuthRoutes(app: FastifyInstance) {
   };
 
   app.post('/api/v1/admin/local-users', {
-    schema: { tags: ['admin'], summary: 'Créer un compte local (admin)', body: z.object({ email, name: z.string().trim().min(1).max(120), role, password }) },
+    schema: { tags: ['admin'], summary: 'Créer un compte local (admin)', body: z.object({ email, name: z.string().trim().min(1).max(120), role, password: password.optional(), invite: z.boolean().default(false) }) },
   }, async (req, reply) => {
     adminOnly(req);
-    const b = req.body as { email: string; name: string; role: 'admin' | 'editor' | 'reader'; password: string };
-    const problem = passwordProblem(b.password, b.email);
-    if (problem) throw new HttpError(400, problem);
+    const b = req.body as { email: string; name: string; role: 'admin' | 'editor' | 'reader'; password?: string; invite: boolean };
+    if (b.invite && !app.mail.enabled) throw new HttpError(409, 'Configurez SMTP pour inviter par e-mail');
+    if (!b.invite) {
+      if (!b.password) throw new HttpError(400, 'Mot de passe requis');
+      const problem = passwordProblem(b.password, b.email);
+      if (problem) throw new HttpError(400, problem);
+    }
     if (userByEmail(b.email)) throw new HttpError(409, 'Un compte existe déjà avec cette adresse');
     const id = newId();
+    // Invitation : mot de passe aléatoire que personne ne connaît ; l'invité choisit le sien via le lien reçu.
+    const hash = await hashPassword(b.invite ? randomToken(32) : b.password!);
     db.prepare('INSERT INTO users (id, sub, email, name, role, created_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(id, `local:${b.email}`, b.email, b.name, b.role, Date.now(), await hashPassword(b.password));
-    audit(db, req, 'user.create', id, { role: b.role });
+      .run(id, `local:${b.email}`, b.email, b.name, b.role, Date.now(), hash);
+    if (b.invite) {
+      try {
+        await app.mail.send({ to: b.email, ...mails.invite(issueToken(id, 'invite'), INVITE_TTL_H, b.name) });
+      } catch (err) {
+        db.prepare('DELETE FROM users WHERE id = ?').run(id);
+        app.log.warn({ err }, 'invitation non envoyée');
+        throw new HttpError(502, 'Envoi de l’invitation impossible : vérifiez la configuration SMTP');
+      }
+    }
+    audit(db, req, 'user.create', id, { role: b.role, invited: b.invite });
     return reply.code(201).send({ id });
   });
 
