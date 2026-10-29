@@ -6,7 +6,7 @@ import { loadConfig } from '../src/config.js';
 import { type DB, openDb } from '../src/db.js';
 import { seedDemo } from '../src/seed.js';
 
-const env = { NODE_ENV: 'test', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), DEV_LOGIN: 'true', SEED_DEMO: 'false' };
+const env = { NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), DEV_LOGIN: 'true', SEED_DEMO: 'false' };
 let app: FastifyInstance;
 let db: DB;
 
@@ -88,10 +88,10 @@ describe('versions d’API', () => {
   it('liste les versions et leur état', async () => {
     const res = (await app.inject({ method: 'GET', url: '/api/versions' })).json();
     expect(res.current).toBe('v3');
-    expect(res.versions.map((v: { id: string; status: string }) => [v.id, v.status])).toEqual([['v1', 'deprecated'], ['v2', 'stable'], ['v3', 'stable']]);
+    expect(res.versions.map((v: { id: string; status: string }) => [v.id, v.status])).toEqual([['v1', 'deprecated'], ['v2', 'deprecated'], ['v3', 'stable']]);
     const v1 = await app.inject({ method: 'GET', url: '/api/v1/config' });
     expect(v1.headers.deprecation).toBe('true');
     expect(v1.headers.sunset).toMatch(/2027/);
-    expect((await app.inject({ method: 'GET', url: '/api/v2/config' })).headers.deprecation).toBeUndefined();
+    expect((await app.inject({ method: 'GET', url: '/api/v3/config' })).headers.deprecation).toBeUndefined();
   });
 });

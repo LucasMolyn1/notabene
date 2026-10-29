@@ -9,7 +9,7 @@ import { seedDemo } from '../src/seed.js';
 
 const KEY = randomBytes(32).toString('base64');
 const baseEnv = {
-  NODE_ENV: 'test',
+  NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2',
   PUBLIC_URL: 'http://localhost:3000',
   ENCRYPTION_KEY: KEY,
   DEV_LOGIN: 'true',

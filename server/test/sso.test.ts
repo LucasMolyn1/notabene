@@ -13,7 +13,7 @@ import { LdapDirectory, type LdapLike, escapeFilter } from '../src/auth/ldap.js'
 import { loadConfig } from '../src/config.js';
 import { openDb } from '../src/db.js';
 
-const base = { NODE_ENV: 'test', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), SEED_DEMO: 'false' };
+const base = { NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), SEED_DEMO: 'false' };
 
 describe('groupes et rôles', () => {
   const cfg = { admin: ['cn=wiki-admins,ou=groups,dc=ex,dc=org', 'Staff'], editor: ['wiki-editors'], reader: [], defaultRole: 'none' as const };

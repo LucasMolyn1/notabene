@@ -14,9 +14,9 @@ L'API REST est servie sous `/api/v1`. Les versions disponibles et leur état son
 
 | Version | État | Contenu |
 | --- | --- | --- |
-| v1 | **dépréciée** (fin le 1er mai 2027) | Pages, espaces, recherche, jetons, IA, administration, webhooks. Toujours utilisée par le client web et le serveur MCP. Les réponses portent `Deprecation`, `Sunset` et `Link`. |
-| v2 | stable | Tout v1, avec : listes paginées par curseur, filtres, `ETag` / `If-Match`, erreurs RFC 9457, évènements de webhooks étendus. |
-| v3 | stable (version courante) | Tout v2, plus commentaires de page et permissions fines par page. |
+| v1 | **dépréciée et désactivée par défaut** (fin le 1er mai 2027) | Pages, espaces, recherche, jetons, IA, administration, webhooks. Réactivable par `API_LEGACY_VERSIONS=v1` ; les réponses portent `Deprecation`, `Sunset` et `Link`, et chaque appelant est journalisé. |
+| v2 | **dépréciée et désactivée par défaut** | Tout v1, avec : listes paginées par curseur, filtres, `ETag` / `If-Match`, erreurs RFC 9457, évènements de webhooks étendus. |
+| v3 | stable (version courante, seule servie par défaut) | Tout v2, plus commentaires de page et permissions fines par page. |
 
 GraphQL (envisagé pour la v3) n'est pas fourni.
 
