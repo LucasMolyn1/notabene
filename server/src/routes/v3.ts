@@ -208,7 +208,8 @@ export default async function v3Routes(app: FastifyInstance) {
       `INSERT INTO notification_prefs (user_id, email_comments, email_changes) VALUES (?, ?, ?)
        ON CONFLICT(user_id) DO UPDATE SET email_comments = excluded.email_comments, email_changes = excluded.email_changes`,
     ).run(auth.user.id, b.emailComments ? 1 : 0, b.emailChanges ? 1 : 0);
-    return { ...b, emailAvailable: app.mail.enabled };
+    // Valeurs relues en base : la réponse ne reprend jamais le corps de la requête.
+    return { ...getPrefs(db, auth.user.id), emailAvailable: app.mail.enabled };
   });
 
   // ---- Suivi de page ---------------------------------------------------------------------
