@@ -1,0 +1,48 @@
+# Notabene + Draw.io auto-hébergé.
+# Chaque déploiement = un clone du dépôt avec son propre .env (voir scripts/setup.sh).
+# Par défaut les ports n'écoutent que sur 127.0.0.1 : placez un reverse proxy TLS devant.
+
+services:
+  notabene:
+    build: .
+    image: ${NOTABENE_IMAGE:-notabene:local}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      HOST: 0.0.0.0
+      PORT: 3000
+    ports:
+      - "${NOTABENE_BIND:-127.0.0.1}:${NOTABENE_PORT:-3000}:3000"
+    volumes:
+      - notabene-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  drawio:
+    image: jgraph/drawio:32.6.1
+    restart: unless-stopped
+    ports:
+      - "${DRAWIO_BIND:-127.0.0.1}:${DRAWIO_PORT:-8081}:8080"
+    environment:
+      # Désactive les intégrations cloud (Google Drive, OneDrive…) : seul le mode intégré est utilisé.
+      DRAWIO_SELF_CONTAINED: "1"
+      DRAWIO_GOOGLE_CLIENT_ID: ""
+      DRAWIO_MSGRAPH_CLIENT_ID: ""
+    security_opt:
+      - no-new-privileges:true
+    # Activé par COMPOSE_PROFILES=drawio dans le .env.
+    profiles:
+      - drawio
+
+volumes:
+  notabene-data:

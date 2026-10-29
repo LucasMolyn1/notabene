@@ -1,0 +1,100 @@
+// Point d'entrée : session, chargement des données, temps réel, routage par hash.
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
+import '@fontsource/jetbrains-mono/400.css';
+import './styles/app.css';
+import { openEvents } from './api.js';
+import { session } from './session.js';
+import { store } from './store.js';
+import { prefs, savePrefs, app } from './prefs.js';
+import { presence } from './presence.js';
+import { renderSidebar } from './sidebar.js';
+import { showLogin, showMissing, showPage, showSpace, notifyStore, toastAuthError } from './views.js';
+import { h } from './util.js';
+import * as A from './actions.js';
+
+function route() {
+  const path = location.hash.slice(1) || '/';
+  let m;
+  if (!store.spaces.length) { showNoSpace(); scheduleSidebar(); return; }
+  if ((m = path.match(/^\/p\/([A-Za-z0-9_-]+)/))) showPage(m[1]);
+  else if ((m = path.match(/^\/s\/([A-Za-z0-9_-]+)/))) showSpace(m[1]);
+  else if (path !== '/') showMissing(null);
+  else {
+    const last = !app.embed && prefs.lastPage && store.page(prefs.lastPage);
+    location.replace(`#${last ? `/p/${last.id}` : `/s/${(store.space(prefs.space) || store.spaces[0]).id}`}`);
+    return;
+  }
+  document.body.classList.remove('sb-mobile-open');
+  scheduleSidebar();
+}
+
+function showNoSpace() {
+  document.getElementById('main').replaceChildren(h('div', { class: 'empty big' },
+    h('div', { class: 'empty-emoji' }, '🗂️'),
+    h('h2', null, 'Aucun espace'),
+    h('p', { class: 'muted' }, session.can('admin') ? 'Créez un premier espace pour commencer.' : 'Aucun espace ne vous est accessible pour le moment.'),
+    session.can('admin') && h('button', { class: 'btn btn-primary', onClick: () => A.spaceForm() }, 'Créer un espace')));
+}
+
+let sidebarFrame = 0;
+function scheduleSidebar() {
+  if (app.embed) return;
+  cancelAnimationFrame(sidebarFrame);
+  sidebarFrame = requestAnimationFrame(renderSidebar);
+}
+
+function onKey(e) {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); A.search(); }
+  else if (mod && e.key === '\\') { e.preventDefault(); A.toggleSidebar(); }
+  else if (e.altKey && !mod && e.code === 'KeyN' && !app.embed && session.can('write')) { e.preventDefault(); A.newPage(prefs.space); }
+}
+
+async function boot() {
+  document.body.classList.toggle('embed', app.embed);
+  document.body.classList.toggle('sb-collapsed', !prefs.sidebar);
+
+  await session.load();
+  const params = new URLSearchParams(location.search);
+  const wantsLogin = params.has('login') || params.has('dev_login');
+  await store.load();
+
+  if (!session.user && (wantsLogin || !store.spaces.length || params.has('auth_error'))) {
+    document.body.classList.add('no-sidebar');
+    showLogin();
+    return;
+  }
+  toastAuthError();
+  if (params.has('auth_error')) history.replaceState(null, '', `/${location.hash}`);
+  if (!store.space(prefs.space)) { prefs.space = store.spaces[0]?.id ?? null; savePrefs(); }
+
+  if (session.user) presence.enable(session.user.id);
+  openEvents((type, evt) => {
+    if (type === 'presence') { presence.receive(evt.data); return; }
+    // Nos propres sauvegardes reviennent aussi : inutile de recharger si la version est déjà connue.
+    if (type === 'page.updated' && (store.page(evt.pageId)?.version ?? 0) >= (evt.version ?? 0)) return;
+    store.scheduleRefresh(evt);
+  });
+
+  store.subscribe((evt) => {
+    if (prefs.space && !store.space(prefs.space)) prefs.space = store.spaces[0]?.id ?? null;
+    scheduleSidebar();
+    notifyStore(evt);
+  });
+
+  window.addEventListener('hashchange', route);
+  document.addEventListener('keydown', onKey);
+  document.querySelector('[data-close-sidebar]').addEventListener('click', () => document.body.classList.remove('sb-mobile-open'));
+  route();
+}
+
+boot()
+  .catch((err) => {
+    console.error(err);
+    document.querySelector('#boot p').textContent = 'Impossible de joindre le serveur. Réessayez dans un instant.';
+    return 'failed';
+  })
+  .then((state) => { if (state !== 'failed') document.getElementById('boot').hidden = true; });
