@@ -31,7 +31,7 @@ export function sessionAuth(db: DB, token: string): Auth | null {
   if (!token || token.length > 128) return null;
   const row = db.prepare(
     `SELECT s.id_hash, s.csrf, s.expires_at, s.last_seen_at, u.id AS user_id, u.name, u.email, u.role
-     FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ?`,
+     FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND u.disabled = 0`,
   ).get(sha256(token)) as SessionRow | undefined;
   const now = Date.now();
   if (!row || row.expires_at <= now) return null;

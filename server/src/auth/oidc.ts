@@ -88,6 +88,14 @@ export class OidcClient {
   }
 }
 
+// Valeurs `amr` (RFC 8176) qui prouvent un second facteur.
+const MFA_METHODS = new Set(['mfa', 'otp', 'hwk', 'swk', 'fpt', 'face', 'iris', 'retina', 'vbm']);
+
+export function hasMfaClaim(claims: Record<string, unknown>): boolean {
+  const amr = claims.amr;
+  return Array.isArray(amr) && amr.some((m) => typeof m === 'string' && MFA_METHODS.has(m));
+}
+
 export function roleFromGroups(groups: unknown, cfg: Config): Role | null {
   const list = Array.isArray(groups) ? groups.filter((g): g is string => typeof g === 'string') : [];
   const has = (wanted: string[]) => wanted.some((g) => list.includes(g));

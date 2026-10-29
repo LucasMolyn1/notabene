@@ -21,10 +21,18 @@ import { HttpError } from './lib/http.js';
 import adminRoutes from './routes/admin.js';
 import aiRoutes from './routes/ai.js';
 import authRoutes from './routes/auth.js';
+import websocket from '@fastify/websocket';
+import collabRoutes from './routes/collab.js';
 import coreRoutes from './routes/core.js';
+import importRoutes from './routes/import.js';
+import localAuthRoutes from './routes/local-auth.js';
+import mcpRoutes from './routes/mcp.js';
 import pageRoutes from './routes/pages.js';
 import spaceRoutes from './routes/spaces.js';
+import ssoRoutes from './routes/sso.js';
 import tokenRoutes from './routes/tokens.js';
+import versionRoutes from './routes/versions.js';
+import webhookRoutes from './routes/webhooks.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -44,9 +52,11 @@ export interface AppOptions {
   db: DB;
   logger?: FastifyServerOptions['logger'];
   clientDir?: string;
+  // Annuaire LDAP injectable (tests) ; par défaut construit d'après LDAP_URL.
+  ldap?: import('./auth/ldap.js').LdapDirectory;
 }
 
-export async function buildApp({ config, db, logger = false, clientDir }: AppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, db, logger = false, clientDir, ldap }: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger === false ? false : {
       ...(typeof logger === 'object' ? logger : {}),
@@ -145,6 +155,15 @@ export async function buildApp({ config, db, logger = false, clientDir }: AppOpt
       const csrf = req.headers['x-csrf-token'];
       if (typeof csrf !== 'string' || !safeEqual(csrf, req.auth.csrf!)) throw new HttpError(403, 'Jeton CSRF invalide');
     }
+
+    if (config.LOCAL_REQUIRE_MFA && req.auth) {
+      const row = db.prepare('SELECT password_hash IS NOT NULL AS local, totp_enabled AS mfa FROM users WHERE id = ?').get(req.auth.user.id) as { local: number; mfa: number } | undefined;
+      req.auth.mfaPending = !!row?.local && !row.mfa;
+      const path = req.url.split('?')[0]!;
+      if (req.auth.mfaPending && /^\/(api\/|mcp)/.test(path) && !/^\/api\/v1\/(me|config)$/.test(path)) {
+        throw new HttpError(403, 'Activez la double authentification pour continuer', { mfaSetupRequired: true });
+      }
+    }
   });
 
   app.addHook('onSend', async (_req, reply, payload) => {
@@ -175,12 +194,21 @@ export async function buildApp({ config, db, logger = false, clientDir }: AppOpt
   await app.register(swaggerUi, { routePrefix: '/api/docs', staticCSP: true });
 
   await app.register(authRoutes);
+  await app.register(localAuthRoutes, { prefix: '' });
+  await app.register(ssoRoutes, { ldap });
+  // Enregistré à la racine pour que `injectWS` et les routes WebSocket soient visibles de tous les plugins.
+  if (config.COLLAB_ENABLED) await app.register(websocket, { options: { maxPayload: 4 * 1024 * 1024 } });
+  await app.register(collabRoutes);
   await app.register(coreRoutes, { prefix: '/api/v1' });
   await app.register(spaceRoutes, { prefix: '/api/v1' });
   await app.register(pageRoutes, { prefix: '/api/v1' });
   await app.register(tokenRoutes, { prefix: '/api/v1' });
   await app.register(aiRoutes, { prefix: '/api/v1' });
   await app.register(adminRoutes, { prefix: '/api/v1' });
+  await app.register(webhookRoutes, { prefix: '/api/v1' });
+  await app.register(importRoutes, { prefix: '/api/v1' });
+  await app.register(mcpRoutes);
+  await app.register(versionRoutes);
   app.get('/healthz', { schema: { hide: true } }, async () => ({ ok: true }));
 
   // Front compilé (production) : fichiers statiques + repli SPA.

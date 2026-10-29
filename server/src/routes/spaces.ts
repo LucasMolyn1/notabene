@@ -8,7 +8,7 @@ import { HttpError, idParams, newId } from '../lib/http.js';
 
 const spaceBody = z.object({
   name: z.string().trim().min(1).max(80),
-  icon: z.string().max(16).default('📁'),
+  icon: z.string().max(16).default('folder'),
   description: z.string().max(1000).default(''),
   visibility: z.enum(['private', 'public']).default('private'),
 });

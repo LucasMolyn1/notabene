@@ -6,6 +6,7 @@ data/
 !.env.example
 !.env.development.example
 client/public/excalidraw-assets/
+client/public/plantuml/
 *.db
 *.db-*
 .DS_Store

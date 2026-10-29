@@ -58,80 +58,130 @@ async function renderMermaid(code, target) {
   }
 }
 
-export const Mermaid = Node.create({
-  name: 'mermaid',
-  group: 'block',
-  atom: true,
-  draggable: true,
+// Nœud « diagramme décrit en texte » : le code est stocké dans l'attribut `code`, le rendu est local.
+function textDiagramNode({ name, label, defaultCode, renderer: renderDiagram }) {
+  const dataAttr = `data-${name}`;
+  return Node.create({
+    name,
+    group: 'block',
+    atom: true,
+    draggable: true,
 
-  addAttributes() {
-    return { code: { default: DEFAULT_MERMAID } };
-  },
+    addAttributes() {
+      return { code: { default: defaultCode } };
+    },
 
-  parseHTML() {
-    return [{ tag: 'div[data-mermaid]', getAttrs: (el) => ({ code: el.textContent || '' }) }];
-  },
+    parseHTML() {
+      return [{ tag: `div[${dataAttr}]`, getAttrs: (el) => ({ code: el.textContent || '' }) }];
+    },
 
-  renderHTML({ node }) {
-    return ['div', { 'data-mermaid': '', class: 'diagram-static' }, ['pre', {}, node.attrs.code]];
-  },
+    renderHTML({ node }) {
+      return ['div', { [dataAttr]: '', class: 'diagram-static' }, ['pre', {}, node.attrs.code]];
+    },
 
-  addNodeView() {
-    return ({ node, getPos, editor }) => {
-      let current = node;
-      const preview = h('div', { class: 'diagram-preview mermaid-preview' });
-      const textarea = h('textarea', { class: 'mermaid-code', spellcheck: 'false', 'aria-label': 'Code Mermaid' });
-      textarea.value = node.attrs.code;
-      const editBtn = h('button', { class: 'btn btn-ghost btn-sm', type: 'button' });
-      const body = h('div', { class: 'mermaid-split' }, textarea, preview);
-      const dom = frame('Mermaid', body, editBtn);
+    addNodeView() {
+      return ({ node, getPos, editor }) => {
+        let current = node;
+        const preview = h('div', { class: `diagram-preview ${name}-preview` });
+        const textarea = h('textarea', { class: 'mermaid-code', spellcheck: 'false', 'aria-label': `Code ${label}` });
+        textarea.value = node.attrs.code;
+        const editBtn = h('button', { class: 'btn btn-ghost btn-sm', type: 'button' });
+        const body = h('div', { class: 'mermaid-split' }, textarea, preview);
+        const dom = frame(label, body, editBtn);
 
-      const render = debounce(() => renderMermaid(textarea.value, preview), 250);
-      const setEditing = (on) => {
-        dom.classList.toggle('editing', on);
-        editBtn.replaceChildren(icon(on ? 'check' : 'edit', 14), on ? 'Terminer' : 'Modifier');
-        if (on) textarea.focus();
+        const render = debounce(() => renderDiagram(textarea.value, preview), 250);
+        const setEditing = (on) => {
+          dom.classList.toggle('editing', on);
+          editBtn.replaceChildren(icon(on ? 'check' : 'edit', 14), on ? 'Terminer' : 'Modifier');
+          if (on) textarea.focus();
+        };
+        const paintEditable = () => { editBtn.hidden = !editor.isEditable; if (!editor.isEditable) setEditing(false); };
+
+        editBtn.addEventListener('click', () => setEditing(!dom.classList.contains('editing')));
+        preview.addEventListener('dblclick', () => editor.isEditable && setEditing(true));
+        textarea.addEventListener('input', () => {
+          render();
+          commit();
+        });
+        textarea.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') { e.preventDefault(); setEditing(false); editor.commands.focus(); }
+          if (e.key === 'Tab') { e.preventDefault(); textarea.setRangeText('  ', textarea.selectionStart, textarea.selectionEnd, 'end'); }
+        });
+        const commit = debounce(() => updateAttrs(editor, getPos, { code: textarea.value }), 400);
+
+        editor.on('update', paintEditable);
+        setEditing(false);
+        paintEditable();
+        renderDiagram(node.attrs.code, preview);
+
+        return {
+          dom,
+          update(updated) {
+            if (updated.type !== current.type) return false;
+            const changed = updated.attrs.code !== current.attrs.code;
+            current = updated;
+            if (changed && document.activeElement !== textarea) {
+              textarea.value = updated.attrs.code;
+              renderDiagram(updated.attrs.code, preview);
+            }
+            return true;
+          },
+          stopEvent: (e) => !!e.target.closest?.('textarea, button'),
+          ignoreMutation: () => true,
+          selectNode: () => dom.classList.add('selected'),
+          deselectNode: () => dom.classList.remove('selected'),
+          destroy: () => { commit.flush(); editor.off('update', paintEditable); },
+        };
       };
-      const paintEditable = () => { editBtn.hidden = !editor.isEditable; if (!editor.isEditable) setEditing(false); };
+    },
+  });
+}
 
-      editBtn.addEventListener('click', () => setEditing(!dom.classList.contains('editing')));
-      preview.addEventListener('dblclick', () => editor.isEditable && setEditing(true));
-      textarea.addEventListener('input', () => {
-        render();
-        commit();
-      });
-      textarea.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { e.preventDefault(); setEditing(false); editor.commands.focus(); }
-        if (e.key === 'Tab') { e.preventDefault(); textarea.setRangeText('  ', textarea.selectionStart, textarea.selectionEnd, 'end'); }
-      });
-      const commit = debounce(() => updateAttrs(editor, getPos, { code: textarea.value }), 400);
+export const Mermaid = textDiagramNode({ name: 'mermaid', label: 'Mermaid', defaultCode: DEFAULT_MERMAID, renderer: renderMermaid });
 
-      editor.on('update', paintEditable);
-      setEditing(false);
-      paintEditable();
-      renderMermaid(node.attrs.code, preview);
+// ---- PlantUML ---------------------------------------------------------------
+// Moteur PlantUML (JS) et Graphviz (WASM) servis par notre serveur, chargés à la première utilisation.
+// Le SVG produit est affiché dans une <img> (data URL) : aucun script ni lien ne peut s'exécuter.
 
-      return {
-        dom,
-        update(updated) {
-          if (updated.type !== current.type) return false;
-          const changed = updated.attrs.code !== current.attrs.code;
-          current = updated;
-          if (changed && document.activeElement !== textarea) {
-            textarea.value = updated.attrs.code;
-            renderMermaid(updated.attrs.code, preview);
-          }
-          return true;
-        },
-        stopEvent: (e) => !!e.target.closest?.('textarea, button'),
-        ignoreMutation: () => true,
-        selectNode: () => dom.classList.add('selected'),
-        deselectNode: () => dom.classList.remove('selected'),
-        destroy: () => { commit.flush(); editor.off('update', paintEditable); },
-      };
-    };
-  },
-});
+export const DEFAULT_PLANTUML = '@startuml\nactor Utilisateur\nUtilisateur -> Notabene : Requête\nNotabene --> Utilisateur : Réponse\n@enduml';
+
+let plantumlEngine = null;
+
+function loadPlantuml() {
+  plantumlEngine ||= new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = '/plantuml/viz-global.js';
+    script.onload = () => import(/* @vite-ignore */ '/plantuml/plantuml.js').then(resolve, reject);
+    script.onerror = () => reject(new Error('moteur PlantUML indisponible'));
+    document.head.append(script);
+  }).catch((err) => { plantumlEngine = null; throw err; });
+  return plantumlEngine;
+}
+
+// Refuse l'inclusion de fichiers ou d'URL : un diagramme ne doit pas déclencher de requêtes.
+const PLANTUML_FORBIDDEN = /^\s*!(include|includeurl|includesub|import|theme\b[^\n]*\bfrom\b)/im;
+
+async function renderPlantuml(code, target) {
+  if (PLANTUML_FORBIDDEN.test(code)) {
+    target.textContent = 'Les directives !include et !import ne sont pas autorisées.';
+    target.classList.add('error');
+    return;
+  }
+  try {
+    const engine = await loadPlantuml();
+    const svg = await new Promise((resolve, reject) => {
+      engine.renderToString(code.split('\n'), resolve, (msg) => reject(new Error(String(msg))), { dark: currentTheme() === 'dark' });
+    });
+    const img = h('img', { alt: 'Diagramme PlantUML', src: svgToDataUrl(svg) });
+    target.replaceChildren(img);
+    target.classList.remove('error');
+  } catch (err) {
+    target.textContent = `PlantUML : ${String(err?.message || err).split('\n')[0]}`;
+    target.classList.add('error');
+  }
+}
+
+export const PlantUml = textDiagramNode({ name: 'plantuml', label: 'PlantUML', defaultCode: DEFAULT_PLANTUML, renderer: renderPlantuml });
 
 // ---- Vues d'image communes (Excalidraw, Draw.io) -------------------------
 

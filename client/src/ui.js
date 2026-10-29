@@ -68,13 +68,23 @@ export function openMenu(anchor, items, opts) {
   openPopover(anchor, list, opts);
 }
 
-const EMOJIS = '📄 📝 📘 📚 📓 🗂️ 📌 📎 🚀 ✨ 💡 🧠 🎯 🧭 🗺️ 🧱 ⚙️ 🛠️ 🔧 🧪 🐛 🔒 🔑 📊 📈 🗓️ ⏱️ ✅ ❗ ⚠️ 💬 📣 👋 🙌 🤝 👥 🏠 🌍 🌱 🔥 ⭐ 💎 🎨 🎬 🎵 📷 💻 📱 ☕ 🍕 ⚡ 🌙 ☀️ 🧩 🏆 💼 🔍 🚢 📐 🎓'.split(' ');
+const PAGE_ICONS = [
+  'file', 'folder', 'home', 'star', 'layers', 'code', 'settings', 'shield',
+  'key', 'lock', 'globe', 'eye', 'search', 'link', 'pencil', 'download',
+  'upload', 'users', 'sparkle', 'diamond', 'hexagon', 'webhook', 'pdf', 'wand',
+];
 
-export function emojiPicker(anchor, onPick, { allowRemove = true } = {}) {
-  const grid = h('div', { class: 'emoji-grid' }, EMOJIS.map((e) =>
-    h('button', { class: 'emoji-btn', type: 'button', onClick: () => { closePopover(); onPick(e); } }, e)));
+export function pageIcon(name, size = 16) {
+  if (!name) return icon('file', size);
+  if (PAGE_ICONS.includes(name)) return icon(name, size);
+  return icon('file', size);
+}
+
+export function iconPicker(anchor, onPick, { allowRemove = true } = {}) {
+  const grid = h('div', { class: 'emoji-grid' }, PAGE_ICONS.map((name) =>
+    h('button', { class: 'emoji-btn', type: 'button', onClick: () => { closePopover(); onPick(name); } }, icon(name, 20))));
   const foot = h('div', { class: 'emoji-foot' },
-    h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { closePopover(); onPick(EMOJIS[Math.floor(Math.random() * EMOJIS.length)]); } }, '🎲 Au hasard'),
+    h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { closePopover(); onPick(PAGE_ICONS[Math.floor(Math.random() * PAGE_ICONS.length)]); } }, icon('wand', 14), ' Au hasard'),
     allowRemove && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { closePopover(); onPick(''); } }, 'Retirer'));
   openPopover(anchor, h('div', { class: 'emoji-picker' }, grid, foot));
 }

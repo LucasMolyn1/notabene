@@ -24,6 +24,7 @@ const schema = z
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
     TRUST_PROXY: bool('false'),
     ALLOW_INSECURE_HTTP: bool('false'),
+    WEBHOOK_ALLOW_PRIVATE: bool('false'),
 
     // Clé maîtresse (32 octets en base64) : chiffre les secrets stockés en base (clé LLM…).
     ENCRYPTION_KEY: z.string().refine((v) => Buffer.from(v, 'base64').length === 32, {
@@ -41,6 +42,44 @@ const schema = z
     OIDC_DEFAULT_ROLE: z.enum(['reader', 'none']).default('none'),
     SESSION_TTL_HOURS: z.coerce.number().min(1).max(24 * 30).default(12),
 
+    // Comptes locaux (e-mail + mot de passe, MFA TOTP) : alternative ou complément à OIDC.
+    AUTH_LOCAL: bool('false'),
+    // Impose la double authentification : comptes locaux (TOTP obligatoire) et OIDC (claim `amr` exigé).
+    LOCAL_REQUIRE_MFA: bool('false'),
+    // Co-édition temps réel (WebSocket Yjs) pour les rédacteurs.
+    COLLAB_ENABLED: bool('true'),
+    OIDC_REQUIRE_MFA: bool('false'),
+
+    // LDAP / Active Directory : authentification par liaison (bind) avec le compte de l'annuaire.
+    LDAP_URL: z.string().regex(/^ldaps?:\/\/[^\s]+$/, 'doit commencer par ldap:// ou ldaps://').optional(),
+    LDAP_STARTTLS: bool('false'),
+    LDAP_TLS_CA_FILE: z.string().optional(),
+    LDAP_BIND_DN: z.string().optional(),
+    LDAP_BIND_PASSWORD: z.string().optional(),
+    LDAP_BASE_DN: z.string().optional(),
+    LDAP_USER_FILTER: z.string().default('(|(sAMAccountName={username})(uid={username})(mail={username}))'),
+    LDAP_GROUP_ATTRIBUTE: z.string().default('memberOf'),
+    LDAP_NAME_ATTRIBUTE: z.string().default('displayName'),
+    LDAP_EMAIL_ATTRIBUTE: z.string().default('mail'),
+    LDAP_ADMIN_GROUPS: csv(''),
+    LDAP_EDITOR_GROUPS: csv(''),
+    LDAP_READER_GROUPS: csv(''),
+    LDAP_DEFAULT_ROLE: z.enum(['reader', 'none']).default('none'),
+
+    // SAML 2.0 (SP-initiated uniquement) : assertion signée obligatoire.
+    SAML_ENTRY_POINT: optionalUrl,
+    SAML_IDP_CERT: z.string().optional(),
+    SAML_IDP_CERT_FILE: z.string().optional(),
+    SAML_ISSUER: z.string().optional(),
+    SAML_WANT_RESPONSE_SIGNED: bool('false'),
+    SAML_GROUPS_ATTRIBUTE: z.string().default('groups'),
+    SAML_EMAIL_ATTRIBUTE: z.string().default('email'),
+    SAML_NAME_ATTRIBUTE: z.string().default('name'),
+    SAML_ADMIN_GROUPS: csv(''),
+    SAML_EDITOR_GROUPS: csv(''),
+    SAML_READER_GROUPS: csv(''),
+    SAML_DEFAULT_ROLE: z.enum(['reader', 'none']).default('none'),
+
     // Connexion de développement sans IdP. Interdite en production.
     DEV_LOGIN: bool('false'),
 
@@ -52,11 +91,26 @@ const schema = z
     if (c.DEV_LOGIN && c.NODE_ENV === 'production') {
       ctx.addIssue({ code: 'custom', path: ['DEV_LOGIN'], message: 'interdit quand NODE_ENV=production' });
     }
-    if (!c.DEV_LOGIN && !(c.OIDC_ISSUER && c.OIDC_CLIENT_ID && c.OIDC_CLIENT_SECRET)) {
+    if (!c.DEV_LOGIN && !c.AUTH_LOCAL && !c.LDAP_URL && !c.SAML_ENTRY_POINT && !(c.OIDC_ISSUER && c.OIDC_CLIENT_ID && c.OIDC_CLIENT_SECRET)) {
       ctx.addIssue({ code: 'custom', path: ['OIDC_ISSUER'], message: 'OIDC_ISSUER, OIDC_CLIENT_ID et OIDC_CLIENT_SECRET sont requis' });
     }
     if (c.NODE_ENV === 'production' && !c.PUBLIC_URL.startsWith('https://') && !c.ALLOW_INSECURE_HTTP) {
       ctx.addIssue({ code: 'custom', path: ['PUBLIC_URL'], message: 'doit être en https en production (ou ALLOW_INSECURE_HTTP=true, déconseillé)' });
+    }
+    if (c.LDAP_URL) {
+      for (const k of ['LDAP_BIND_DN', 'LDAP_BIND_PASSWORD', 'LDAP_BASE_DN'] as const) {
+        if (!c[k]) ctx.addIssue({ code: 'custom', path: [k], message: 'requis quand LDAP_URL est défini' });
+      }
+      if (!c.LDAP_USER_FILTER.includes('{username}')) ctx.addIssue({ code: 'custom', path: ['LDAP_USER_FILTER'], message: 'doit contenir {username}' });
+      if (c.NODE_ENV === 'production' && c.LDAP_URL.startsWith('ldap://') && !c.LDAP_STARTTLS) {
+        ctx.addIssue({ code: 'custom', path: ['LDAP_URL'], message: 'ldap:// en clair interdit en production : utilisez ldaps:// ou LDAP_STARTTLS=true' });
+      }
+    }
+    if (c.SAML_ENTRY_POINT) {
+      if (!c.SAML_IDP_CERT && !c.SAML_IDP_CERT_FILE) ctx.addIssue({ code: 'custom', path: ['SAML_IDP_CERT'], message: 'SAML_IDP_CERT ou SAML_IDP_CERT_FILE requis' });
+      if (c.NODE_ENV === 'production' && !c.SAML_ENTRY_POINT.startsWith('https://')) {
+        ctx.addIssue({ code: 'custom', path: ['SAML_ENTRY_POINT'], message: 'doit être en https en production' });
+      }
     }
     for (const origin of c.EMBED_ALLOWED_ORIGINS) {
       if (!/^https?:\/\/[^/\s*]+$/.test(origin)) {

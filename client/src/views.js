@@ -5,9 +5,11 @@ import { store } from './store.js';
 import { session } from './session.js';
 import { prefs, savePrefs, app } from './prefs.js';
 import { createEditor } from './editor.js';
+import { connectCollab } from './collab.js';
 import { presence, colorFor } from './presence.js';
-import { openMenu, openModal, toast } from './ui.js';
+import { openMenu, openModal, toast, pageIcon } from './ui.js';
 import { openPalette } from './palette.js';
+import { ldapLoginForm, localLoginForm } from './local-auth.js';
 import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
@@ -40,7 +42,7 @@ export function topbar(left, right = []) {
 function crumbsFor(page) {
   const space = store.space(page.spaceId);
   const parts = [
-    space && h('a', { class: 'crumb', href: `#/s/${space.id}` }, h('span', { class: 'crumb-ico' }, space.icon), space.name),
+    space && h('a', { class: 'crumb', href: `#/s/${space.id}` }, h('span', { class: 'crumb-ico' }, icon(space.icon || 'folder', 14)), space.name),
     ...store.ancestors(page.id).map((a) => h('a', { class: 'crumb', href: `#/p/${a.id}` }, a.icon && h('span', { class: 'crumb-ico' }, a.icon), a.title || 'Sans titre')),
     h('span', { class: 'crumb current' }, page.icon && h('span', { class: 'crumb-ico' }, page.icon), page.title || 'Sans titre'),
   ].filter(Boolean);
@@ -81,6 +83,10 @@ function mountPage(page) {
 
   const canWrite = session.can('write');
   const readOnly = () => app.embed || prefs.readOnly || !canWrite;
+  // Co-édition : le contenu passe par Yjs ; la requête PATCH ne sert plus qu'au titre, à l'icône et à la largeur.
+  const useCollab = !!session.config.collab && canWrite && !app.embed;
+  let synced = !useCollab;
+  let collab = null;
   let version = page.version;
   let dirty = false;
   let remoteChanged = false;
@@ -128,7 +134,7 @@ function mountPage(page) {
     pending = {};
     inflight = (async () => {
       try {
-        const meta = await store.updatePage(id, { ...patch, ...(force ? {} : { baseVersion: version }) });
+        const meta = await store.updatePage(id, { ...patch, ...(force || useCollab ? {} : { baseVersion: version }) });
         version = meta.version;
         dirty = Object.keys(pending).length > 0;
         setSave('saved');
@@ -182,11 +188,28 @@ function mountPage(page) {
   }
 
   // -- Éditeur --
+  const reloadView = () => { if (view?.id !== id) return; teardown(); showPage(id); };
+  if (useCollab) {
+    editorHost.classList.add('syncing');
+    collab = connectCollab(id, {
+      onSynced: () => {
+        synced = true;
+        editorHost.classList.remove('syncing');
+        editor.setEditable(!readOnly());
+        setSave('saved');
+        renderToc();
+      },
+      onStatus: (status) => { if (status === 'disconnected') setSave('error', 'Hors ligne : reconnexion…'); else if (status === 'connected' && synced) setSave('saved'); },
+      onReload: reloadView,
+      onGone: () => { if (view?.id === id) { teardown(); showMissing(id, 404); } },
+    });
+  }
   const editor = createEditor({
     element: editorHost,
     content: page.content,
-    editable: !readOnly(),
-    onChange: () => { queue({ content: editor.getJSON() }); presence.touch(); refreshDerived(); },
+    editable: !readOnly() && synced,
+    collab: collab && { ydoc: collab.ydoc, provider: collab.provider, user: { name: session.user.name, color: colorFor(session.user.id) } },
+    onChange: () => { if (!useCollab) queue({ content: editor.getJSON() }); presence.touch(); refreshDerived(); },
     context: {
       navigate: (path) => A.go(path),
       open: (pid) => A.go(`/p/${pid}`),
@@ -292,7 +315,7 @@ function mountPage(page) {
   function toggleMode() {
     prefs.readOnly = !prefs.readOnly;
     savePrefs();
-    editor.setEditable(!readOnly());
+    editor.setEditable(!readOnly() && synced);
     document.body.classList.toggle('reading', readOnly());
     paintChrome();
     renderMeta();
@@ -307,6 +330,7 @@ function mountPage(page) {
       { sep: true },
       { label: 'Exporter en Markdown', icon: 'download', onClick: async () => { await flush(); A.exportMarkdown(id); } },
       { label: 'Exporter en HTML', icon: 'download', onClick: async () => { await flush(); A.exportHTML(id); } },
+      { label: 'Exporter en PDF', icon: 'pdf', onClick: async () => { await flush(); A.exportPDF(id); } },
       canWrite && { label: 'Dupliquer', icon: 'copy', onClick: async () => { await flush(); A.duplicate(id); } },
       canWrite && { label: 'Ajouter une sous-page', icon: 'plus', onClick: () => A.newPage(p.spaceId, id) },
       canWrite && { sep: true },
@@ -338,7 +362,7 @@ function mountPage(page) {
       }
       paintChrome();
       // Version restaurée localement, ou modification venue d'un autre onglet / utilisateur.
-      if (evt.source === 'restore' || (evt.type === 'remote' && evt.pageId === id && (evt.version ?? 0) > version)) {
+      if (!useCollab && (evt.source === 'restore' || (evt.type === 'remote' && evt.pageId === id && (evt.version ?? 0) > version))) {
         if (dirty) remoteChanged = true;
         else reloadFromServer();
       }
@@ -352,6 +376,7 @@ function mountPage(page) {
       refreshDerived.cancel();
       window.removeEventListener('beforeunload', beforeUnload);
       editor.destroy();
+      collab?.destroy();
       presence.setPage(null);
     },
   };
@@ -379,17 +404,17 @@ export function showSpace(spaceId) {
     const recent = store.recent(spaceId, 9);
     const roots = store.children(spaceId, null);
     main().replaceChildren(
-      topbar(h('nav', { class: 'crumbs' }, h('span', { class: 'crumb current' }, h('span', { class: 'crumb-ico' }, s.icon), s.name)),
+      topbar(h('nav', { class: 'crumbs' }, h('span', { class: 'crumb current' }, h('span', { class: 'crumb-ico' }, icon(s.icon || 'folder', 14)), s.name)),
         app.embed || !canWrite ? [] : [h('button', { class: 'btn btn-primary btn-sm', onClick: () => A.newPage(spaceId) }, icon('plus', 15), 'Nouvelle page')]),
       scroller);
     scroller.replaceChildren(h('div', { class: 'space-home' },
       h('div', { class: 'space-hero' },
-        h('div', { class: 'space-hero-icon' }, s.icon),
+        h('div', { class: 'space-hero-icon' }, pageIcon(s.icon, 32)),
         h('div', null,
           h('h1', null, s.name),
           s.description && h('p', { class: 'muted' }, s.description),
           h('div', { class: 'space-stats' },
-            h('span', null, s.visibility === 'public' ? '🌍 Public' : '🔒 Privé'),
+            h('span', null, s.visibility === 'public' ? 'Public' : 'Privé'),
             h('span', null, `${pages.length} page${pages.length > 1 ? 's' : ''}`),
             h('span', null, `${roots.length} à la racine`),
             pages.length > 0 && h('span', null, `Activité ${timeAgo(Math.max(...pages.map((p) => p.updatedAt)))}`))),
@@ -400,7 +425,7 @@ export function showSpace(spaceId) {
           h('div', { class: 'cards' }, recent.map((p) => {
             const parent = p.parentId && store.page(p.parentId);
             return h('a', { class: 'card', href: `#/p/${p.id}` },
-              h('div', { class: 'card-icon' }, p.icon || '📄'),
+              h('div', { class: 'card-icon' }, pageIcon(p.icon)),
               h('strong', { class: 'card-title' }, p.title || 'Sans titre'),
               h('p', { class: 'card-snippet' }, p.excerpt ? p.excerpt.slice(0, 120) + (p.excerpt.length > 120 ? '…' : '') : 'Page vide'),
               h('div', { class: 'card-foot' },
@@ -409,7 +434,7 @@ export function showSpace(spaceId) {
           })),
         ]
         : h('div', { class: 'empty' },
-          h('div', { class: 'empty-emoji' }, '🌱'),
+          h('div', { class: 'empty-emoji' }, icon('plus', 32)),
           h('p', null, 'Cet espace est encore vide.'),
           canWrite && !app.embed && h('button', { class: 'btn btn-primary', onClick: () => A.newPage(spaceId) }, 'Créer la première page'))));
   }
@@ -423,24 +448,30 @@ const AUTH_ERRORS = {
   forbidden: 'Votre compte n’appartient à aucun groupe autorisé. Demandez l’accès à un administrateur.',
   callback: 'La connexion a échoué. Réessayez.',
   access_denied: 'Connexion annulée.',
+  mfa_required: 'Une double authentification est exigée : activez-la sur votre compte du fournisseur d’identité, puis reconnectez-vous.',
 };
 
 export function showLogin() {
   teardown();
   document.title = 'Connexion · Notabene';
   const error = new URLSearchParams(location.search).get('auth_error');
-  const { oidc, devLogin } = session.config.auth;
+  const { oidc, devLogin, local, setupRequired, ldap, saml } = session.config.auth;
   main().replaceChildren(h('div', { class: 'login' }, h('div', { class: 'login-card' },
     h('div', { class: 'boot-logo' }),
     h('h1', null, 'Notabene'),
     h('p', { class: 'muted' }, 'Le wiki de votre équipe. Connectez-vous pour continuer.'),
     error && h('div', { class: 'notice warning' }, AUTH_ERRORS[error] || 'Connexion impossible.'),
-    oidc && h('a', { class: 'btn btn-primary btn-lg', href: session.loginUrl() }, icon('users', 16), 'Se connecter avec Authentik'),
+    local && localLoginForm(setupRequired),
+    local && ldap && h('p', { class: 'hint' }, 'ou'),
+    ldap && ldapLoginForm(),
+    (local || ldap) && (oidc || saml) && h('p', { class: 'hint' }, 'ou'),
+    oidc && h('a', { class: local || ldap ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: session.loginUrl() }, icon('users', 16), 'Se connecter avec Authentik'),
+    saml && h('a', { class: local || ldap || oidc ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: `/auth/saml/login?returnTo=${encodeURIComponent(`/${location.hash}`)}` }, icon('key', 16), 'Se connecter avec le SSO (SAML)'),
     devLogin && h('div', { class: 'dev-login stack' },
       h('p', { class: 'hint' }, 'Mode développement : connexion sans fournisseur d’identité.'),
       h('div', { class: 'row center' }, ['admin', 'editor', 'reader'].map((role) =>
         h('button', { class: 'btn btn-ghost btn-sm', onClick: () => session.devLogin(role) }, { admin: 'Admin', editor: 'Éditeur', reader: 'Lecteur' }[role])))),
-    !oidc && !devLogin && h('p', { class: 'notice warning' }, 'Aucun fournisseur d’identité n’est configuré.'))));
+    !oidc && !devLogin && !local && !ldap && !saml && h('p', { class: 'notice warning' }, 'Aucun fournisseur d’identité n’est configuré.'))));
 }
 
 // ---- Introuvable ----------------------------------------------------------
@@ -452,13 +483,13 @@ export function showMissing(id, status = 404) {
   main().replaceChildren(
     topbar(h('nav', { class: 'crumbs' })),
     h('div', { class: 'scroller' }, h('div', { class: 'empty big' },
-      h('div', { class: 'empty-emoji' }, '🔭'),
+      h('div', { class: 'empty-emoji' }, icon('search', 32)),
       h('h2', null, 'Page introuvable'),
       h('p', { class: 'muted' }, anonymous
         ? 'Cette page n’existe pas ou nécessite d’être connecté.'
         : status === 404 ? 'Elle a peut-être été supprimée ou déplacée dans la corbeille.' : 'Impossible de charger la page.'),
       h('div', { class: 'row center' },
-        anonymous && (session.config.auth.oidc || session.config.auth.devLogin) && h('a', { class: 'btn btn-primary', href: session.config.auth.oidc ? session.loginUrl() : '/?login' }, 'Se connecter'),
+        anonymous && (session.config.auth.oidc || session.config.auth.devLogin || session.config.auth.local || session.config.auth.ldap || session.config.auth.saml) && h('a', { class: 'btn btn-primary', href: session.config.auth.oidc ? session.loginUrl() : '/?login' }, 'Se connecter'),
         h('a', { class: 'btn btn-ghost', href: '#/' }, 'Retour à l’accueil')))));
   view = { kind: 'missing', id };
 }

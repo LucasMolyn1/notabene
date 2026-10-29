@@ -57,10 +57,10 @@ export function seedDemo(db: DB) {
     const page = (spaceId: string, parentId: string | null, icon: string, title: string, content: DocNode) =>
       createPage(db, { spaceId, parentId, icon, title, content }, null).id;
 
-    const pub = space('Documentation', '📘', 'Espace public : présentation du projet, guide de l’éditeur et API. Visible sans connexion.', 'public', 0);
-    const team = space('Équipe', '⚙️', 'Espace privé : réservé aux utilisateurs authentifiés.', 'private', 1);
+    const pub = space('Documentation', 'globe', 'Espace public : présentation du projet, guide de l’éditeur et API. Visible sans connexion.', 'public', 0);
+    const team = space('Équipe', 'lock', 'Espace privé : réservé aux utilisateurs authentifiés.', 'private', 1);
 
-    const welcome = page(pub, null, '👋', 'Bienvenue sur Notabene', doc(
+    const welcome = page(pub, null, 'star', 'Bienvenue sur Notabene', doc(
       p('Notabene est un **wiki collaboratif auto-hébergé** inspiré de Docmost : des espaces, des pages imbriquées, un éditeur riche, des diagrammes et une recherche par IA.'),
       callout('info', p('Cet espace est **public** : il est lisible sans connexion, idéal pour l’intégrer à un portfolio. L’espace « Équipe » est réservé aux personnes connectées via votre fournisseur d’identité.')),
       h(2, 'Ce que vous pouvez faire'),
@@ -76,7 +76,7 @@ export function seedDemo(db: DB) {
       tasks([true, 'Se connecter avec Authentik'], [false, 'Créer une page avec le bouton **+**'], [false, 'Insérer un diagramme Mermaid avec `/mermaid`'], [false, 'Créer un jeton d’API depuis le menu utilisateur']),
     ));
 
-    const guide = page(pub, welcome, '✍️', 'Guide de l’éditeur', doc(
+    const guide = page(pub, welcome, 'pencil', 'Guide de l’éditeur', doc(
       p('L’éditeur reconnaît les raccourcis Markdown : tapez-les en début de ligne.'),
       table(
         ['Vous tapez', 'Vous obtenez'],
@@ -99,19 +99,19 @@ export function seedDemo(db: DB) {
       callout('warning', p('**Attention** : les images sont compressées avant envoi.')),
     ));
 
-    page(pub, welcome, '🔌', 'Utiliser l’API REST', doc(
+    page(pub, welcome, 'code', 'Utiliser l’API REST', doc(
       p('Créez un jeton depuis **menu utilisateur → Jetons d’API**, en choisissant ses portées (`read`, `write`, `ai`, `admin`) et sa durée de validité. Le jeton n’est affiché qu’une seule fois.'),
       code('bash', 'export NOTABENE_TOKEN="nb_…"\n\n# Lister les espaces\ncurl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v1/spaces\n\n# Rechercher\ncurl -H "Authorization: Bearer $NOTABENE_TOKEN" "https://wiki.example.com/api/v1/search?q=deploiement"\n\n# Exporter une page en Markdown\ncurl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v1/pages/<id>/export'),
       p('La documentation interactive OpenAPI est disponible sur `/api/docs`.'),
       callout('danger', p('Ne stockez jamais un jeton dans un dépôt Git : utilisez les secrets de votre CI.')),
     ));
 
-    const onboarding = page(team, null, '🧭', 'Onboarding', doc(
+    const onboarding = page(team, null, 'compass', 'Onboarding', doc(
       p('Tout ce qu’il faut pour être opérationnel en une semaine.'),
       tasks([false, 'Obtenir ses accès (Git, CI, messagerie)'], [false, 'Lancer le projet en local'], [false, 'Lire le process de déploiement']),
       p('Voir aussi : '),
     ));
-    const deploy = page(team, onboarding, '🚢', 'Process de déploiement', doc(
+    const deploy = page(team, onboarding, 'upload', 'Process de déploiement', doc(
       ol('Ouvrir une PR et attendre la CI verte.', 'Obtenir une relecture.', 'Fusionner : la préproduction se met à jour.', 'Valider puis promouvoir en production.'),
       callout('danger', p('Pas de mise en production le vendredi après 16 h.')),
     ));

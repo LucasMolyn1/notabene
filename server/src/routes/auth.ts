@@ -1,7 +1,7 @@
 // Connexion OIDC, déconnexion (locale + fournisseur) et connexion de développement.
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { roleFromGroups, safeReturnTo, upsertUser } from '../auth/oidc.js';
+import { hasMfaClaim, roleFromGroups, safeReturnTo, upsertUser } from '../auth/oidc.js';
 import { createSession, destroySession, sessionCookieName } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/http.js';
@@ -46,6 +46,10 @@ export default async function authRoutes(app: FastifyInstance) {
     if (idpError) return reply.redirect(`/?auth_error=${encodeURIComponent(idpError.replace(/[^a-z_]/gi, '').slice(0, 40))}`);
     try {
       const { profile, idToken, returnTo } = await oidc.handleCallback(url);
+      if (config.OIDC_REQUIRE_MFA && !hasMfaClaim(profile)) {
+        audit(db, req, 'auth.denied', String(profile.sub), { reason: 'mfa' });
+        return reply.redirect('/?auth_error=mfa_required');
+      }
       const role = roleFromGroups(profile.groups, config);
       if (!role) {
         audit(db, req, 'auth.denied', String(profile.sub));

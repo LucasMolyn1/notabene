@@ -129,6 +129,39 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX audit_log_at ON audit_log(at);
   `,
+  `
+  CREATE TABLE webhooks (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    url         TEXT NOT NULL,
+    secret      TEXT NOT NULL,
+    events      TEXT NOT NULL,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL,
+    last_status INTEGER,
+    last_at     INTEGER,
+    failures    INTEGER NOT NULL DEFAULT 0
+  );
+  `,
+  `
+  ALTER TABLE users ADD COLUMN password_hash  TEXT;
+  ALTER TABLE users ADD COLUMN totp_secret    TEXT;
+  ALTER TABLE users ADD COLUMN totp_enabled   INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN totp_last_step INTEGER;
+  ALTER TABLE users ADD COLUMN recovery_codes TEXT;
+  ALTER TABLE users ADD COLUMN failed_logins  INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN locked_until   INTEGER;
+  ALTER TABLE users ADD COLUMN disabled       INTEGER NOT NULL DEFAULT 0;
+  `,
+  `
+  CREATE TABLE page_ydocs (
+    page_id      TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE,
+    state        BLOB NOT NULL,
+    epoch        TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    updated_at   INTEGER NOT NULL
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {

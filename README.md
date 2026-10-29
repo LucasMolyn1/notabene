@@ -41,6 +41,56 @@ cp .env.development.example .env       # puis renseignez ENCRYPTION_KEY (openssl
 npm run dev                            # API sur :3000, interface sur http://localhost:5173
 ```
 
+### Co-édition en temps réel
+
+Les rédacteurs qui ouvrent la même page voient les modifications et les curseurs des autres en direct (Yjs via WebSocket, `/collab/:id`). Le serveur conserve l’état de co-édition en base et recopie le contenu dans la page (JSON assaini) toutes les 2 secondes : recherche, export, historique des versions et API REST fonctionnent comme avant. Une modification du contenu par l’API ou une restauration de version recharge automatiquement les éditeurs ouverts.
+
+- Réservé aux sessions navigateur avec le rôle rédacteur ; les lecteurs et l’intégration en iframe restent en lecture seule.
+- L’origine de la requête doit être `PUBLIC_URL` (protection contre le détournement de WebSocket).
+- Derrière un reverse proxy, activez le transfert WebSocket (`Upgrade` / `Connection`) pour le chemin `/collab/`. Nginx : `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`.
+- `COLLAB_ENABLED=false` désactive la fonction : l’édition revient à l’enregistrement classique avec détection de conflit.
+
+### Comptes locaux (sans fournisseur d’identité)
+
+`AUTH_LOCAL=true` active la connexion par e-mail et mot de passe, seule ou en complément d’OIDC. Au premier démarrage, sans administrateur local, le serveur affiche un **code d’installation** dans ses journaux ; il se saisit sur la page de connexion pour créer le compte administrateur. Ensuite, les administrateurs créent les comptes dans Paramètres > Utilisateurs.
+
+- Mots de passe : 12 caractères minimum, hachés avec scrypt.
+- Double authentification TOTP optionnelle (FreeOTP, Aegis, Google Authenticator…) avec 10 codes de secours à usage unique.
+- Verrouillage de 15 minutes après 5 échecs, limitation de débit par adresse IP, sessions fermées lors d’un changement de mot de passe.
+- `LOCAL_REQUIRE_MFA=true` impose la double authentification : un compte local sans TOTP ne voit qu’un écran d’activation, l’API (jetons compris) lui répond 403 jusqu’à l’activation.
+- `OIDC_REQUIRE_MFA=true` refuse les connexions OIDC dont l’ID token ne contient pas de valeur `amr` prouvant un second facteur (`mfa`, `otp`, `hwk`…). Le fournisseur doit émettre ce claim ; la méthode la plus fiable reste d’exiger la MFA dans le flux d’authentification d’Authentik lui-même.
+- Les rôles des comptes locaux se gèrent dans l’application ; ceux des comptes OIDC restent issus des groupes.
+
+### LDAP / Active Directory
+
+`LDAP_URL` active la connexion par identifiant d’annuaire. Notabene cherche l’utilisateur avec un compte de service, puis vérifie son mot de passe par une liaison (bind) avec son propre DN : aucun mot de passe d’annuaire n’est stocké.
+
+```env
+LDAP_URL=ldaps://ad.example.org
+LDAP_BIND_DN=CN=svc-notabene,OU=Services,DC=example,DC=org
+LDAP_BIND_PASSWORD=…
+LDAP_BASE_DN=DC=example,DC=org
+LDAP_USER_FILTER=(|(sAMAccountName={username})(mail={username}))   # défaut
+LDAP_ADMIN_GROUPS=wiki-admins                  # CN ou DN complet, comparés à memberOf
+LDAP_EDITOR_GROUPS=wiki-editors
+LDAP_TLS_CA_FILE=/data/ca.pem                  # si l’AC est interne (à monter dans le conteneur)
+```
+
+`ldaps://` ou `LDAP_STARTTLS=true` est obligatoire en production. Les mots de passe vides sont refusés (liaison anonyme), l’identifiant est échappé dans le filtre (RFC 4515) et le rôle est recalculé à chaque connexion d’après les groupes. Pour Active Directory, `memberOf` ne liste que les groupes directs.
+
+### SAML 2.0
+
+`SAML_ENTRY_POINT` active le SSO SAML (initié par Notabene uniquement).
+
+```env
+SAML_ENTRY_POINT=https://idp.example.org/saml/sso
+SAML_IDP_CERT_FILE=/data/idp-cert.pem          # ou SAML_IDP_CERT (PEM, \n pour les retours à la ligne)
+SAML_ADMIN_GROUPS=wiki-admins
+SAML_GROUPS_ATTRIBUTE=groups                   # nom de l’attribut portant les groupes
+```
+
+Déclarez chez le fournisseur : ACS `PUBLIC_URL/auth/saml/callback`, entity ID `PUBLIC_URL/auth/saml/metadata` (les métadonnées XML sont servies à cette adresse). L’**assertion doit être signée** ; l’audience, `InResponseTo`, les dates et le rejeu sont contrôlés. Un SSO initié par le fournisseur est refusé volontairement.
+
 En développement, `DEV_LOGIN=true` permet de se connecter en admin, éditeur ou lecteur sans fournisseur d’identité. Le serveur **refuse de démarrer** si cette option est active en production.
 
 | Commande | Rôle |
