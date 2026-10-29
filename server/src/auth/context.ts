@@ -19,6 +19,7 @@ export interface Auth {
   via: 'session' | 'token';
   scopes: Set<Scope>;
   csrf?: string;
+  sessionHash?: string;
   tokenId?: string;
 }
 

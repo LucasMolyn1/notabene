@@ -189,3 +189,27 @@ describe('redirections', () => {
     expect(safeReturnTo('/\\evil.example')).toBe('/');
   });
 });
+
+describe('paramètres', () => {
+  it('vue d’ensemble réservée aux admins et sans secret', async () => {
+    const editor = await login('editor');
+    expect((await app.inject({ method: 'GET', url: '/api/v1/admin/instance', ...editor })).statusCode).toBe(403);
+    const admin = await login('admin');
+    const res = await app.inject({ method: 'GET', url: '/api/v1/admin/instance', ...admin });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.stringify(res.json())).not.toContain(KEY);
+    expect(res.json().stats.spaces).toBe(2);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/admin/users', ...admin })).json().length).toBeGreaterThan(0);
+  });
+
+  it('ferme les autres sessions sans fermer la session courante', async () => {
+    const first = await login('editor');
+    const second = await login('editor');
+    const list = (await app.inject({ method: 'GET', url: '/api/v1/sessions', ...second })).json();
+    expect(list.filter((s: { current: boolean }) => s.current)).toHaveLength(1);
+    const res = await app.inject({ method: 'DELETE', url: '/api/v1/sessions/others', ...second });
+    expect(res.json().closed).toBe(1);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/me', cookies: first.cookies })).json().user).toBeNull();
+    expect((await app.inject({ method: 'GET', url: '/api/v1/me', cookies: second.cookies })).json().user).not.toBeNull();
+  });
+});

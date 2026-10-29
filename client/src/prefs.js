@@ -13,9 +13,10 @@ export function savePrefs() {
 
 export const currentTheme = () => document.documentElement.dataset.theme || 'light';
 
+// theme : 'light', 'dark' ou null (suit le système).
 export function setTheme(theme) {
   prefs.theme = theme;
-  document.documentElement.dataset.theme = theme;
+  document.documentElement.dataset.theme = theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   savePrefs();
 }
 

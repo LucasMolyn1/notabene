@@ -1,5 +1,5 @@
 // Vues principales : page (éditeur), accueil d'espace, connexion, page introuvable.
-import { h, timeAgo, fullDate, wordCount, debounce, modKey } from './util.js';
+import { h, initials, timeAgo, fullDate, wordCount, debounce, modKey } from './util.js';
 import { icon } from './icons.js';
 import { store } from './store.js';
 import { session } from './session.js';
@@ -22,7 +22,15 @@ function teardown() {
   v?.destroy?.();
 }
 
-function topbar(left, right = []) {
+// Pour les vues définies hors de ce module (page Paramètres).
+export function beginView() {
+  teardown();
+  ++navSeq;
+  presence.setPage(null);
+}
+export function setView(v) { view = v; }
+
+export function topbar(left, right = []) {
   return h('header', { class: 'topbar' },
     !app.embed && h('button', { class: 'icon-btn sb-open', title: `Barre latérale (${modKey}\\)`, onClick: A.toggleSidebar }, icon('panel')),
     left,
@@ -39,7 +47,6 @@ function crumbsFor(page) {
   return parts.flatMap((p, i) => (i ? [h('span', { class: 'crumb-sep' }, '/'), p] : [p]));
 }
 
-const initials = (name) => name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
 function loading() {
   main().replaceChildren(topbar(h('nav', { class: 'crumbs' })), h('div', { class: 'scroller' }, h('div', { class: 'page-wrap' }, h('div', { class: 'skeleton' },

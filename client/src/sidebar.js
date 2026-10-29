@@ -1,5 +1,5 @@
 // Barre latérale : sélecteur d'espace, favoris, arborescence (glisser-déposer), compte.
-import { h, modKey } from './util.js';
+import { h, initials, modKey } from './util.js';
 import { icon } from './icons.js';
 import { store } from './store.js';
 import { session } from './session.js';
@@ -53,9 +53,11 @@ function accountMenu(anchor) {
   const admin = session.can('admin');
   openMenu(anchor, [
     { heading: `${session.user.name} · ${ROLE_LABELS[session.user.role]}` },
-    { label: 'Jetons d’API', icon: 'code', onClick: A.openTokens },
-    { label: 'Documentation de l’API', icon: 'file', onClick: () => window.open('/api/docs', '_blank', 'noopener') },
-    admin && { label: 'Recherche IA', emoji: '✨', onClick: A.openAiSettings },
+    { label: 'Paramètres', icon: 'settings', onClick: () => A.go('/settings') },
+    { label: 'Profil et sessions', emoji: '👤', onClick: () => A.go('/settings/profile') },
+    { label: 'Jetons d’API', icon: 'code', onClick: () => A.go('/settings/tokens') },
+    { label: 'Recherche IA', emoji: '✨', onClick: () => A.go('/settings/ai') },
+    admin && { label: 'Administration', emoji: '🛡️', onClick: () => A.go('/settings/instance') },
     { sep: true },
     { label: 'Se déconnecter', icon: 'move', onClick: () => session.logout() },
   ], { align: 'left' });
@@ -164,7 +166,7 @@ function accountBox() {
   }
   const u = session.user;
   return h('button', { class: 'account', onClick: (e) => accountMenu(e.currentTarget) },
-    h('span', { class: 'avatar static', style: { '--c': colorFor(u.id) } }, u.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()),
+    h('span', { class: 'avatar static', style: { '--c': colorFor(u.id) } }, initials(u.name)),
     h('span', { class: 'account-meta' }, h('strong', null, u.name), h('small', null, ROLE_LABELS[u.role])),
     icon('more', 15));
 }
@@ -233,6 +235,7 @@ export function renderSidebar() {
         rootDrop)),
     h('div', { class: 'sb-foot' },
       canWrite && navBtn('trash', 'Corbeille', A.openTrash),
+      session.user && navBtn('settings', 'Paramètres', () => A.go('/settings'), { active: location.hash.startsWith('#/settings') }),
       accountBox()));
 
   el.querySelector('.sb-scroll').scrollTop = scrollTop;

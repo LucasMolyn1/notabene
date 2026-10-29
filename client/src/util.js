@@ -91,3 +91,5 @@ export function pickFile(accept) {
 
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 export const modKey = isMac ? '⌘' : 'Ctrl ';
+
+export const initials = (name) => String(name).split(/\s+/).map((w) => w.match(/[\p{L}\p{N}]/u)?.[0] || '').join('').slice(0, 2).toUpperCase();
