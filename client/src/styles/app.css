@@ -816,3 +816,16 @@ select.input { height: 36px; }
 .editor-host.syncing .ProseMirror { opacity: .4; pointer-events: none; }
 .collaboration-carets__caret { position: relative; margin-left: -1px; margin-right: -1px; border-left: 1px solid; border-right: 1px solid; word-break: normal; pointer-events: none; }
 .collaboration-carets__label { position: absolute; top: -1.45em; left: -1px; padding: 1px 6px; border-radius: 4px 4px 4px 0; font: 600 11px/1.4 var(--font, system-ui, sans-serif); color: #fff; white-space: nowrap; user-select: none; pointer-events: none; }
+
+/* Réglages des fournisseurs et lien discret */
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+.link-btn:hover { text-decoration: underline; }
+.prov-form { display: grid; gap: 12px; }
+.prov-form .field-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.prov-form textarea.input { min-height: 90px; font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px; }
+.prov-form .field small { color: var(--text-3); font-size: 12px; }
+.prov-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.prov-result { margin: 0; }
+.plain-list { margin: 0 0 8px; padding-left: 18px; display: grid; gap: 4px; color: var(--text-2); font-size: 13.5px; }
+.prov-form .field.row, .field.row { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+.field.row input[type='checkbox'] { width: auto; margin: 0; }

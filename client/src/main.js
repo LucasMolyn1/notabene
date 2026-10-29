@@ -15,7 +15,7 @@ import { showLogin, showMissing, showPage, showSpace, notifyStore, toastAuthErro
 import { showSettings } from './settings.js';
 import { h } from './util.js';
 import { icon } from './icons.js';
-import { showMfaSetup } from './local-auth.js';
+import { showMfaSetup, showResetPassword } from './local-auth.js';
 import * as A from './actions.js';
 
 // L'accès est contrôlé par la session, pas par la route demandée.
@@ -66,6 +66,16 @@ function onKey(e) {
 async function boot() {
   document.body.classList.toggle('embed', app.embed);
   document.body.classList.toggle('sb-collapsed', !prefs.sidebar);
+
+  // Lien de réinitialisation reçu par e-mail : le jeton est dans le fragment (jamais envoyé au serveur) et retiré de l'URL.
+  window.addEventListener('hashchange', () => { if (/^#\/reset\//.test(location.hash)) location.reload(); });
+  const reset = /^#\/reset\/([\w-]{20,100})$/.exec(location.hash);
+  if (reset) {
+    history.replaceState(null, '', location.pathname);
+    document.body.classList.add('no-sidebar');
+    showResetPassword(document.getElementById('main'), reset[1]);
+    return;
+  }
 
   await session.load();
   if (session.mfaSetupRequired) {

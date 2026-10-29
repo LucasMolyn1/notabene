@@ -159,3 +159,36 @@ export function ldapLoginForm() {
     });
   } }, field('Identifiant de l’annuaire', user), field('Mot de passe', pass), error, button);
 }
+
+// Demande de lien de réinitialisation (visible seulement si SMTP est configuré). Réponse identique que le compte existe ou non.
+export function forgotPasswordForm() {
+  const error = h('div', { class: 'notice warning', hidden: true });
+  const done = h('div', { class: 'notice success', hidden: true }, 'Si un compte correspond à cette adresse, un e-mail contenant un lien de réinitialisation vient d’être envoyé.');
+  const mail = input({ type: 'email', autocomplete: 'username', required: true, maxlength: '200' });
+  const button = h('button', { class: 'btn btn-ghost', type: 'submit' }, 'Envoyer le lien');
+  const form = h('form', { class: 'stack login-form', hidden: true, onSubmit: async (e) => {
+    e.preventDefault();
+    const err = await submit(button, error, () => request('POST', '/auth/local/forgot', { email: mail.value }));
+    if (!err) { done.hidden = false; error.hidden = true; }
+  } }, field('Adresse e-mail du compte', mail), error, done, button);
+  const link = h('button', { class: 'link-btn', type: 'button', onClick: () => { form.hidden = !form.hidden; if (!form.hidden) mail.focus(); } }, 'Mot de passe oublié ?');
+  return h('div', { class: 'stack' }, link, form);
+}
+
+// Écran ouvert depuis le lien reçu par e-mail (#/reset/<jeton>) : choix du nouveau mot de passe.
+export function showResetPassword(main, token) {
+  const error = h('div', { class: 'notice warning', hidden: true });
+  const pass = input({ type: 'password', autocomplete: 'new-password', required: true, maxlength: '256' });
+  const again = input({ type: 'password', autocomplete: 'new-password', required: true, maxlength: '256' });
+  const button = h('button', { class: 'btn btn-primary btn-lg', type: 'submit' }, 'Enregistrer le mot de passe');
+  main.replaceChildren(h('div', { class: 'login' }, h('div', { class: 'login-card' },
+    h('div', { class: 'boot-logo' }),
+    h('h1', null, 'Nouveau mot de passe'),
+    h('p', { class: 'muted' }, '12 caractères minimum. Le lien ne sert qu’une fois.'),
+    h('form', { class: 'stack login-form', onSubmit: async (e) => {
+      e.preventDefault();
+      if (pass.value !== again.value) { error.textContent = 'Les deux mots de passe ne correspondent pas'; error.hidden = false; return; }
+      const err = await submit(button, error, () => request('POST', '/auth/local/reset', { token, password: pass.value }));
+      if (!err) location.replace('/?login');
+    } }, field('Nouveau mot de passe', pass), field('Confirmation', again), error, button))));
+}

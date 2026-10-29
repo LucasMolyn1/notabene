@@ -101,6 +101,16 @@ En développement, `DEV_LOGIN=true` permet de se connecter en admin, éditeur ou
 | `npm run build` | Build de production (`dist/`) |
 | `npm start` | Lance le build de production |
 
+## Configuration depuis l’interface
+
+Les fournisseurs d’identité (OIDC/Authentik, LDAP, SAML), le serveur d’e-mail (SMTP) et les sites autorisés à intégrer le wiki se règlent dans **Paramètres** (administrateurs), sans redémarrage.
+
+- **Modèle hybride** : l’environnement (`.env`) fournit les valeurs de départ et l’amorçage (`PUBLIC_URL`, `ENCRYPTION_KEY`, `DATA_DIR`…). Un réglage enregistré dans l’interface remplace celui de l’environnement, section par section ; « Revenir au .env » annule.
+- **Garde-fous** : ressaisie du mot de passe (et du code MFA) à chaque test et enregistrement ; test de connexion réussi obligatoire avant d’enregistrer un fournisseur ; si l’adresse du serveur change, le secret doit être ressaisi (il ne part jamais vers une nouvelle cible sans votre accord) ; les secrets sont chiffrés avec `ENCRYPTION_KEY` et jamais réaffichés ; chaque action est dans le journal d’audit ; les règles de production restent appliquées (LDAP en clair interdit, HTTPS exigé).
+- **Récupération** : en cas d’erreur de configuration, le compte local (`AUTH_LOCAL=true`) et `create-admin --reset` permettent de reprendre la main ; `Revenir au .env` restaure la configuration d’origine.
+- **Verrouillage** : `CONFIG_LOCKED=true` fige tout dans l’environnement ; les réglages enregistrés en base sont ignorés et l’interface passe en lecture seule.
+- **E-mail** : avec SMTP (TLS obligatoire), « mot de passe oublié » (lien à usage unique de 30 minutes, réponse identique que le compte existe ou non), invitations (lien de 72 h, l’administrateur ne connaît jamais le mot de passe) et alertes de sécurité (verrouillage, mot de passe modifié, MFA activée ou désactivée). Sans SMTP, rien ne change : un administrateur réinitialise les mots de passe.
+
 ## Utiliser l’API
 
 1. Menu utilisateur → **Jetons d’API** → choisissez les portées et la durée (le jeton n’est affiché qu’une fois).
@@ -126,7 +136,7 @@ La clé est chiffrée en base (AES-256-GCM) et n’est jamais renvoyée au navig
 ## Intégration dans un portfolio
 
 1. Rendez un espace **public** (paramètres de l’espace).
-2. Ajoutez le domaine du portfolio dans `EMBED_ALLOWED_ORIGINS`.
+2. Ajoutez le domaine du portfolio dans Paramètres > Intégration portfolio (ou `EMBED_ALLOWED_ORIGINS`).
 3. Menu `⋯` d’une page → **Intégrer (iframe)** et collez le code obtenu.
 
 ## Architecture

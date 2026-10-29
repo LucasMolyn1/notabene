@@ -9,7 +9,7 @@ import { connectCollab } from './collab.js';
 import { presence, colorFor } from './presence.js';
 import { openMenu, openModal, toast, pageIcon } from './ui.js';
 import { openPalette } from './palette.js';
-import { ldapLoginForm, localLoginForm } from './local-auth.js';
+import { forgotPasswordForm, ldapLoginForm, localLoginForm } from './local-auth.js';
 import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
@@ -462,6 +462,7 @@ export function showLogin() {
     h('p', { class: 'muted' }, 'Le wiki de votre équipe. Connectez-vous pour continuer.'),
     error && h('div', { class: 'notice warning' }, AUTH_ERRORS[error] || 'Connexion impossible.'),
     local && localLoginForm(setupRequired),
+    local && !setupRequired && session.config.auth.mail && forgotPasswordForm(),
     local && ldap && h('p', { class: 'hint' }, 'ou'),
     ldap && ldapLoginForm(),
     (local || ldap) && (oidc || saml) && h('p', { class: 'hint' }, 'ou'),

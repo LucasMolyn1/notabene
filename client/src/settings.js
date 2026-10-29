@@ -9,6 +9,7 @@ import { colorFor } from './presence.js';
 import { toast, confirmModal, openModal } from './ui.js';
 import { qrSvg } from './qr.js';
 import { securityCard } from './local-auth.js';
+import { embedOriginsCard, providerCard } from './provider-settings.js';
 import { openDrawio, openExcalidraw } from './diagrams.js';
 import { beginView, setView, topbar } from './views.js';
 import * as A from './actions.js';
@@ -326,8 +327,7 @@ async function renderEmbed(el) {
   select.addEventListener('change', paint);
   height.addEventListener('input', paint);
 
-  let origins = null;
-  if (session.can('admin')) origins = (await A.attempt(() => api.get('/admin/instance')))?.integrations.embedAllowedOrigins ?? [];
+  const cfgData = session.can('admin') ? await A.attempt(() => api.get('/admin/settings')) : null;
 
   el.replaceChildren(
     card('1. Espaces publics', 'Seuls les espaces publics sont visibles sans connexion, donc intégrables.', h('div', { class: 'table' },
@@ -341,10 +341,9 @@ async function renderEmbed(el) {
             renderEmbed(el);
           },
         }, s.visibility === 'public' ? 'Rendre privé' : 'Rendre public'))))),
-    card('2. Sites autorisés', 'Origines autorisées à afficher Notabene en iframe (variable EMBED_ALLOWED_ORIGINS, en-tête CSP frame-ancestors).',
-      origins === null
-        ? h('p', { class: 'hint' }, 'Visible par les administrateurs.')
-        : origins.length ? h('div', { class: 'row wrap' }, origins.map((o) => pill(o, 'accent'))) : h('div', { class: 'notice warning' }, 'Aucune origine autorisée : ajoutez le domaine de votre portfolio dans EMBED_ALLOWED_ORIGINS puis redémarrez le conteneur.')),
+    cfgData
+      ? embedOriginsCard(cfgData, { card, refresh: () => renderEmbed(el) })
+      : card('2. Sites autorisés', 'Origines autorisées à afficher Notabene en iframe.', h('p', { class: 'hint' }, 'Visible et modifiable par les administrateurs.')),
     card('3. Code d’intégration', 'Affiche la page en lecture seule, sans barre latérale.',
       pages.length
         ? h('div', { class: 'stack' },
@@ -375,26 +374,35 @@ function renderSpaces(el) {
 
 async function renderAuth(el) {
   el.replaceChildren(loadingEl());
-  const info = await A.attempt(() => api.get('/admin/instance'));
-  if (!info) return;
-  const a = info.auth;
-  const groups = (list) => (list.length ? h('span', { class: 'row wrap' }, list.map((g) => h('code', null, g))) : h('span', { class: 'muted' }, 'aucun'));
+  const [info, data] = await Promise.all([A.attempt(() => api.get('/admin/instance')), A.attempt(() => api.get('/admin/settings'))]);
+  if (!info || !data) return;
+  const refresh = () => renderAuth(el);
+  const ctx = { card, copyable, refresh };
   el.replaceChildren(
-    card('Fournisseur d’identité', null, kv([
-      ['Mode', a.mode === 'oidc' ? status(true, 'OIDC (Authentik)') : pill('Développement : DEV_LOGIN', 'warn')],
-      ['Issuer', a.issuer ? copyable(a.issuer) : null],
-      ['Client ID', a.clientId ? h('code', null, a.clientId) : null],
-      ['Redirect URI', copyable(a.redirectUri)],
-      ['Scopes', h('code', null, a.scopes)],
-      ['Durée de session', `${a.sessionTtlHours} h (absolue)`],
-    ]), h('p', { class: 'hint' }, 'Le secret client n’est jamais affiché. Ces valeurs se modifient dans le fichier .env du déploiement.')),
-    card('Groupes → rôles', 'Le rôle est recalculé à chaque connexion à partir de la claim « groups ».', kv([
-      ['Administrateur', groups(a.groups.admin)],
-      ['Éditeur', groups(a.groups.editor)],
-      ['Lecteur', groups(a.groups.reader)],
-      ['Hors groupes', a.defaultRole === 'none' ? pill('Accès refusé', 'ok') : pill('Lecteur', 'warn')],
-    ])),
+    card('Méthodes de connexion', null, kv([
+      ['Comptes locaux', status(session.config.auth.local, 'Activés', 'Désactivés')],
+      ['Mode développement', session.config.auth.devLogin ? pill('DEV_LOGIN actif', 'warn') : pill('Désactivé', 'ok')],
+      ['Durée de session', `${info.auth.sessionTtlHours} h (absolue)`],
+    ]), data.locked
+      ? h('div', { class: 'notice info' }, 'Configuration verrouillée (CONFIG_LOCKED) : les fournisseurs se règlent dans l’environnement du déploiement.')
+      : h('p', { class: 'hint' }, 'Les fournisseurs se règlent ci-dessous. Chaque modification demande votre mot de passe, et la connexion doit être testée avant l’enregistrement. Les secrets sont chiffrés et jamais réaffichés. En cas d’erreur, le compte local et la commande create-admin --reset permettent de reprendre la main.')),
+    providerCard('oidc', data, { ...ctx, kvRows: [['URI de redirection', data.redirectUris.oidc]] }),
+    providerCard('ldap', data, ctx),
+    providerCard('saml', data, { ...ctx, kvRows: [['URL de réponse (ACS)', data.redirectUris.samlAcs], ['Métadonnées du service', data.redirectUris.samlMetadata]] }),
     card('Documentation', null, h('a', { class: 'btn btn-ghost btn-sm', href: `${REPO_URL}/blob/main/docs/AUTHENTIK.md`, target: '_blank', rel: 'noopener' }, 'Configurer Authentik ↗')));
+}
+
+async function renderMail(el) {
+  el.replaceChildren(loadingEl());
+  const data = await A.attempt(() => api.get('/admin/settings'));
+  if (!data) return;
+  el.replaceChildren(
+    providerCard('smtp', data, { card, copyable, refresh: () => renderMail(el) }),
+    card('Ce que l’e-mail permet', null, h('ul', { class: 'plain-list' },
+      h('li', null, 'Mot de passe oublié : lien à usage unique, valable 30 minutes.'),
+      h('li', null, 'Invitations : la personne choisit elle-même son mot de passe (lien valable 72 heures).'),
+      h('li', null, 'Alertes de sécurité : verrouillage du compte, mot de passe modifié, double authentification activée ou désactivée.')),
+    h('p', { class: 'hint' }, 'Sans SMTP, tout continue de fonctionner : un administrateur réinitialise les mots de passe depuis l’onglet Utilisateurs.')));
 }
 
 async function renderUsers(el) {
@@ -431,17 +439,24 @@ async function renderUsers(el) {
   const mail = h('input', { class: 'input', type: 'email', placeholder: 'E-mail', maxlength: '200', autocomplete: 'off' });
   const name = h('input', { class: 'input', placeholder: 'Nom', maxlength: '120', autocomplete: 'off' });
   const pass = h('input', { class: 'input', type: 'password', placeholder: 'Mot de passe initial (12 car. min.)', maxlength: '256', autocomplete: 'new-password' });
+  const mailOn = !!session.config.auth.mail;
+  const invite = h('input', { type: 'checkbox' });
+  invite.checked = mailOn;
+  invite.addEventListener('change', () => { pass.hidden = invite.checked; });
+  pass.hidden = mailOn;
   const roleSel = h('select', { class: 'input' }, Object.entries(ROLE_LABELS).map(([value, label]) => h('option', { value, selected: value === 'editor' }, label)));
 
   el.replaceChildren(...[
     card(`Utilisateurs (${users.length})`, local ? 'Comptes locaux (gérés ici) et comptes fédérés (rôles issus d’Authentik).' : 'Les comptes sont créés à la première connexion ; les rôles se gèrent dans Authentik.',
       h('div', { class: 'table' }, users.map(row))),
-    local && card('Nouveau compte local', 'Communiquez le mot de passe initial par un canal sûr ; la personne peut ensuite le changer et activer la double authentification.', h('div', { class: 'stack' },
-      h('div', { class: 'row wrap' }, mail, name, roleSel), pass,
+    local && card('Nouveau compte local', mailOn ? 'Par invitation, la personne choisit son mot de passe via un lien reçu par e-mail : vous ne le connaissez jamais.' : 'Communiquez le mot de passe initial par un canal sûr ; la personne peut ensuite le changer et activer la double authentification.', h('div', { class: 'stack' },
+      h('div', { class: 'row wrap' }, mail, name, roleSel),
+      mailOn && h('label', { class: 'field row' }, invite, h('span', null, 'Inviter par e-mail (lien valable 72 h)')),
+      pass,
       h('div', null, h('button', {
         class: 'btn btn-primary btn-sm',
         onClick: async () => {
-          if (await A.attempt(() => api.post('/admin/local-users', { email: mail.value, name: name.value, role: roleSel.value, password: pass.value }))) { toast('Compte créé'); refresh(); }
+          if (await A.attempt(() => api.post('/admin/local-users', invite.checked ? { email: mail.value, name: name.value, role: roleSel.value, invite: true } : { email: mail.value, name: name.value, role: roleSel.value, password: pass.value }))) { toast(invite.checked ? 'Invitation envoyée' : 'Compte créé'); refresh(); }
         },
       }, icon('plus', 15), 'Créer le compte')))),
   ].filter(Boolean));
@@ -449,6 +464,7 @@ async function renderUsers(el) {
 
 const AUDIT_LABELS = {
   'auth.login': 'Connexion', 'auth.logout': 'Déconnexion', 'auth.local.failed': 'Échec de connexion', 'auth.ldap.failed': 'Échec de connexion LDAP', 'auth.saml.failed': 'Réponse SAML refusée', 'auth.local.setup': 'Installation initiale', 'auth.local.password': 'Mot de passe modifié', 'auth.mfa.enable': 'MFA activée', 'auth.mfa.disable': 'MFA désactivée', 'backup.download': 'Sauvegarde téléchargée', 'import.markdown': 'Import Markdown', 'user.create': 'Compte créé', 'user.update': 'Compte modifié', 'auth.denied': 'Accès refusé', 'auth.sessions.revoke': 'Sessions fermées',
+  'auth.local.forgot': 'Réinitialisation demandée', 'auth.local.reset': 'Mot de passe réinitialisé', 'auth.reauth.failed': 'Échec de ressaisie', 'settings.test': 'Test de configuration', 'settings.test.failed': 'Test de configuration échoué', 'settings.reset': 'Retour à l’environnement', 'settings.embed': 'Sites autorisés modifiés', 'settings.oidc': 'OIDC modifié', 'settings.ldap': 'LDAP modifié', 'settings.saml': 'SAML modifié', 'settings.smtp': 'SMTP modifié', 'settings.smtp.test-mail': 'E-mail de test envoyé',
   'token.create': 'Jeton créé', 'token.revoke': 'Jeton révoqué', 'settings.ai': 'Réglages IA', 'ai.ask': 'Question IA',
   'space.create': 'Espace créé', 'space.delete': 'Espace supprimé', 'space.visibility': 'Visibilité modifiée',
   'page.destroy': 'Page supprimée définitivement', 'trash.empty': 'Corbeille vidée',
@@ -681,6 +697,7 @@ const SECTIONS = [
   { group: 'Fonctionnalités', id: 'embed', label: 'Intégration portfolio', ico: 'globe', render: renderEmbed },
   { group: 'Administration', id: 'spaces', label: 'Espaces', ico: 'folder', admin: true, render: renderSpaces },
   { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', admin: true, render: renderAuth },
+  { group: 'Administration', id: 'mail', label: 'E-mail', ico: 'mail', admin: true, render: renderMail },
   { group: 'Administration', id: 'webhooks', label: 'Webhooks', ico: 'webhook', admin: true, render: renderWebhooks },
   { group: 'Administration', id: 'import', label: 'Import', ico: 'upload', admin: true, render: renderImport },
   { group: 'Administration', id: 'users', label: 'Utilisateurs', ico: 'users', admin: true, render: renderUsers },
