@@ -133,25 +133,19 @@ export async function buildApp({ config, db, logger = false, clientDir }: AppOpt
   const cookieName = sessionCookieName(config.secureCookies);
   const publicOrigin = new URL(config.PUBLIC_URL).origin;
   app.addHook('onRequest', async (req) => {
-    req.auth = null;
-    const header = req.headers.authorization; // codeql[js/user-controlled-bypass] Bearer tokens are immune to CSRF by design
-    if (header) {
-      const match = /^Bearer\s+(\S+)$/.exec(header); // codeql[js/user-controlled-bypass]
-      const auth = match ? verifyApiToken(db, match[1]) : null;
-      if (!auth) throw new HttpError(401, 'Jeton d’API invalide, expiré ou révoqué');
-      req.auth = auth;
-      return;
-    }
-    const token = req.cookies[cookieName];
-    if (token) req.auth = sessionAuth(db, token);
+    const header = req.headers.authorization;
+    const bearer = header === undefined ? undefined : /^Bearer\s+(\S+)$/.exec(header)?.[1];
+    const cookie = req.cookies[cookieName];
+    if (header !== undefined && !bearer) throw new HttpError(401, 'Jeton d’API invalide, expiré ou révoqué');
+    req.auth = bearer ? verifyApiToken(db, bearer) : cookie ? sessionAuth(db, cookie) : null;
+    if (bearer && !req.auth) throw new HttpError(401, 'Jeton d’API invalide, expiré ou révoqué');
 
-    if (!SAFE_METHODS.has(req.method) && token) {
+    // CSRF : décidé d'après le mode d'authentification résolu côté serveur (les jetons Bearer n'y sont pas exposés).
+    if (req.auth?.via === 'session' && !SAFE_METHODS.has(req.method)) {
       const origin = req.headers.origin;
       if (origin && origin !== publicOrigin) throw new HttpError(403, 'Origine non autorisée');
       const csrf = req.headers['x-csrf-token'];
-      if (req.auth && (typeof csrf !== 'string' || !safeEqual(csrf, req.auth.csrf!))) {
-        throw new HttpError(403, 'Jeton CSRF invalide');
-      }
+      if (typeof csrf !== 'string' || !safeEqual(csrf, req.auth.csrf!)) throw new HttpError(403, 'Jeton CSRF invalide');
     }
   });
 
