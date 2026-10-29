@@ -4,14 +4,53 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Laisse quelques jours à l'écosystème pour détecter une version compromise avant de la proposer.
+    cooldown:
+      default-days: 5
+      semver-major-days: 14
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: deps
+    ignore:
+      # Les types suivent la version LTS de Node ciblée (22) : changement de majeure décidé manuellement.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       tiptap:
         patterns: ['@tiptap/*']
+      fastify:
+        patterns: ['fastify', '@fastify/*']
+
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: deps
+    ignore:
+      # Uniquement des versions LTS de Node (paires) : passage de majeure décidé manuellement.
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: deps
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ['*']

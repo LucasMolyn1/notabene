@@ -46,6 +46,17 @@ Merci de ne pas ouvrir d’issue publique : utilisez les *GitHub Security Adviso
 - **Journal d’audit** : connexions, refus, jetons, réglages, suppressions définitives.
 - CI : typecheck, tests de sécurité, `npm audit` et build Docker ; Dependabot hebdomadaire.
 
+### Dépôt et chaîne d’approvisionnement
+- Branche `main` protégée par un *ruleset* :
+  - modifications uniquement via pull request avec CI verte (`test`, `docker`, `dependency-review`, CodeQL) ;
+  - historique linéaire, conversations résolues avant fusion ;
+  - ni force-push ni suppression.
+- Tags de version `v*` protégés : création réservée aux administrateurs, ni modification ni suppression (ils déclenchent la publication de l’image).
+- Actions GitHub épinglées par **SHA de commit**, limitées aux éditeurs GitHub et vérifiés ; jeton `GITHUB_TOKEN` en lecture seule par défaut, permissions élevées limitées au job de publication.
+- Analyse de code **CodeQL**, *secret scanning* avec *push protection*, alertes et correctifs **Dependabot** (avec délai de carence avant d’adopter une nouvelle version), revue des dépendances sur chaque PR.
+- Images publiées avec **SBOM** et **attestation de provenance SLSA**, vérifiable avec :
+  `gh attestation verify oci://ghcr.io/lucasmolyn1/notabene:<version> --owner LucasMolyn1`
+
 ## Limites connues
 - Instance unique : la présence et le bus d’événements sont en mémoire. Un déploiement multi-réplicas nécessiterait Redis ou un équivalent.
 - Excalidraw tente aussi de charger ses polices depuis un CDN de secours : la CSP bloque ces requêtes (messages dans la console, sans impact).

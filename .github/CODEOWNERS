@@ -1,0 +1,8 @@
+# Toute modification passe par la revue du mainteneur.
+* @LucasMolyn1
+
+# Zones sensibles : sécurité, CI/CD, conteneurs.
+/.github/ @LucasMolyn1
+/server/src/auth/ @LucasMolyn1
+/Dockerfile @LucasMolyn1
+/docker-compose.yml @LucasMolyn1
