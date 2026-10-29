@@ -15,3 +15,18 @@ describe('diagrammes PlantUML', () => {
     expect(toMarkdown('T', null, clean, () => null)).toContain('```plantuml');
   });
 });
+
+describe('export Markdown : cellules de tableau', () => {
+  const table = (text: string, marks?: { type: string }[]) => ({
+    type: 'doc',
+    content: [{ type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text, ...(marks ? { marks } : {}) }] }] }] }] }],
+  });
+  it('échappe le séparateur de colonnes sans casser les antislashs', async () => {
+    const { toMarkdown } = await import('../src/lib/markdown.js');
+    const md = (doc: object) => toMarkdown('t', '', doc as never, () => null);
+    expect(md(table('a|b'))).toContain('| a\\|b |');
+    expect(md(table('a\\|b'))).toContain('| a\\\\\\|b |'); // antislash littéral (échappé) puis barre échappée
+    // Code en ligne finissant par un antislash : la barre suivante reste échappée une seule fois.
+    expect(md(table('x\\|', [{ type: 'code' }]))).toContain('`x\\|`');
+  });
+});
