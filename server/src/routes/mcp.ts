@@ -48,28 +48,38 @@ const TOOLS: Tool[] = [
   {
     name: 'list_spaces', description: 'Liste les espaces accessibles (id, nom, visibilité).', scope: 'read', readOnly: true,
     schema: z.object({}),
-    run: async (_a, call) => ok(await call('GET', '/api/v1/spaces')),
+    run: async (_a, call) => ok(await call('GET', '/api/v3/spaces')),
   },
   {
     name: 'list_pages', description: 'Liste les pages (titres et hiérarchie, sans contenu), éventuellement d’un seul espace.', scope: 'read', readOnly: true,
     schema: z.object({ spaceId: idSchema.optional().describe('Identifiant de l’espace') }),
-    run: async (a: { spaceId?: string }, call) => ok(await call('GET', `/api/v1/pages${a.spaceId ? `?spaceId=${a.spaceId}` : ''}`)),
+    run: async (a: { spaceId?: string }, call) => {
+      // v3 : liste paginée par curseur ; on suit les pages (borné) et on renvoie un tableau.
+      const items: unknown[] = [];
+      let cursor: string | null = null;
+      for (let i = 0; i < 20 && (i === 0 || cursor); i++) {
+        const page = JSON.parse(ok(await call('GET', `/api/v3/pages?limit=200${a.spaceId ? `&spaceId=${a.spaceId}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`))) as { items: unknown[]; nextCursor: string | null };
+        items.push(...page.items);
+        cursor = page.nextCursor;
+      }
+      return JSON.stringify(items);
+    },
   },
   {
     name: 'search_pages', description: 'Recherche plein texte dans les pages accessibles ; renvoie id, titre et extrait.', scope: 'read', readOnly: true,
     schema: z.object({ query: z.string().trim().min(1).max(200), limit: z.number().int().min(1).max(50).default(10) }),
-    run: async (a: { query: string; limit: number }, call) => ok(await call('GET', `/api/v1/search?q=${encodeURIComponent(a.query)}&limit=${a.limit}`)),
+    run: async (a: { query: string; limit: number }, call) => JSON.stringify((JSON.parse(ok(await call('GET', `/api/v3/search?q=${encodeURIComponent(a.query)}&limit=${a.limit}`))) as { items: unknown[] }).items),
   },
   {
     name: 'get_page', description: 'Lit le contenu d’une page au format Markdown.', scope: 'read', readOnly: true,
     schema: z.object({ id: idSchema }),
-    run: async (a: { id: string }, call) => ok(await call('GET', `/api/v1/pages/${a.id}/export?format=markdown`)),
+    run: async (a: { id: string }, call) => ok(await call('GET', `/api/v3/pages/${a.id}/export?format=markdown`)),
   },
   {
     name: 'create_page', description: 'Crée une page (texte simple : « # Titre » pour un titre, ligne vide entre paragraphes). Nécessite la portée write.', scope: 'write', readOnly: false,
     schema: z.object({ spaceId: idSchema, title: z.string().trim().min(1).max(300), text: z.string().max(100_000).default(''), parentId: idSchema.optional() }),
     run: async (a: { spaceId: string; title: string; text: string; parentId?: string }, call) => {
-      const page = JSON.parse(ok(await call('POST', '/api/v1/pages', { spaceId: a.spaceId, parentId: a.parentId, title: a.title, content: textToDoc(a.text) }))) as { id: string };
+      const page = JSON.parse(ok(await call('POST', '/api/v3/pages', { spaceId: a.spaceId, parentId: a.parentId, title: a.title, content: textToDoc(a.text) }))) as { id: string };
       return JSON.stringify({ id: page.id, url: `/#/p/${page.id}` });
     },
   },

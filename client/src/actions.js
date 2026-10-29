@@ -117,7 +117,7 @@ export function showEmbed(id) {
 
 export async function exportMarkdown(id) {
   const page = store.page(id);
-  const md = await attempt(() => request('GET', `/api/v1/pages/${id}/export?format=markdown`));
+  const md = await attempt(() => request('GET', `/api/v3/pages/${id}/export?format=markdown`));
   if (md != null) download(`${slugify(page?.title)}.md`, md, 'text/markdown');
 }
 

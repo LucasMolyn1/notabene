@@ -259,58 +259,61 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     return auth;
   };
 
-  app.post('/api/v1/admin/local-users', {
-    schema: { tags: ['admin'], summary: 'Créer un compte local (admin)', body: z.object({ email, name: z.string().trim().min(1).max(120), role, password: password.optional(), invite: z.boolean().default(false) }) },
-  }, async (req, reply) => {
-    adminOnly(req);
-    const b = req.body as { email: string; name: string; role: 'admin' | 'editor' | 'reader'; password?: string; invite: boolean };
-    if (b.invite && !app.mail.enabled) throw new HttpError(409, 'Configurez SMTP pour inviter par e-mail');
-    if (!b.invite) {
-      if (!b.password) throw new HttpError(400, 'Mot de passe requis');
-      const problem = passwordProblem(b.password, b.email);
-      if (problem) throw new HttpError(400, problem);
-    }
-    if (userByEmail(b.email)) throw new HttpError(409, 'Un compte existe déjà avec cette adresse');
-    const id = newId();
-    // Invitation : mot de passe aléatoire que personne ne connaît ; l'invité choisit le sien via le lien reçu.
-    const hash = await hashPassword(b.invite ? randomToken(32) : b.password!);
-    db.prepare('INSERT INTO users (id, sub, email, name, role, created_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(id, `local:${b.email}`, b.email, b.name, b.role, Date.now(), hash);
-    if (b.invite) {
-      try {
-        await app.mail.send({ to: b.email, ...mails.invite(issueToken(id, 'invite'), INVITE_TTL_H, b.name) });
-      } catch (err) {
-        db.prepare('DELETE FROM users WHERE id = ?').run(id);
-        app.log.warn({ err }, 'invitation non envoyée');
-        throw new HttpError(502, 'Envoi de l’invitation impossible : vérifiez la configuration SMTP');
+  // Mêmes routes sous chaque version de l'API (ce plugin est enregistré à la racine, hors des préfixes de version).
+  for (const prefix of ['/api/v1', '/api/v2', '/api/v3']) {
+    app.post(`${prefix}/admin/local-users`, {
+      schema: { tags: ['admin'], summary: 'Créer un compte local (admin)', body: z.object({ email, name: z.string().trim().min(1).max(120), role, password: password.optional(), invite: z.boolean().default(false) }) },
+    }, async (req, reply) => {
+      adminOnly(req);
+      const b = req.body as { email: string; name: string; role: 'admin' | 'editor' | 'reader'; password?: string; invite: boolean };
+      if (b.invite && !app.mail.enabled) throw new HttpError(409, 'Configurez SMTP pour inviter par e-mail');
+      if (!b.invite) {
+        if (!b.password) throw new HttpError(400, 'Mot de passe requis');
+        const problem = passwordProblem(b.password, b.email);
+        if (problem) throw new HttpError(400, problem);
       }
-    }
-    audit(db, req, 'user.create', id, { role: b.role, invited: b.invite });
-    return reply.code(201).send({ id });
-  });
+      if (userByEmail(b.email)) throw new HttpError(409, 'Un compte existe déjà avec cette adresse');
+      const id = newId();
+      // Invitation : mot de passe aléatoire que personne ne connaît ; l'invité choisit le sien via le lien reçu.
+      const hash = await hashPassword(b.invite ? randomToken(32) : b.password!);
+      db.prepare('INSERT INTO users (id, sub, email, name, role, created_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(id, `local:${b.email}`, b.email, b.name, b.role, Date.now(), hash);
+      if (b.invite) {
+        try {
+          await app.mail.send({ to: b.email, ...mails.invite(issueToken(id, 'invite'), INVITE_TTL_H, b.name) });
+        } catch (err) {
+          db.prepare('DELETE FROM users WHERE id = ?').run(id);
+          app.log.warn({ err }, 'invitation non envoyée');
+          throw new HttpError(502, 'Envoi de l’invitation impossible : vérifiez la configuration SMTP');
+        }
+      }
+      audit(db, req, 'user.create', id, { role: b.role, invited: b.invite });
+      return reply.code(201).send({ id });
+    });
 
-  app.patch('/api/v1/admin/local-users/:id', {
-    schema: {
-      tags: ['admin'], summary: 'Modifier un compte local (rôle, désactivation, mot de passe, MFA)', params: idParams,
-      body: z.object({ role: role.optional(), disabled: z.boolean().optional(), password: password.optional(), resetMfa: z.boolean().optional() }),
-    },
-  }, async (req) => {
-    const auth = adminOnly(req);
-    const { id } = req.params as { id: string };
-    const b = req.body as { role?: 'admin' | 'editor' | 'reader'; disabled?: boolean; password?: string; resetMfa?: boolean };
-    const user = userById(id);
-    if (!user?.password_hash) throw new HttpError(404, 'Compte local introuvable');
-    if (id === auth.user.id && (b.disabled || (b.role && b.role !== 'admin'))) throw new HttpError(400, 'Vous ne pouvez pas vous désactiver ni vous rétrograder');
-    if (b.password) {
-      const problem = passwordProblem(b.password, user.email ?? undefined);
-      if (problem) throw new HttpError(400, problem);
-      db.prepare('UPDATE users SET password_hash = ?, failed_logins = 0, locked_until = NULL WHERE id = ?').run(await hashPassword(b.password), id);
-    }
-    if (b.role) db.prepare('UPDATE users SET role = ? WHERE id = ?').run(b.role, id);
-    if (b.disabled !== undefined) db.prepare('UPDATE users SET disabled = ? WHERE id = ?').run(b.disabled ? 1 : 0, id);
-    if (b.resetMfa) db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_last_step = NULL, recovery_codes = NULL WHERE id = ?').run(id);
-    if (b.password || b.disabled) closeOtherSessions(id);
-    audit(db, req, 'user.update', id, { role: b.role, disabled: b.disabled, password: !!b.password, resetMfa: !!b.resetMfa });
-    return { ok: true };
-  });
+    app.patch(`${prefix}/admin/local-users/:id`, {
+      schema: {
+        tags: ['admin'], summary: 'Modifier un compte local (rôle, désactivation, mot de passe, MFA)', params: idParams,
+        body: z.object({ role: role.optional(), disabled: z.boolean().optional(), password: password.optional(), resetMfa: z.boolean().optional() }),
+      },
+    }, async (req) => {
+      const auth = adminOnly(req);
+      const { id } = req.params as { id: string };
+      const b = req.body as { role?: 'admin' | 'editor' | 'reader'; disabled?: boolean; password?: string; resetMfa?: boolean };
+      const user = userById(id);
+      if (!user?.password_hash) throw new HttpError(404, 'Compte local introuvable');
+      if (id === auth.user.id && (b.disabled || (b.role && b.role !== 'admin'))) throw new HttpError(400, 'Vous ne pouvez pas vous désactiver ni vous rétrograder');
+      if (b.password) {
+        const problem = passwordProblem(b.password, user.email ?? undefined);
+        if (problem) throw new HttpError(400, problem);
+        db.prepare('UPDATE users SET password_hash = ?, failed_logins = 0, locked_until = NULL WHERE id = ?').run(await hashPassword(b.password), id);
+      }
+      if (b.role) db.prepare('UPDATE users SET role = ? WHERE id = ?').run(b.role, id);
+      if (b.disabled !== undefined) db.prepare('UPDATE users SET disabled = ? WHERE id = ?').run(b.disabled ? 1 : 0, id);
+      if (b.resetMfa) db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_last_step = NULL, recovery_codes = NULL WHERE id = ?').run(id);
+      if (b.password || b.disabled) closeOtherSessions(id);
+      audit(db, req, 'user.update', id, { role: b.role, disabled: b.disabled, password: !!b.password, resetMfa: !!b.resetMfa });
+      return { ok: true };
+    });
+  }
 }

@@ -10,8 +10,8 @@ export class ApiError extends Error {
   }
 }
 
-export async function request(method, url, body) {
-  const headers = {};
+export async function request(method, url, body, extraHeaders = {}) {
+  const headers = { ...extraHeaders };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (csrf && method !== 'GET') headers['X-CSRF-Token'] = csrf;
   const res = await fetch(url, {
@@ -23,34 +23,43 @@ export async function request(method, url, body) {
   if (res.status === 204) return null;
   const type = res.headers.get('content-type') || '';
   const data = type.includes('json') ? await res.json() : await res.text();
-  if (!res.ok) throw new ApiError(res.status, data?.message || `Erreur ${res.status}`, data);
+  // v3 : erreurs RFC 9457 (champ « detail ») ; les routes d'authentification gardent « message ».
+  if (!res.ok) throw new ApiError(res.status, data?.detail || data?.message || `Erreur ${res.status}`, data);
   return data;
 }
 
-const v1 = (path) => `/api/v1${path}`;
+// Toute l'application parle à la v3 (la v1 est dépréciée).
 const v3 = (path) => `/api/v3${path}`;
 
-// Fonctions de la v3 (notifications, commentaires, permissions).
-export const api3 = {
+export const api = {
   get: (path) => request('GET', v3(path)),
   post: (path, body = {}) => request('POST', v3(path), body),
+  patch: (path, body, headers) => request('PATCH', v3(path), body, headers),
   put: (path, body = {}) => request('PUT', v3(path), body),
   del: (path) => request('DELETE', v3(path)),
 };
 
-export const api = {
-  get: (path) => request('GET', v1(path)),
-  post: (path, body = {}) => request('POST', v1(path), body),
-  patch: (path, body) => request('PATCH', v1(path), body),
-  put: (path, body = {}) => request('PUT', v1(path), body),
-  del: (path) => request('DELETE', v1(path)),
-};
+// Alias conservé pour les modules écrits avant la migration.
+export const api3 = api;
+
+// Parcourt une liste paginée par curseur (limite 200 par requête) et renvoie tous les éléments.
+export async function listAll(path) {
+  const items = [];
+  let cursor = null;
+  do {
+    const sep = path.includes('?') ? '&' : '?';
+    const page = await api.get(`${path}${sep}limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+    items.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return items;
+}
 
 // Flux d'événements temps réel (reconnexion automatique gérée par EventSource).
 const EVENT_TYPES = ['page.created', 'page.updated', 'page.moved', 'page.trashed', 'page.restored', 'page.deleted', 'space.changed', 'presence', 'notification'];
 
 export function openEvents(onEvent) {
-  const source = new EventSource(v1('/events'));
+  const source = new EventSource(v3('/events'));
   for (const type of EVENT_TYPES) {
     source.addEventListener(type, (e) => {
       try { onEvent(type, JSON.parse(e.data)); } catch { /* message invalide ignoré */ }
@@ -63,7 +72,7 @@ export function openEvents(onEvent) {
 export async function streamAsk(question, { onSources, onDelta, onError, onDone, signal }) {
   let res;
   try {
-    res = await fetch(v1('/ai/ask'), {
+    res = await fetch(v3('/ai/ask'), {
       method: 'POST',
       signal,
       credentials: 'same-origin',
@@ -76,7 +85,7 @@ export async function streamAsk(question, { onSources, onDelta, onError, onDone,
   }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    onError?.(data.message || `Erreur ${res.status}`);
+    onError?.(data.detail || data.message || `Erreur ${res.status}`);
     return;
   }
   const reader = res.body.getReader();

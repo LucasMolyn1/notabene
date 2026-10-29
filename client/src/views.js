@@ -135,13 +135,14 @@ function mountPage(page) {
     pending = {};
     inflight = (async () => {
       try {
-        const meta = await store.updatePage(id, { ...patch, ...(force || useCollab ? {} : { baseVersion: version }) });
+        // Écraser (« garder ma version ») : on s'appuie sur la version actuelle du serveur, connue par le conflit.
+        const meta = await store.updatePage(id, { ...patch, ...(useCollab ? {} : { baseVersion: force ? serverVersion : version }) });
         version = meta.version;
         dirty = Object.keys(pending).length > 0;
         setSave('saved');
       } catch (err) {
         pending = { ...patch, ...pending };
-        if (err.status === 409) handleConflict(err.data);
+        if (err.status === 412 || err.status === 409) handleConflict(err.data);
         else setSave('error', 'Échec de l’enregistrement');
       } finally {
         inflight = null;
@@ -160,7 +161,9 @@ function mountPage(page) {
     scheduleSave();
   }
 
+  let serverVersion = page.version;
   function handleConflict(data) {
+    if (Number.isInteger(data?.version)) serverVersion = data.version;
     setSave('error', 'Conflit');
     openModal({
       title: 'Modification concurrente',
