@@ -44,6 +44,10 @@ const schema = z
     // Rôle des utilisateurs authentifiés qui ne sont dans aucun groupe : « none » refuse l'accès.
     OIDC_DEFAULT_ROLE: z.enum(['reader', 'none']).default('none'),
     SESSION_TTL_HOURS: z.coerce.number().min(1).max(24 * 30).default(12),
+    // Une session sans aucune requête pendant cette durée est fermée (en plus de la durée absolue ci-dessus).
+    SESSION_IDLE_MINUTES: z.coerce.number().min(5).max(24 * 60).default(120),
+    // Documentation interactive de l'API : auth (connectés seulement, défaut), public, off.
+    API_DOCS: z.enum(['auth', 'public', 'off']).default('auth'),
 
     // Comptes locaux (e-mail + mot de passe, MFA TOTP) : alternative ou complément à OIDC.
     AUTH_LOCAL: bool('false'),
