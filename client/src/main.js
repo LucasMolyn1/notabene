@@ -17,6 +17,7 @@ import { h } from './util.js';
 import { icon } from './icons.js';
 import { showMfaSetup, showResetPassword } from './local-auth.js';
 import { refreshUnread } from './notifications.js';
+import { onCommentEvent } from './comments.js';
 import * as A from './actions.js';
 
 // L'accès est contrôlé par la session, pas par la route demandée.
@@ -101,6 +102,8 @@ async function boot() {
   openEvents((type, evt) => {
     if (type === 'presence') { presence.receive(evt.data); return; }
     if (type === 'notification') { refreshUnread(); return; }
+    if (type.startsWith('comment.')) { onCommentEvent(evt); return; }
+    if (type === 'page.permissions') { store.scheduleRefresh(evt); return; }
     // Nos propres sauvegardes reviennent aussi : inutile de recharger si la version est déjà connue.
     if (type === 'page.updated' && (store.page(evt.pageId)?.version ?? 0) >= (evt.version ?? 0)) return;
     store.scheduleRefresh(evt);

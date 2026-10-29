@@ -11,6 +11,8 @@ import { openMenu, openModal, toast, pageIcon } from './ui.js';
 import { openPalette } from './palette.js';
 import { forgotPasswordForm, ldapLoginForm, localLoginForm } from './local-auth.js';
 import { bellButton, watchButton } from './notifications.js';
+import { commentsButton } from './comments.js';
+import { permissionsButton } from './permissions.js';
 import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
@@ -112,7 +114,7 @@ function mountPage(page) {
   const scroller = h('div', { class: 'scroller' }, wrap);
 
   main().replaceChildren(
-    topbar(crumbsEl, app.embed ? [] : [presenceEl, saveEl, watchButton(id), starBtn, modeBtn, histBtn, moreBtn]),
+    topbar(crumbsEl, app.embed ? [] : [presenceEl, saveEl, commentsButton(id), watchButton(id), permissionsButton(id), starBtn, modeBtn, histBtn, moreBtn]),
     scroller,
   );
 

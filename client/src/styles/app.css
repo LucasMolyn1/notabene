@@ -837,3 +837,11 @@ select.input { height: 36px; }
 .icon-btn.on { color: var(--accent); }
 .notif { display: flex; text-decoration: none; color: inherit; }
 .notif.unread { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+/* Commentaires */
+.comments { max-height: 55vh; overflow: auto; }
+.thread { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 8px; }
+.comment-head { display: flex; align-items: center; gap: 6px; }
+.comment-body { margin: 2px 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.comment.reply { margin-left: 14px; padding-left: 10px; border-left: 2px solid var(--border); }
+.comment.resolved .comment-body { opacity: .65; }
