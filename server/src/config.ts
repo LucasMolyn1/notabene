@@ -25,6 +25,9 @@ const schema = z
     TRUST_PROXY: bool('false'),
     ALLOW_INSECURE_HTTP: bool('false'),
     WEBHOOK_ALLOW_PRIVATE: bool('false'),
+    // Fige la configuration des fournisseurs et de l'intégration : seules les variables d'environnement comptent,
+    // les réglages saisis dans l'interface sont ignorés (et non modifiables).
+    CONFIG_LOCKED: bool('false'),
 
     // Clé maîtresse (32 octets en base64) : chiffre les secrets stockés en base (clé LLM…).
     ENCRYPTION_KEY: z.string().refine((v) => Buffer.from(v, 'base64').length === 32, {
@@ -54,6 +57,8 @@ const schema = z
     LDAP_URL: z.string().regex(/^ldaps?:\/\/[^\s]+$/, 'doit commencer par ldap:// ou ldaps://').optional(),
     LDAP_STARTTLS: bool('false'),
     LDAP_TLS_CA_FILE: z.string().optional(),
+    // Autorité de certification au format PEM (alternative au fichier, configurable depuis l'interface).
+    LDAP_TLS_CA: z.string().optional(),
     LDAP_BIND_DN: z.string().optional(),
     LDAP_BIND_PASSWORD: z.string().optional(),
     LDAP_BASE_DN: z.string().optional(),
@@ -79,6 +84,15 @@ const schema = z
     SAML_EDITOR_GROUPS: csv(''),
     SAML_READER_GROUPS: csv(''),
     SAML_DEFAULT_ROLE: z.enum(['reader', 'none']).default('none'),
+
+    // Envoi d'e-mails (réinitialisation de mot de passe, invitations, alertes). Désactivé sans SMTP_HOST.
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+    // starttls : connexion en clair puis chiffrement obligatoire ; tls : TLS dès la connexion (port 465).
+    SMTP_MODE: z.enum(['starttls', 'tls']).default('starttls'),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASSWORD: z.string().optional(),
+    SMTP_FROM: z.string().optional(),
 
     // Connexion de développement sans IdP. Interdite en production.
     DEV_LOGIN: bool('false'),

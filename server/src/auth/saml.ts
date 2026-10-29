@@ -8,6 +8,15 @@ export interface SamlUser { subject: string; email: string | null; name: string 
 
 const pem = (raw: string) => raw.replace(/\\n/g, '\n').trim();
 
+let memo: { key: string; saml: SAML } | null = null;
+
+// Instance partagée tant que la configuration ne change pas : elle garde en mémoire les requêtes en attente (InResponseTo).
+export function samlFor(cfg: Config): SAML {
+  const key = JSON.stringify([cfg.PUBLIC_URL, cfg.SAML_ENTRY_POINT, cfg.SAML_IDP_CERT, cfg.SAML_IDP_CERT_FILE, cfg.SAML_ISSUER, cfg.SAML_WANT_RESPONSE_SIGNED]);
+  if (memo?.key !== key) memo = { key, saml: createSaml(cfg) };
+  return memo.saml;
+}
+
 export function createSaml(cfg: Config): SAML {
   const cert = cfg.SAML_IDP_CERT ? pem(cfg.SAML_IDP_CERT) : pem(readFileSync(cfg.SAML_IDP_CERT_FILE!, 'utf8'));
   const issuer = cfg.SAML_ISSUER ?? `${cfg.PUBLIC_URL}/auth/saml/metadata`;

@@ -28,6 +28,20 @@ const list = (v: unknown): string[] => (Array.isArray(v) ? v : v === undefined ?
 export class LdapDirectory {
   constructor(private readonly cfg: Config, private readonly factory: ClientFactory = () => defaultClient(cfg)) {}
 
+  // Test de connexion (réglages) : liaison avec le compte de service puis lecture de la racine de recherche.
+  async test(): Promise<{ entries: number }> {
+    const c = this.cfg;
+    const client = this.factory();
+    try {
+      if (c.LDAP_STARTTLS && client.startTLS) await client.startTLS(tlsOptions(c));
+      await client.bind(c.LDAP_BIND_DN!, c.LDAP_BIND_PASSWORD!);
+      const { searchEntries } = await client.search(c.LDAP_BASE_DN!, { scope: 'sub', filter: '(objectClass=*)', attributes: ['dn'], sizeLimit: 1 });
+      return { entries: searchEntries.length };
+    } finally {
+      await client.unbind().catch(() => undefined);
+    }
+  }
+
   // Renvoie l'utilisateur si l'identifiant existe de façon unique et que le mot de passe est correct, sinon null.
   async authenticate(username: string, password: string): Promise<DirectoryUser | null> {
     // Un mot de passe vide ferait une « liaison anonyme » réussie sur beaucoup d'annuaires : refusé d'emblée.
@@ -71,7 +85,7 @@ export class LdapDirectory {
   }
 }
 
-const tlsOptions = (c: Config) => ({ ...(c.LDAP_TLS_CA_FILE ? { ca: readFileSync(c.LDAP_TLS_CA_FILE) } : {}), rejectUnauthorized: true });
+const tlsOptions = (c: Config) => ({ ...(c.LDAP_TLS_CA ? { ca: c.LDAP_TLS_CA } : c.LDAP_TLS_CA_FILE ? { ca: readFileSync(c.LDAP_TLS_CA_FILE) } : {}), rejectUnauthorized: true });
 
 function defaultClient(c: Config): LdapLike {
   const client = new Client({ url: c.LDAP_URL!, timeout: 5000, connectTimeout: 5000, tlsOptions: tlsOptions(c) });

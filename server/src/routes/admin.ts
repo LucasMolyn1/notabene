@@ -18,6 +18,7 @@ const count = (db: FastifyInstance['db'], sql: string, ...args: unknown[]) => (d
 
 export default async function adminRoutes(app: FastifyInstance) {
   const { db, config } = app;
+  const live = () => app.rt.get();
 
   // Configuration non secrète : aucun mot de passe, secret client ni clé n'est renvoyé.
   app.get('/admin/instance', { preHandler: guard('admin'), schema: { tags: ['admin'], summary: 'Vue d’ensemble de l’instance (sans secrets)' } }, async () => {
@@ -27,18 +28,18 @@ export default async function adminRoutes(app: FastifyInstance) {
       publicUrl: config.PUBLIC_URL,
       environment: config.NODE_ENV,
       auth: {
-        mode: app.oidc ? 'oidc' : 'dev',
-        issuer: config.OIDC_ISSUER ?? null,
-        clientId: config.OIDC_CLIENT_ID ?? null,
-        scopes: config.OIDC_SCOPES,
-        groups: { admin: config.OIDC_ADMIN_GROUPS, editor: config.OIDC_EDITOR_GROUPS, reader: config.OIDC_READER_GROUPS },
-        defaultRole: config.OIDC_DEFAULT_ROLE,
+        mode: app.oidc.enabled ? 'oidc' : 'dev',
+        issuer: live().OIDC_ISSUER ?? null,
+        clientId: live().OIDC_CLIENT_ID ?? null,
+        scopes: live().OIDC_SCOPES,
+        groups: { admin: live().OIDC_ADMIN_GROUPS, editor: live().OIDC_EDITOR_GROUPS, reader: live().OIDC_READER_GROUPS },
+        defaultRole: live().OIDC_DEFAULT_ROLE,
         sessionTtlHours: config.SESSION_TTL_HOURS,
         redirectUri: `${config.PUBLIC_URL}/auth/callback`,
       },
       integrations: {
         drawioUrl: config.DRAWIO_URL ?? null,
-        embedAllowedOrigins: config.EMBED_ALLOWED_ORIGINS,
+        embedAllowedOrigins: live().EMBED_ALLOWED_ORIGINS,
         trustProxy: config.TRUST_PROXY,
       },
       stats: {

@@ -8,18 +8,43 @@ import type { Role } from './context.js';
 
 const STATE_TTL = 10 * 60_000;
 
+// Test des réglages : découverte du fournisseur sans toucher au client en service.
+export async function probeOidc(cfg: Config): Promise<{ issuer: string; endpoints: string[] }> {
+  const options = cfg.NODE_ENV !== 'production' && cfg.OIDC_ISSUER!.startsWith('http://') ? { execute: [oidc.allowInsecureRequests] } : undefined;
+  const conf = await oidc.discovery(new URL(cfg.OIDC_ISSUER!), cfg.OIDC_CLIENT_ID!, cfg.OIDC_CLIENT_SECRET!, undefined, options);
+  const meta = conf.serverMetadata();
+  if (!meta.authorization_endpoint || !meta.token_endpoint) throw new Error('Le fournisseur n’expose pas les points d’accès attendus (autorisation, jeton).');
+  return { issuer: meta.issuer, endpoints: ['authorization_endpoint', 'token_endpoint', 'userinfo_endpoint', 'end_session_endpoint'].filter((k) => (meta as unknown as Record<string, unknown>)[k]) };
+}
+
 export class OidcClient {
   #config: Promise<oidc.Configuration> | null = null;
+  #key = '';
 
-  constructor(private readonly cfg: Config, private readonly db: DB) {}
+  // `getCfg` renvoie la configuration effective : elle peut changer à chaud (réglages de l'interface).
+  constructor(private readonly getCfg: () => Config, private readonly db: DB) {}
+
+  private get cfg() {
+    return this.getCfg();
+  }
+
+  get enabled() {
+    const c = this.cfg;
+    return !!(c.OIDC_ISSUER && c.OIDC_CLIENT_ID && c.OIDC_CLIENT_SECRET);
+  }
 
   get redirectUri() {
     return `${this.cfg.PUBLIC_URL}/auth/callback`;
   }
 
   #discover() {
+    const { OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, NODE_ENV } = this.cfg;
+    const key = JSON.stringify([OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET]);
+    if (key !== this.#key) {
+      this.#key = key;
+      this.#config = null;
+    }
     if (!this.#config) {
-      const { OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, NODE_ENV } = this.cfg;
       const options = NODE_ENV !== 'production' && OIDC_ISSUER!.startsWith('http://')
         ? { execute: [oidc.allowInsecureRequests] }
         : undefined;
@@ -27,6 +52,7 @@ export class OidcClient {
         .discovery(new URL(OIDC_ISSUER!), OIDC_CLIENT_ID!, OIDC_CLIENT_SECRET!, undefined, options)
         .catch((err) => {
           this.#config = null; // nouvelle tentative au prochain login
+          this.#key = '';
           throw err;
         });
     }
