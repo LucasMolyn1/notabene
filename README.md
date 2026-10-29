@@ -54,6 +54,14 @@ Les rédacteurs qui ouvrent la même page voient les modifications et les curseu
 
 `AUTH_LOCAL=true` active la connexion par e-mail et mot de passe, seule ou en complément d’OIDC. Au premier démarrage, sans administrateur local, le serveur affiche un **code d’installation** dans ses journaux ; il se saisit sur la page de connexion pour créer le compte administrateur. Ensuite, les administrateurs créent les comptes dans Paramètres > Utilisateurs.
 
+Sans chercher le code dans les journaux, on peut aussi créer l'administrateur en ligne de commande (mot de passe saisi sans écho) :
+
+```bash
+docker compose exec -it notabene node dist/server/cli.js create-admin admin@exemple.fr --name "Admin"
+```
+
+Pour récupérer l'accès (mot de passe perdu, MFA bloquée), ajoutez `--reset` : le mot de passe est remplacé, le compte repasse administrateur et déverrouillé, la MFA est retirée et les sessions sont fermées. Pour l'automatisation, le mot de passe peut être lu sur l'entrée standard ou dans `NOTABENE_ADMIN_PASSWORD`.
+
 - Mots de passe : 12 caractères minimum, hachés avec scrypt.
 - Double authentification TOTP optionnelle (FreeOTP, Aegis, Google Authenticator…) avec 10 codes de secours à usage unique.
 - Verrouillage de 15 minutes après 5 échecs, limitation de débit par adresse IP, sessions fermées lors d’un changement de mot de passe.
