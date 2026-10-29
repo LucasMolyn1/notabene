@@ -308,8 +308,11 @@ async function renderEmbed(el) {
   const code = h('textarea', { class: 'code-area', readonly: true, rows: 4 });
   const open = h('a', { class: 'btn btn-ghost btn-sm', target: '_blank', rel: 'noopener' }, 'Aperçu ↗');
   const paint = () => {
-    const url = A.pageUrl(select.value, { embed: true });
-    code.value = `<iframe src="${url}" width="100%" height="${Number(height.value) || 640}" style="border:0;border-radius:12px" loading="lazy" title="Notabene"></iframe>`;
+    const id = select.value;
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) return;
+    const url = A.pageUrl(id, { embed: true });
+    const h$ = Number(height.value) || 640;
+    code.value = `<iframe src="${url}" width="100%" height="${h$}" style="border:0;border-radius:12px" loading="lazy" title="Notabene"></iframe>`;
     open.href = url;
   };
   select.addEventListener('change', paint);

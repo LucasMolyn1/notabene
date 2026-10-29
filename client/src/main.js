@@ -19,7 +19,7 @@ import * as A from './actions.js';
 function route() {
   const path = location.hash.slice(1) || '/';
   let m;
-  if ((m = path.match(/^\/settings(?:\/([a-z-]+))?$/))) {
+  if ((m = path.match(/^\/settings(?:\/([a-z-]+))?$/))) { // codeql[js/user-controlled-bypass] SPA hash routing; session.user guards access
     if (session.user) showSettings(m[1]);
     else showLogin();
   } else if (!store.spaces.length) { showNoSpace(); scheduleSidebar(); return; }
