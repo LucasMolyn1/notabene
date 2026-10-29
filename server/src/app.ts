@@ -19,7 +19,7 @@ import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
 import pagesV2 from './routes/pages-v2.js';
 import v3Routes from './routes/v3.js';
-import { sessionAuth, sessionCookieName } from './auth/session.js';
+import { sessionAuth as sessionAuthWithIdle, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
 import { SecretBox, safeEqual } from './lib/crypto.js';
 import { EventBus, Presence } from './lib/events.js';
@@ -163,6 +163,8 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   });
 
   // Identité : jeton API (Authorization: Bearer) ou cookie de session, puis contrôle CSRF.
+  // Résolution de session avec la limite d'inactivité configurée.
+  const sessionAuth = (database: DB, token: string) => sessionAuthWithIdle(database, token, config.SESSION_IDLE_MINUTES * 60_000);
   const cookieName = sessionCookieName(config.secureCookies);
   const publicOrigin = new URL(config.PUBLIC_URL).origin;
   app.addHook('onRequest', async (req) => {
@@ -217,7 +219,14 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
       return { schema: out as typeof schema, url };
     },
   });
-  await app.register(swaggerUi, { routePrefix: '/api/docs', staticCSP: true });
+  if (config.API_DOCS !== 'off') {
+    await app.register(swaggerUi, {
+      routePrefix: '/api/docs',
+      staticCSP: true,
+      // Par défaut la documentation n'est pas publique : elle décrit toute la surface de l'API.
+      uiHooks: { onRequest: async (req) => { if (config.API_DOCS === 'auth' && !req.auth) throw new HttpError(401, 'Authentification requise'); } },
+    });
+  }
 
   await app.register(authRoutes);
   await app.register(localAuthRoutes, { prefix: '' });
