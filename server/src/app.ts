@@ -15,6 +15,7 @@ import type { DB } from './db.js';
 import { OidcClient } from './auth/oidc.js';
 import { Mailer } from './lib/mail.js';
 import { startNotifications } from './lib/notifications.js';
+import { startWebhooks } from './lib/webhooks.js';
 import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
 import pagesV2 from './routes/pages-v2.js';
@@ -90,6 +91,8 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   app.decorate('presence', new Presence(bus));
   const stopNotifications = startNotifications(db, bus, app.mail, () => rt.get());
   app.addHook('onClose', async () => { stopNotifications(); });
+  const stopWebhooks = startWebhooks(db, bus, box, config.WEBHOOK_ALLOW_PRIVATE);
+  app.addHook('onClose', async () => { stopWebhooks(); });
   app.decorate('oidc', new OidcClient(() => rt.get(), db));
   app.decorateRequest('auth', null);
 
@@ -199,6 +202,21 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     return payload;
   });
 
+  // Versions héritées activées : on journalise qui les utilise encore (une ligne par appelant et par heure).
+  const legacySeen = new Map<string, number>();
+  app.addHook('onResponse', async (req, reply) => {
+    const version = /^\/api\/(v[12])\//.exec(req.url)?.[1];
+    if (!version) return;
+    const who = req.auth ? `${req.auth.via}:${req.auth.tokenId ?? req.auth.user.id}` : 'anonyme';
+    const ua = String(req.headers['user-agent'] ?? '').slice(0, 120);
+    const key = `${version}|${who}|${ua}`;
+    const now = Date.now();
+    if (now - (legacySeen.get(key) ?? 0) < 3_600_000) return;
+    legacySeen.set(key, now);
+    if (legacySeen.size > 5000) legacySeen.clear();
+    req.log.warn({ legacyApi: version, caller: who, userAgent: ua, status: reply.statusCode }, 'appel à une version d’API dépréciée');
+  });
+
   await app.register(swagger, {
     openapi: {
       info: { title: 'Notabene API', version: '1.0.0', description: 'API REST du wiki Notabene. Authentification par jeton personnel : `Authorization: Bearer nb_…`.' },
@@ -234,30 +252,23 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   // Enregistré à la racine pour que `injectWS` et les routes WebSocket soient visibles de tous les plugins.
   if (config.COLLAB_ENABLED) await app.register(websocket, { options: { maxPayload: 4 * 1024 * 1024 } });
   await app.register(collabRoutes);
-  await app.register(coreRoutes, { prefix: '/api/v1' });
-  await app.register(spaceRoutes, { prefix: '/api/v1' });
-  await app.register(pageRoutes, { prefix: '/api/v1' });
-  await app.register(tokenRoutes, { prefix: '/api/v1' });
-  await app.register(aiRoutes, { prefix: '/api/v1' });
-  await app.register(adminRoutes, { prefix: '/api/v1' });
-  await app.register(settingsRoutes, { prefix: '/api/v1', ldapFactory });
-  await app.register(webhookRoutes, { prefix: '/api/v1' });
-  await app.register(importRoutes, { prefix: '/api/v1' });
-  // v2 et v3 : mêmes ressources, logique et contrôles d'accès que v1 (lib/), avec les changements propres à chaque version.
-  const versioned = async (scope: FastifyInstance, opts: { version: 2 | 3 }) => {
+  // Chaque version expose les mêmes ressources, avec la même logique et les mêmes contrôles d'accès (lib/).
+  // Seule la v3 est servie par défaut ; v1 et v2 (dépréciées) se réactivent par API_LEGACY_VERSIONS.
+  const versioned = async (scope: FastifyInstance, opts: { version: 1 | 2 | 3 }) => {
     await scope.register(coreRoutes);
     await scope.register(spaceRoutes);
     await scope.register(pageRoutes, { version: opts.version });
-    await scope.register(pagesV2);
+    if (opts.version >= 2) await scope.register(pagesV2);
     await scope.register(tokenRoutes);
     await scope.register(aiRoutes);
     await scope.register(adminRoutes);
     await scope.register(settingsRoutes, { ldapFactory });
-    await scope.register(webhookRoutes, { start: false });
+    await scope.register(webhookRoutes);
     await scope.register(importRoutes);
     if (opts.version === 3) await scope.register(v3Routes);
   };
-  await app.register(versioned, { prefix: '/api/v2', version: 2 });
+  if (config.API_LEGACY_VERSIONS.includes('v1')) await app.register(versioned, { prefix: '/api/v1', version: 1 });
+  if (config.API_LEGACY_VERSIONS.includes('v2')) await app.register(versioned, { prefix: '/api/v2', version: 2 });
   await app.register(versioned, { prefix: '/api/v3', version: 3 });
   await app.register(mcpRoutes);
   await app.register(versionRoutes);

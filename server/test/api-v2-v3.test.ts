@@ -7,7 +7,7 @@ import { type DB, openDb } from '../src/db.js';
 import { hashPassword } from '../src/lib/password.js';
 import { seedDemo } from '../src/seed.js';
 
-const env = { NODE_ENV: 'test', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), AUTH_LOCAL: 'true', SEED_DEMO: 'false' };
+const env = { NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), AUTH_LOCAL: 'true', SEED_DEMO: 'false' };
 const PASS = 'Sup3r-secret-pass';
 let app: FastifyInstance;
 let db: DB;
