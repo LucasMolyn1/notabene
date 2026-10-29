@@ -17,13 +17,17 @@ import { h } from './util.js';
 import { icon } from './icons.js';
 import * as A from './actions.js';
 
+// L'accès est contrôlé par la session, pas par la route demandée.
+function openSettings(sectionId) {
+  if (session.user) showSettings(sectionId);
+  else showLogin();
+}
+
 function route() {
   const path = location.hash.slice(1) || '/';
   let m;
-  if ((m = path.match(/^\/settings(?:\/([a-z-]+))?$/))) { // codeql[js/user-controlled-bypass] SPA hash routing; session.user guards access
-    if (session.user) showSettings(m[1]);
-    else showLogin();
-  } else if (!store.spaces.length) { showNoSpace(); scheduleSidebar(); return; }
+  if ((m = path.match(/^\/settings(?:\/([a-z-]+))?$/))) openSettings(m[1]);
+  else if (!store.spaces.length) { showNoSpace(); scheduleSidebar(); return; }
   else if ((m = path.match(/^\/p\/([A-Za-z0-9_-]+)/))) showPage(m[1]);
   else if ((m = path.match(/^\/s\/([A-Za-z0-9_-]+)/))) showSpace(m[1]);
   else if (path !== '/') showMissing(null);
