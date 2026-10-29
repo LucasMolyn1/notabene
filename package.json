@@ -16,6 +16,7 @@
     "build:client": "node scripts/copy-assets.mjs && vite build",
     "build:server": "tsc -p server/tsconfig.json",
     "start": "node dist/server/index.js",
+    "backup": "node dist/server/backup.js backup",
     "typecheck": "tsc -p server/tsconfig.json --noEmit",
     "test": "vitest run",
     "audit:deps": "npm audit --omit=dev --audit-level=high"

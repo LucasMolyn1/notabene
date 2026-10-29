@@ -1,10 +1,12 @@
 // Page Paramètres : vue d'ensemble de l'instance, utilisateurs, journal d'audit (admin)
 // et sessions de l'utilisateur courant.
-import { readFileSync } from 'node:fs';
+import { createReadStream, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard, requireAuth } from '../auth/context.js';
+import { backupName, backupTo } from '../backup.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/http.js';
 
@@ -69,6 +71,23 @@ export default async function adminRoutes(app: FastifyInstance) {
       `SELECT a.id, a.at, a.action, a.target, a.ip, a.meta, u.name AS user FROM audit_log a
        LEFT JOIN users u ON u.id = a.user_id ORDER BY a.id DESC LIMIT ?`,
     ).all(limit);
+  });
+
+  // Téléchargement d'une copie cohérente de la base (admin, session navigateur uniquement). Contient des secrets chiffrés et des hash de jetons.
+  app.get('/admin/backup', {
+    preHandler: guard('admin'),
+    config: { rateLimit: { max: 5, timeWindow: '1 hour' } },
+    schema: { hide: true },
+  }, async (req, reply) => {
+    if (req.auth?.via !== 'session') throw new HttpError(403, 'Disponible uniquement depuis l’interface web');
+    const dir = mkdtempSync(resolve(tmpdir(), 'nb-backup-'));
+    const name = backupName();
+    const file = resolve(dir, name);
+    await backupTo(db, file);
+    audit(db, req, 'backup.download', null);
+    const stream = createReadStream(file);
+    stream.on('close', () => rmSync(dir, { recursive: true, force: true }));
+    return reply.header('content-type', 'application/vnd.sqlite3').header('content-disposition', `attachment; filename="${name}"`).send(stream);
   });
 
   // Sessions de l'utilisateur courant (navigateur uniquement).

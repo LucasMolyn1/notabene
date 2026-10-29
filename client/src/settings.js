@@ -448,7 +448,7 @@ async function renderUsers(el) {
 }
 
 const AUDIT_LABELS = {
-  'auth.login': 'Connexion', 'auth.logout': 'Déconnexion', 'auth.local.failed': 'Échec de connexion', 'auth.local.setup': 'Installation initiale', 'auth.local.password': 'Mot de passe modifié', 'auth.mfa.enable': 'MFA activée', 'auth.mfa.disable': 'MFA désactivée', 'user.create': 'Compte créé', 'user.update': 'Compte modifié', 'auth.denied': 'Accès refusé', 'auth.sessions.revoke': 'Sessions fermées',
+  'auth.login': 'Connexion', 'auth.logout': 'Déconnexion', 'auth.local.failed': 'Échec de connexion', 'auth.local.setup': 'Installation initiale', 'auth.local.password': 'Mot de passe modifié', 'auth.mfa.enable': 'MFA activée', 'auth.mfa.disable': 'MFA désactivée', 'backup.download': 'Sauvegarde téléchargée', 'user.create': 'Compte créé', 'user.update': 'Compte modifié', 'auth.denied': 'Accès refusé', 'auth.sessions.revoke': 'Sessions fermées',
   'token.create': 'Jeton créé', 'token.revoke': 'Jeton révoqué', 'settings.ai': 'Réglages IA', 'ai.ask': 'Question IA',
   'space.create': 'Espace créé', 'space.delete': 'Espace supprimé', 'space.visibility': 'Visibilité modifiée',
   'page.destroy': 'Page supprimée définitivement', 'trash.empty': 'Corbeille vidée',
@@ -464,6 +464,22 @@ async function renderAudit(el) {
         h('span', { class: 'audit-time', title: fullDate(r.at) }, timeAgo(r.at)),
         h('span', { class: 'grow' }, h('strong', null, AUDIT_LABELS[r.action] || r.action), h('small', null, [r.user || 'Système', r.ip, r.meta && r.meta.slice(0, 120)].filter(Boolean).join(' · '))))))
       : h('p', { class: 'muted' }, 'Aucune entrée.')));
+}
+
+async function downloadBackup() {
+  try {
+    const res = await fetch('/api/v1/admin/backup', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || `Erreur ${res.status}`);
+    const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '')?.[1] || 'notabene.db';
+    const url = URL.createObjectURL(await res.blob());
+    const a = h('a', { href: url, download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  } catch (err) {
+    toast(err.message, { kind: 'error' });
+  }
 }
 
 async function renderInstance(el) {
@@ -484,6 +500,8 @@ async function renderInstance(el) {
       ['Recherche IA', status(session.config.ai, 'Configurée', 'Non configurée')],
       ['Draw.io', status(!!info.integrations.drawioUrl, 'Configuré', 'Non configuré')],
     ])),
+    card('Sauvegarde', 'Télécharge une copie cohérente de la base (pages, comptes, réglages). Elle contient des secrets chiffrés : conservez-la comme un secret. Pour une sauvegarde automatique, voir docs/BACKUP.md.',
+      h('button', { class: 'btn btn-primary btn-sm', onClick: downloadBackup }, icon('download', 14), 'Télécharger une sauvegarde')),
     card('Ressources', null, h('div', { class: 'row wrap' },
       h('a', { class: 'btn btn-ghost btn-sm', href: REPO_URL, target: '_blank', rel: 'noopener' }, 'Dépôt GitHub ↗'),
       h('a', { class: 'btn btn-ghost btn-sm', href: `${REPO_URL}/blob/main/SECURITY.md`, target: '_blank', rel: 'noopener' }, 'Sécurité ↗'),
