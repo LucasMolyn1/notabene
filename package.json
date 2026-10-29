@@ -30,12 +30,16 @@
     "@fastify/static": "^10.1.8",
     "@fastify/swagger": "^9.9.2",
     "@fastify/swagger-ui": "^6.1.2",
+    "@fastify/websocket": "^11.3.4",
     "@node-saml/node-saml": "^5.2.0",
     "better-sqlite3": "^13.0.3",
     "fastify": "^5.12.7",
     "ldapts": "^9.2.0",
+    "lib0": "^0.2.119",
     "marked": "^18.1.2",
     "openid-client": "^6.8.8",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.33",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -44,6 +48,8 @@
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@plantuml/core": "^1.2026.9",
     "@tiptap/core": "^3.32.1",
+    "@tiptap/extension-collaboration": "^3.32.1",
+    "@tiptap/extension-collaboration-caret": "^3.32.1",
     "@tiptap/extension-highlight": "^3.32.1",
     "@tiptap/extension-image": "^3.32.1",
     "@tiptap/extension-list": "^3.32.1",
@@ -52,8 +58,10 @@
     "@tiptap/extensions": "^3.32.1",
     "@tiptap/pm": "^3.32.1",
     "@tiptap/starter-kit": "^3.32.1",
+    "@tiptap/y-tiptap": "^3.0.11",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.20.5",
+    "@types/ws": "^8.18.2",
     "mermaid": "^12.2.0",
     "qrcode-generator": "^2.0.4",
     "react": "^18.3.1",
@@ -61,7 +69,8 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "y-websocket": "^3.1.0"
   },
   "overrides": {
     "lodash-es": "4.18.1",

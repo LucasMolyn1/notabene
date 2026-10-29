@@ -46,6 +46,8 @@ const schema = z
     AUTH_LOCAL: bool('false'),
     // Impose la double authentification : comptes locaux (TOTP obligatoire) et OIDC (claim `amr` exigé).
     LOCAL_REQUIRE_MFA: bool('false'),
+    // Co-édition temps réel (WebSocket Yjs) pour les rédacteurs.
+    COLLAB_ENABLED: bool('true'),
     OIDC_REQUIRE_MFA: bool('false'),
 
     // LDAP / Active Directory : authentification par liaison (bind) avec le compte de l'annuaire.

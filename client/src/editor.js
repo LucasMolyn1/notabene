@@ -7,6 +7,8 @@ import { TaskList, TaskItem } from '@tiptap/extension-list';
 import Highlight from '@tiptap/extension-highlight';
 import Typography from '@tiptap/extension-typography';
 import Image from '@tiptap/extension-image';
+import Collaboration from '@tiptap/extension-collaboration';
+import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
 import { h, norm, pickFile } from './util.js';
 import { icon } from './icons.js';
@@ -130,9 +132,10 @@ const PageLink = Node.create({
   },
 });
 
-function baseExtensions() {
+function baseExtensions({ collab = false } = {}) {
   return [
     StarterKit.configure({
+      ...(collab ? { undoRedo: false } : {}),
       heading: { levels: [1, 2, 3] },
       codeBlock: { HTMLAttributes: { spellcheck: 'false' } },
       dropcursor: { color: 'var(--accent)', width: 2 },
@@ -509,14 +512,19 @@ function createTableMenu(editor) {
 
 // ---- Fabrique -------------------------------------------------------------
 
-export function createEditor({ element, content, editable = true, onChange, context = {} }) {
+// `collab` : { ydoc, provider, user } active la co-édition (le contenu vient alors de Yjs, pas de `content`).
+export function createEditor({ element, content, editable = true, onChange, context = {}, collab = null }) {
   let slash = null;
   const editor = new Editor({
     element,
-    content: content || '',
+    ...(collab ? {} : { content: content || '' }),
     editable,
     extensions: [
-      ...baseExtensions(),
+      ...baseExtensions({ collab: !!collab }),
+      ...(collab ? [
+        Collaboration.configure({ document: collab.ydoc }),
+        CollaborationCaret.configure({ provider: collab.provider, user: collab.user }),
+      ] : []),
       Placeholder.configure({
         placeholder: ({ node }) => (node.type.name === 'heading'
           ? `Titre ${node.attrs.level}`

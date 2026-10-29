@@ -41,6 +41,15 @@ cp .env.development.example .env       # puis renseignez ENCRYPTION_KEY (openssl
 npm run dev                            # API sur :3000, interface sur http://localhost:5173
 ```
 
+### Co-édition en temps réel
+
+Les rédacteurs qui ouvrent la même page voient les modifications et les curseurs des autres en direct (Yjs via WebSocket, `/collab/:id`). Le serveur conserve l’état de co-édition en base et recopie le contenu dans la page (JSON assaini) toutes les 2 secondes : recherche, export, historique des versions et API REST fonctionnent comme avant. Une modification du contenu par l’API ou une restauration de version recharge automatiquement les éditeurs ouverts.
+
+- Réservé aux sessions navigateur avec le rôle rédacteur ; les lecteurs et l’intégration en iframe restent en lecture seule.
+- L’origine de la requête doit être `PUBLIC_URL` (protection contre le détournement de WebSocket).
+- Derrière un reverse proxy, activez le transfert WebSocket (`Upgrade` / `Connection`) pour le chemin `/collab/`. Nginx : `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`.
+- `COLLAB_ENABLED=false` désactive la fonction : l’édition revient à l’enregistrement classique avec détection de conflit.
+
 ### Comptes locaux (sans fournisseur d’identité)
 
 `AUTH_LOCAL=true` active la connexion par e-mail et mot de passe, seule ou en complément d’OIDC. Au premier démarrage, sans administrateur local, le serveur affiche un **code d’installation** dans ses journaux ; il se saisit sur la page de connexion pour créer le compte administrateur. Ensuite, les administrateurs créent les comptes dans Paramètres > Utilisateurs.

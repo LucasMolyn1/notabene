@@ -21,6 +21,8 @@ import { HttpError } from './lib/http.js';
 import adminRoutes from './routes/admin.js';
 import aiRoutes from './routes/ai.js';
 import authRoutes from './routes/auth.js';
+import websocket from '@fastify/websocket';
+import collabRoutes from './routes/collab.js';
 import coreRoutes from './routes/core.js';
 import importRoutes from './routes/import.js';
 import localAuthRoutes from './routes/local-auth.js';
@@ -194,6 +196,9 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap }: 
   await app.register(authRoutes);
   await app.register(localAuthRoutes, { prefix: '' });
   await app.register(ssoRoutes, { ldap });
+  // Enregistré à la racine pour que `injectWS` et les routes WebSocket soient visibles de tous les plugins.
+  if (config.COLLAB_ENABLED) await app.register(websocket, { options: { maxPayload: 4 * 1024 * 1024 } });
+  await app.register(collabRoutes);
   await app.register(coreRoutes, { prefix: '/api/v1' });
   await app.register(spaceRoutes, { prefix: '/api/v1' });
   await app.register(pageRoutes, { prefix: '/api/v1' });

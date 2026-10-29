@@ -5,6 +5,7 @@ import { store } from './store.js';
 import { session } from './session.js';
 import { prefs, savePrefs, app } from './prefs.js';
 import { createEditor } from './editor.js';
+import { connectCollab } from './collab.js';
 import { presence, colorFor } from './presence.js';
 import { openMenu, openModal, toast, pageIcon } from './ui.js';
 import { openPalette } from './palette.js';
@@ -82,6 +83,10 @@ function mountPage(page) {
 
   const canWrite = session.can('write');
   const readOnly = () => app.embed || prefs.readOnly || !canWrite;
+  // Co-édition : le contenu passe par Yjs ; la requête PATCH ne sert plus qu'au titre, à l'icône et à la largeur.
+  const useCollab = !!session.config.collab && canWrite && !app.embed;
+  let synced = !useCollab;
+  let collab = null;
   let version = page.version;
   let dirty = false;
   let remoteChanged = false;
@@ -129,7 +134,7 @@ function mountPage(page) {
     pending = {};
     inflight = (async () => {
       try {
-        const meta = await store.updatePage(id, { ...patch, ...(force ? {} : { baseVersion: version }) });
+        const meta = await store.updatePage(id, { ...patch, ...(force || useCollab ? {} : { baseVersion: version }) });
         version = meta.version;
         dirty = Object.keys(pending).length > 0;
         setSave('saved');
@@ -183,11 +188,28 @@ function mountPage(page) {
   }
 
   // -- Éditeur --
+  const reloadView = () => { if (view?.id !== id) return; teardown(); showPage(id); };
+  if (useCollab) {
+    editorHost.classList.add('syncing');
+    collab = connectCollab(id, {
+      onSynced: () => {
+        synced = true;
+        editorHost.classList.remove('syncing');
+        editor.setEditable(!readOnly());
+        setSave('saved');
+        renderToc();
+      },
+      onStatus: (status) => { if (status === 'disconnected') setSave('error', 'Hors ligne : reconnexion…'); else if (status === 'connected' && synced) setSave('saved'); },
+      onReload: reloadView,
+      onGone: () => { if (view?.id === id) { teardown(); showMissing(id, 404); } },
+    });
+  }
   const editor = createEditor({
     element: editorHost,
     content: page.content,
-    editable: !readOnly(),
-    onChange: () => { queue({ content: editor.getJSON() }); presence.touch(); refreshDerived(); },
+    editable: !readOnly() && synced,
+    collab: collab && { ydoc: collab.ydoc, provider: collab.provider, user: { name: session.user.name, color: colorFor(session.user.id) } },
+    onChange: () => { if (!useCollab) queue({ content: editor.getJSON() }); presence.touch(); refreshDerived(); },
     context: {
       navigate: (path) => A.go(path),
       open: (pid) => A.go(`/p/${pid}`),
@@ -293,7 +315,7 @@ function mountPage(page) {
   function toggleMode() {
     prefs.readOnly = !prefs.readOnly;
     savePrefs();
-    editor.setEditable(!readOnly());
+    editor.setEditable(!readOnly() && synced);
     document.body.classList.toggle('reading', readOnly());
     paintChrome();
     renderMeta();
@@ -340,7 +362,7 @@ function mountPage(page) {
       }
       paintChrome();
       // Version restaurée localement, ou modification venue d'un autre onglet / utilisateur.
-      if (evt.source === 'restore' || (evt.type === 'remote' && evt.pageId === id && (evt.version ?? 0) > version)) {
+      if (!useCollab && (evt.source === 'restore' || (evt.type === 'remote' && evt.pageId === id && (evt.version ?? 0) > version))) {
         if (dirty) remoteChanged = true;
         else reloadFromServer();
       }
@@ -354,6 +376,7 @@ function mountPage(page) {
       refreshDerived.cancel();
       window.removeEventListener('beforeunload', beforeUnload);
       editor.destroy();
+      collab?.destroy();
       presence.setPage(null);
     },
   };
