@@ -21,7 +21,7 @@ ENV NODE_ENV=production \
 ARG GIT_COMMIT=
 ENV GIT_COMMIT=$GIT_COMMIT
 WORKDIR /app
-COPY --from=build --chown=node:node /app/package.json ./
+COPY --from=build --chown=node:node /app/package.json /app/CHANGELOG.md ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 # npm et yarn ne servent pas à l'exécution : on les retire (moins de surface, et leurs dépendances

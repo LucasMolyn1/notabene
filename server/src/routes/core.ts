@@ -7,6 +7,7 @@ import { readableSpaceIds } from '../lib/access.js';
 import { canReadPage, hasAnyAcl } from '../lib/page-acl.js';
 import type { AppEvent } from '../lib/events.js';
 import { idSchema } from '../lib/http.js';
+import { VERSION } from '../version.js';
 
 // Origine du compte d'après le préfixe de son identifiant (sub).
 const providerOf = (sub: string) => (sub.startsWith('local:') ? 'local' : sub.startsWith('ldap:') ? 'ldap' : sub.startsWith('saml:') ? 'saml' : sub.startsWith('dev-') ? 'dev' : 'oidc');
@@ -27,6 +28,7 @@ export default async function coreRoutes(app: FastifyInstance) {
       user: auth?.user ?? null,
       via: auth?.via ?? null,
       mfaSetupRequired: !!auth?.mfaPending,
+      version: auth ? VERSION : null,
       provider: auth ? providerOf((db.prepare('SELECT sub FROM users WHERE id = ?').get(auth.user.id) as { sub: string } | undefined)?.sub ?? '') : null,
       csrf: auth?.via === 'session' ? auth.csrf : null,
       permissions: {

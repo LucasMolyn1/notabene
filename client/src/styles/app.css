@@ -135,6 +135,10 @@ kbd {
   border-radius: 5px; color: var(--text-3);
 }
 .mini-btn:hover { background: var(--active); color: var(--text); }
+.news-dot { width: 8px; height: 8px; margin-left: auto; border-radius: 50%; background: var(--accent); flex: none; }
+.set-subtitle { margin: 24px 0 8px; font-size: 15px; }
+.release h4 { margin: 12px 0 4px; font-size: 13px; color: var(--text-2); }
+.release + .release { margin-top: 12px; }
 .badge {
   margin-left: auto; min-width: 20px; padding: 1px 6px; border-radius: 10px;
   font-size: 11px; font-weight: 600; text-align: center;

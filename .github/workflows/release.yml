@@ -45,6 +45,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
           provenance: mode=max
           sbom: true
       - name: Attestation de provenance (SLSA)

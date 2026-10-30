@@ -11,3 +11,4 @@ coverage
 *.db
 *.md
 !README.md
+!CHANGELOG.md

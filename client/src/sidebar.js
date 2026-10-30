@@ -1,4 +1,5 @@
 // Barre latérale : sélecteur d'espace, favoris, arborescence (glisser-déposer), compte.
+import { newsPending, onNewsChange } from './news.js';
 import { h, initials, modKey } from './util.js';
 import { icon } from './icons.js';
 import { store } from './store.js';
@@ -14,7 +15,7 @@ const navBtn = (ico, label, onClick, { hint, active, badge } = {}) => h('button'
   class: `sb-btn${active ? ' active' : ''}`, onClick,
 }, icon(ico), h('span', { class: 'sb-btn-label' }, label),
 hint ? h('kbd', null, hint) : null,
-badge ? h('span', { class: 'badge' }, badge) : null);
+badge === true ? h('span', { class: 'news-dot', role: 'img', 'aria-label': 'Nouveautés' }) : badge ? h('span', { class: 'badge' }, badge) : null);
 
 const ROLE_LABELS = { admin: 'Administrateur', editor: 'Éditeur', reader: 'Lecteur' };
 
@@ -307,7 +308,7 @@ export function renderSidebar() {
         rootDrop)),
     h('div', { class: 'sb-foot' },
       canWrite && navBtn('trash', 'Corbeille', A.openTrash),
-      session.user && navBtn('settings', 'Paramètres', () => A.go('/settings'), { active: location.hash.startsWith('#/settings') }),
+      session.user && navBtn('settings', 'Paramètres', () => A.go('/settings'), { active: location.hash.startsWith('#/settings'), badge: newsPending(session.version) || undefined }),
       accountBox()));
 
   el.querySelector('.sb-scroll').scrollTop = scrollTop;
@@ -321,3 +322,6 @@ export function renderSidebar() {
     if (target) { tree.querySelectorAll('.tree-row[tabindex="0"]').forEach((r) => { r.tabIndex = -1; }); target.tabIndex = 0; target.focus(); }
   }
 }
+
+// Quand les nouveautés sont consultées, la pastille de « Paramètres » s'éteint.
+onNewsChange(() => renderSidebar());

@@ -51,6 +51,9 @@ const schema = z
     TRUST_PROXY: trustProxy,
     ALLOW_INSECURE_HTTP: bool('false'),
     WEBHOOK_ALLOW_PRIVATE: bool('false'),
+    // Vérification de mise à jour (désactivée par défaut) : contacte api.github.com, voir lib/update-check.ts.
+    UPDATE_CHECK: bool('false'),
+    UPDATE_CHECK_REPO: z.string().regex(/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/, 'attendu : propriétaire/dépôt').default('LucasMolyn1/notabene'),
     // Autorise le fournisseur IA à viser un réseau privé (Ollama, LM Studio…). Variable d'environnement seulement : jamais modifiable depuis l'interface.
     AI_ALLOW_PRIVATE: bool('false'),
     // Fige la configuration des fournisseurs et de l'intégration : seules les variables d'environnement comptent,
