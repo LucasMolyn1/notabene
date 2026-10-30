@@ -409,6 +409,7 @@ function createBubbleMenu(editor) {
   function renderLink() {
     const input = h('input', {
       class: 'bubble-input',
+      'aria-label': 'Adresse du lien',
       placeholder: 'Coller un lien…',
       value: editor.getAttributes('link').href || '',
     });

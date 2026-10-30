@@ -117,6 +117,8 @@ async function boot() {
 
   window.addEventListener('hashchange', route);
   document.addEventListener('keydown', onKey);
+  // Le routeur utilise le fragment (#/…) : le lien d'évitement déplace le focus au lieu de changer l'adresse.
+  document.getElementById('skip-link').addEventListener('click', (e) => { e.preventDefault(); document.getElementById('main').focus(); });
   document.querySelector('[data-close-sidebar]').addEventListener('click', () => document.body.classList.remove('sb-mobile-open'));
   route();
 }
