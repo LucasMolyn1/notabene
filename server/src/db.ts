@@ -227,6 +227,10 @@ const MIGRATIONS: string[] = [
     email_changes  INTEGER NOT NULL DEFAULT 0
   );
   `,
+  `
+  -- Tentative de connexion SSO liée au navigateur (empreinte du cookie posé au départ).
+  ALTER TABLE login_states ADD COLUMN binding_hash TEXT;
+  `,
 ];
 
 export function openDb(file: string): DB {

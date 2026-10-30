@@ -181,6 +181,37 @@ describe('co-édition en temps réel', () => {
     a.ws.close();
   });
 
+  it('coupe une connexion ouverte quand la session ferme, que le compte est désactivé ou que la page devient restreinte', async () => {
+    // Déconnexion
+    const a = await login('editor');
+    const wsA = await connect(a.cookie);
+    await until(() => textOf(wsA.json()).length > 10);
+    await app.inject({ method: 'POST', url: '/auth/logout', cookies: { nb_session: a.cookie }, headers: { 'x-csrf-token': a.csrf } });
+    await until(() => wsA.state.closed !== null);
+    expect(wsA.state.closed).toBe(4403);
+
+    // Compte désactivé (ou rôle abaissé) puis revérification
+    const b = await login('editor');
+    const wsB = await connect(b.cookie);
+    await until(() => textOf(wsB.json()).length > 10);
+    db.prepare("UPDATE users SET disabled = 1 WHERE role = 'editor'").run();
+    app.collab!.recheckAll();
+    await until(() => wsB.state.closed !== null);
+    expect(wsB.state.closed).toBe(4403);
+    db.prepare("UPDATE users SET disabled = 0 WHERE role = 'editor'").run();
+
+    // Page devenue restreinte à quelqu'un d'autre
+    const c = await login('editor');
+    const wsC = await connect(c.cookie);
+    await until(() => textOf(wsC.json()).length > 10);
+    await login('admin');
+    const other = (db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get() as { id: string }).id;
+    db.prepare("INSERT INTO page_acl (page_id, user_id, level) VALUES (?, ?, 'write')").run(pageId, other);
+    app.collab!.recheckAll();
+    await until(() => wsC.state.closed !== null);
+    expect(wsC.state.closed).toBe(4403);
+  });
+
   it('refuse sans session, pour un lecteur, depuis une autre origine et pour une page inconnue', async () => {
     const editor = await login('editor');
     const reader = await login('reader');

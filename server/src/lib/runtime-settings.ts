@@ -265,7 +265,9 @@ export class RuntimeSettings {
     if (enabled) this.#assertSecretsRetyped(section, values, secretsIn, this.get());
     const secrets: Record<string, string> = {};
     const hints: Record<string, string> = {};
-    for (const f of spec.secrets) {
+    // Section désactivée : plus aucun secret conservé. Sinon, une section « éteinte » garderait un mot de passe scellé
+    // qu'un test vers une autre adresse pourrait ensuite envoyer sans que l'admin ne le ressaisisse.
+    for (const f of enabled ? spec.secrets : []) {
       const incoming = secretsIn[f];
       if (incoming === undefined) {
         const keep = prev?.secrets[f];

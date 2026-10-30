@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { guard, requireAuth } from '../auth/context.js';
 import { loadReadablePage, loadWritablePage, readableSpaceIds } from '../lib/access.js';
-import { canReadPage, canWritePage, filterReadable } from '../lib/page-acl.js';
+import { assertMoveKeepsRestriction, canReadPage, canWritePage, filterReadable, governingPage } from '../lib/page-acl.js';
 import { audit } from '../lib/audit.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { toMarkdown } from '../lib/markdown.js';
@@ -73,6 +73,7 @@ export default async function pageRoutes(app: FastifyInstance) {
     const body = req.body as z.output<typeof moveBody>;
     if (body.spaceId && !readableSpaceIds(db, req).includes(body.spaceId)) throw new HttpError(404, 'Espace introuvable');
     if (body.parentId && !canWritePage(db, req.auth, body.parentId)) throw new HttpError(403, 'Accès en lecture seule sur la page parente');
+    assertMoveKeepsRestriction(db, req.auth, id, body.parentId);
     const { row, fromSpaceId } = movePage(db, id, body);
     bus.publish({ type: 'page.moved', spaceId: row.space_id, pageId: id, version: row.version, by: by(req) });
     if (fromSpaceId !== row.space_id) bus.publish({ type: 'page.moved', spaceId: fromSpaceId, pageId: id, by: by(req) });
@@ -100,7 +101,12 @@ export default async function pageRoutes(app: FastifyInstance) {
 
   app.post('/pages/:id/restore', { preHandler: guard('write'), schema: { tags, summary: 'Restaurer une page de la corbeille', params: idParams } }, async (req) => {
     const { id } = req.params as { id: string };
-    writable(req, id, { allowTrashed: true });
+    const trashed = writable(req, id, { allowTrashed: true });
+    // Parent encore dans la corbeille : la page remonterait à la racine et perdrait la restriction qui la protège.
+    const parent = trashed.parent_id ? getPageRow(db, trashed.parent_id) : null;
+    if (parent?.deleted_at && governingPage(db, parent.id) && req.auth?.user.role !== 'admin') {
+      throw new HttpError(409, 'Restaurez d’abord la page parente (zone restreinte) ou demandez à un administrateur');
+    }
     const row = restorePage(db, id);
     bus.publish({ type: 'page.restored', spaceId: row.space_id, pageId: id, by: by(req) });
     return toMeta(row);

@@ -5,6 +5,7 @@ import type { Config } from '../config.js';
 import type { DB } from '../db.js';
 import { HttpError, newId } from '../lib/http.js';
 import type { Role } from './context.js';
+import { bindingMatches } from './login-binding.js';
 
 const STATE_TTL = 10 * 60_000;
 
@@ -59,13 +60,13 @@ export class OidcClient {
     return this.#config;
   }
 
-  async authorizationUrl(returnTo: string) {
+  async authorizationUrl(returnTo: string, bindingHash: string) {
     const config = await this.#discover();
     const codeVerifier = oidc.randomPKCECodeVerifier();
     const state = oidc.randomState();
     const nonce = oidc.randomNonce();
-    this.db.prepare('INSERT INTO login_states (state, code_verifier, nonce, return_to, expires_at) VALUES (?, ?, ?, ?, ?)')
-      .run(state, codeVerifier, nonce, returnTo, Date.now() + STATE_TTL);
+    this.db.prepare('INSERT INTO login_states (state, code_verifier, nonce, return_to, expires_at, binding_hash) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(state, codeVerifier, nonce, returnTo, Date.now() + STATE_TTL, bindingHash);
     return oidc.buildAuthorizationUrl(config, {
       redirect_uri: this.redirectUri,
       scope: this.cfg.OIDC_SCOPES,
@@ -76,14 +77,16 @@ export class OidcClient {
     });
   }
 
-  async handleCallback(callbackUrl: URL) {
-    const config = await this.#discover();
+  async handleCallback(callbackUrl: URL, bindingToken: string | undefined) {
     const state = callbackUrl.searchParams.get('state') ?? '';
     // Le state est consommé immédiatement : un rejeu échoue.
-    const saved = this.db.prepare('DELETE FROM login_states WHERE state = ? RETURNING code_verifier, nonce, return_to, expires_at')
-      .get(state) as { code_verifier: string; nonce: string; return_to: string; expires_at: number } | undefined;
+    const saved = this.db.prepare('DELETE FROM login_states WHERE state = ? RETURNING code_verifier, nonce, return_to, expires_at, binding_hash')
+      .get(state) as { code_verifier: string; nonce: string; return_to: string; expires_at: number; binding_hash: string | null } | undefined;
     if (!saved || saved.expires_at < Date.now()) throw new HttpError(400, 'Tentative de connexion expirée, recommencez.');
+    // La tentative doit revenir dans le navigateur qui l'a lancée (pas de cookie, pas de connexion).
+    if (saved.binding_hash === null || !bindingMatches(saved.binding_hash, bindingToken)) throw new HttpError(400, 'Tentative de connexion lancée depuis un autre navigateur, recommencez.');
 
+    const config = await this.#discover();
     const tokens = await oidc.authorizationCodeGrant(config, callbackUrl, {
       pkceCodeVerifier: saved.code_verifier,
       expectedState: state,

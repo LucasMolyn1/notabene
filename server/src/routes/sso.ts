@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { type GroupRoles, cleanName, roleFromGroupList } from '../auth/external.js';
 import { LdapDirectory } from '../auth/ldap.js';
+import { BINDING_TTL_SECONDS, bindingCookieName, bindingMatches, newBinding } from '../auth/login-binding.js';
 import { safeReturnTo, upsertUser } from '../auth/oidc.js';
 import { samlFor, userFromProfile } from '../auth/saml.js';
 import { createSession, destroySession, sessionCookieName } from '../auth/session.js';
@@ -24,6 +25,8 @@ export default async function ssoRoutes(app: FastifyInstance, opts: { ldap?: Lda
 
   const cookieName = sessionCookieName(config.secureCookies);
   const cookieOptions = { path: '/', httpOnly: true, secure: config.secureCookies, sameSite: 'lax' as const };
+  const bindingName = bindingCookieName(config.secureCookies);
+  const samlBindingOptions = { path: '/', httpOnly: true, secure: config.secureCookies, sameSite: 'none' as const };
   const publicOrigin = new URL(config.PUBLIC_URL).origin;
 
   const complete = (req: FastifyRequest, reply: FastifyReply, input: { sub: string; email: string | null; name: string; role: Role; method: string }) => {
@@ -93,8 +96,12 @@ export default async function ssoRoutes(app: FastifyInstance, opts: { ldap?: Lda
       }, async (req, reply) => {
         const saml = samlOrFail();
         const state = randomToken(18);
-        db.prepare('INSERT INTO login_states (state, code_verifier, nonce, return_to, expires_at) VALUES (?, ?, ?, ?, ?)')
-          .run(state, 'saml', 'saml', safeReturnTo((req.query as { returnTo?: string }).returnTo), Date.now() + STATE_TTL);
+        // Le retour SAML est un POST venu du fournisseur d'identité (autre site) : le cookie doit être SameSite=None,
+        // donc Secure (HTTPS). Sans HTTPS (développement), la liaison n'est pas posée.
+        const binding = config.secureCookies ? newBinding() : null;
+        db.prepare('INSERT INTO login_states (state, code_verifier, nonce, return_to, expires_at, binding_hash) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(state, 'saml', 'saml', safeReturnTo((req.query as { returnTo?: string }).returnTo), Date.now() + STATE_TTL, binding?.hash ?? null);
+        if (binding) reply.setCookie(bindingName, binding.token, { ...samlBindingOptions, maxAge: BINDING_TTL_SECONDS });
         return reply.redirect(await saml.getAuthorizeUrlAsync(state, undefined, {}));
       });
 
@@ -106,9 +113,14 @@ export default async function ssoRoutes(app: FastifyInstance, opts: { ldap?: Lda
         const roles = rolesOf();
         const body = req.body as { SAMLResponse: string; RelayState?: string };
         // Le RelayState est notre état à usage unique : sans lui, pas de connexion (pas de SSO initié par l'IdP).
-        const saved = db.prepare("DELETE FROM login_states WHERE state = ? AND code_verifier = 'saml' RETURNING return_to, expires_at")
-          .get(body.RelayState ?? '') as { return_to: string; expires_at: number } | undefined;
+        const saved = db.prepare("DELETE FROM login_states WHERE state = ? AND code_verifier = 'saml' RETURNING return_to, expires_at, binding_hash")
+          .get(body.RelayState ?? '') as { return_to: string; expires_at: number; binding_hash: string | null } | undefined;
         if (!saved || saved.expires_at < Date.now()) return reply.redirect('/?auth_error=callback');
+        reply.clearCookie(bindingName, samlBindingOptions);
+        if (!bindingMatches(saved.binding_hash, req.cookies[bindingName])) {
+          audit(db, req, 'auth.saml.failed', null, { reason: 'binding' });
+          return reply.redirect('/?auth_error=callback');
+        }
         try {
           const { profile } = await saml.validatePostResponseAsync({ SAMLResponse: body.SAMLResponse });
           const user = profile ? userFromProfile(profile as unknown as Record<string, unknown>, cfg()) : null;

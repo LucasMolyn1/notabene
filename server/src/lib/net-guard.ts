@@ -52,3 +52,7 @@ const openAgent = new Agent();
 // fetch sortant : sans `allowPrivate`, toute connexion vers une adresse interne échoue, quel que soit le nom utilisé.
 export const safeFetch = (url: URL, init: RequestInit, allowPrivate: boolean) =>
   fetch(url, { ...init, dispatcher: allowPrivate ? openAgent : guardedAgent });
+
+// Même garde, sous la forme d'une fonction `fetch` à confier à un SDK (option `fetch` du client Anthropic).
+export const guardedFetch = (allowPrivate: boolean) => ((input: unknown, init?: unknown) =>
+  fetch(input as never, { ...(init as object), dispatcher: allowPrivate ? openAgent : guardedAgent } as never)) as unknown as typeof globalThis.fetch;

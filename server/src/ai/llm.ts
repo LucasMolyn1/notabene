@@ -1,6 +1,8 @@
 // Fournisseurs LLM : Claude via le SDK officiel Anthropic, ou tout endpoint compatible
 // OpenAI (OpenAI, Mistral, Ollama, LM Studio…) via fetch. Les deux renvoient un flux de texte.
 import Anthropic from '@anthropic-ai/sdk';
+import { trimTrailingSlashes } from '../lib/http.js';
+import { guardedFetch, safeFetch } from '../lib/net-guard.js';
 import type { AiSettings } from './settings.js';
 
 export class LlmError extends Error {
@@ -24,6 +26,8 @@ async function* streamAnthropic(s: AiSettings, prompt: Prompt, signal: AbortSign
   const client = new Anthropic({
     apiKey: s.apiKey ?? undefined,
     ...(s.baseUrl ? { baseURL: s.baseUrl } : {}),
+    // Connexion épinglée sur l'adresse vérifiée (net-guard) : la clé ne part jamais vers une adresse interne non autorisée.
+    fetch: guardedFetch(s.allowPrivate),
     maxRetries: 2,
     timeout: 120_000,
   });
@@ -61,12 +65,13 @@ async function* streamAnthropic(s: AiSettings, prompt: Prompt, signal: AbortSign
 }
 
 async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: AbortSignal): AsyncGenerator<string> {
-  const base = (s.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const base = trimTrailingSlashes(s.baseUrl || 'https://api.openai.com/v1');
   let res: Response;
   try {
-    res = await fetch(`${base}/chat/completions`, {
+    res = await safeFetch(new URL(`${base}/chat/completions`), {
       method: 'POST',
       signal,
+      redirect: 'error',
       headers: { 'Content-Type': 'application/json', ...(s.apiKey ? { Authorization: `Bearer ${s.apiKey}` } : {}) },
       body: JSON.stringify({
         model: s.model,
@@ -74,7 +79,7 @@ async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: Ab
         max_tokens: prompt.maxTokens ?? 4000,
         messages: [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }],
       }),
-    });
+    }, s.allowPrivate) as unknown as Response;
   } catch (err) {
     if (signal.aborted) return;
     throw new LlmError('Fournisseur injoignable', 504);
@@ -106,4 +111,35 @@ async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: Ab
 export function streamCompletion(s: AiSettings, prompt: Prompt, signal: AbortSignal) {
   if (s.provider === 'anthropic' && !s.apiKey) throw new LlmError('Aucune clé d’API configurée', 400);
   return s.provider === 'anthropic' ? streamAnthropic(s, prompt, signal) : streamOpenAiCompatible(s, prompt, signal);
+}
+
+// Modèles proposés par le fournisseur (liste déroulante des réglages).
+export async function listModels(s: AiSettings, signal: AbortSignal): Promise<string[]> {
+  const ids = new Set<string>();
+  try {
+    if (s.provider === 'anthropic') {
+      const client = new Anthropic({ apiKey: s.apiKey ?? undefined, ...(s.baseUrl ? { baseURL: s.baseUrl } : {}), fetch: guardedFetch(s.allowPrivate), maxRetries: 1, timeout: 20_000 });
+      for await (const m of client.models.list({ limit: 100 }, { signal })) {
+        ids.add(m.id);
+        if (ids.size >= 300) break;
+      }
+    } else {
+      const base = trimTrailingSlashes(s.baseUrl || 'https://api.openai.com/v1');
+      const res = await safeFetch(new URL(`${base}/models`), {
+        signal,
+        redirect: 'error',
+        headers: s.apiKey ? { Authorization: `Bearer ${s.apiKey}` } : {},
+      }, s.allowPrivate);
+      if (res.status === 401 || res.status === 403) throw new LlmError('Clé d’API refusée par le fournisseur', 502);
+      if (!res.ok) throw new LlmError(`Le fournisseur ne liste pas ses modèles (${res.status})`, 502);
+      const data = ((await res.json()) as { data?: { id?: unknown }[]; models?: { name?: unknown }[] });
+      for (const m of data.data ?? []) if (typeof m.id === 'string') ids.add(m.id);
+      for (const m of data.models ?? []) if (typeof m.name === 'string') ids.add(m.name);
+    }
+  } catch (err) {
+    if (err instanceof LlmError) throw err;
+    if (err instanceof Anthropic.AuthenticationError) throw new LlmError('Clé d’API Anthropic refusée', 502);
+    throw new LlmError('Fournisseur injoignable', 504);
+  }
+  return [...ids].filter((id) => /^[\w.:/@-]{1,120}$/.test(id)).sort((a, b) => a.localeCompare(b)).slice(0, 300);
 }

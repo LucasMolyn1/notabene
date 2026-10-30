@@ -196,8 +196,13 @@ describe('API v3 : permissions par page', () => {
     expect(patch.statusCode).toBe(403);
     expect((await call(ed1, 'DELETE', `/api/v3/pages/${secret()}`)).statusCode).toBe(403);
     expect((await call(ed1, 'PATCH', `/api/v3/pages/${secret()}`, { title: 'x' })).statusCode).toBe(403);
-    // Il peut commenter.
-    expect((await call(ed1, 'POST', `/api/v3/pages/${secret()}/comments`, { body: 'lu' })).statusCode).toBe(201);
+    // Lecture seule : ni commentaire ni résolution de fil.
+    expect((await call(ed1, 'POST', `/api/v3/pages/${secret()}/comments`, { body: 'lu' })).statusCode).toBe(403);
+    await restrict(admin, [{ userId: 'ed1', level: 'write' }]);
+    const created = await call(ed1, 'POST', `/api/v3/pages/${secret()}/comments`, { body: 'fil' });
+    expect(created.statusCode).toBe(201);
+    await restrict(admin, [{ userId: 'ed1', level: 'read' }]);
+    expect((await call(ed1, 'PATCH', `/api/v3/pages/${secret()}/comments/${created.json().id}`, { resolved: true })).statusCode).toBe(403);
     // Un lecteur (rôle) ne gagne jamais l'écriture via la permission.
     await restrict(admin, [{ userId: 'rd', level: 'write' }]);
     expect((await call(await login('rd@example.com'), 'PATCH', `/api/v3/pages/${secret()}`, { title: 'x' })).statusCode).toBe(403);
@@ -213,6 +218,29 @@ describe('API v3 : permissions par page', () => {
     expect(asAdmin.entries).toEqual([{ userId: 'ed1', level: 'read', name: 'ed1', email: 'ed1@example.com' }]);
     await restrict(admin, []);
     expect((await call(await login('ed2@example.com'), 'GET', `/api/v3/pages/${secret()}`)).statusCode).toBe(200);
+  });
+
+  it('un rédacteur ne peut pas lever la restriction en déplaçant, dupliquant ou restaurant', async () => {
+    const admin = await login('admin@example.com');
+    const ed1 = await login('ed1@example.com');
+    const ed2 = await login('ed2@example.com');
+    await restrict(admin, [{ userId: 'ed1', level: 'write' }]);
+    // Déplacer une sous-page hors de la zone restreinte : administrateur seulement.
+    expect((await call(ed1, 'POST', `/api/v3/pages/${child()}/move`, { parentId: null })).statusCode).toBe(403);
+    expect((await call(ed2, 'GET', `/api/v3/pages/${child()}`)).statusCode).toBe(404);
+    // Dans la même zone, c'est permis.
+    expect((await call(ed1, 'POST', `/api/v3/pages/${child()}/move`, { parentId: secret(), index: 0 })).statusCode).toBe(200);
+    // La copie d'une page restreinte reste restreinte.
+    const copy = await call(ed1, 'POST', `/api/v3/pages/${secret()}/duplicate`);
+    expect(copy.statusCode).toBe(201);
+    expect((await call(ed2, 'GET', `/api/v3/pages/${copy.json().id}`)).statusCode).toBe(404);
+    expect((await call(ed1, 'GET', `/api/v3/pages/${copy.json().id}`)).statusCode).toBe(200);
+    // Restaurer une sous-page dont le parent restreint est encore à la corbeille ne la remonte pas à la racine.
+    expect((await call(ed1, 'DELETE', `/api/v3/pages/${child()}`)).statusCode).toBe(204);
+    expect((await call(ed1, 'DELETE', `/api/v3/pages/${secret()}`)).statusCode).toBe(204);
+    expect((await call(ed1, 'POST', `/api/v3/pages/${child()}/restore`)).statusCode).toBe(409);
+    // L'administrateur peut le déplacer ailleurs : la page est alors visible de tous.
+    expect((await call(admin, 'POST', `/api/v3/pages/${child()}/restore`)).statusCode).toBe(200);
   });
 
   it('ne laisse pas la co-édition ni les événements fuiter', async () => {
