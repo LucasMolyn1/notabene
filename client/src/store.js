@@ -74,6 +74,7 @@ export const store = {
     return page;
   },
 
+  /** @param {{ spaceId?: string, parentId?: string | null, title?: string, icon?: string, content?: object, afterId?: string }} [input] */
   async createPage({ spaceId, parentId = null, title = '', icon = '', content, afterId } = {}) {
     const page = await api.post('/pages', { spaceId, parentId, title, icon, ...(content ? { content } : {}), ...(afterId ? { afterId } : {}) });
     setMeta(page);

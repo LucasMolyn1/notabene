@@ -61,6 +61,7 @@ export function localLoginForm(setupRequired) {
 }
 
 // Carte « Sécurité » du profil : mot de passe et double authentification (TOTP).
+/** @param {Function} card @param {{ onEnabled?: () => void }} [options] */
 export async function securityCard(card, { onEnabled } = {}) {
   const status = await request('GET', '/auth/local/me').catch(() => null);
   if (!status?.local) return null;

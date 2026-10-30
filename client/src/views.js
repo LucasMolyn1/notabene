@@ -257,7 +257,7 @@ function mountPage(page) {
       h('div', { class: 'toc-title' }, 'Sur cette page'),
       ...headings.map((hd) => h('button', {
         class: `toc-item l${hd.level}`,
-        onClick: () => editor.view.nodeDOM(hd.pos)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+        onClick: () => /** @type {HTMLElement | null} */ (editor.view.nodeDOM(hd.pos))?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
       }, hd.text)));
     spyToc();
   }
@@ -266,7 +266,7 @@ function mountPage(page) {
     if (tocEl.hidden) return;
     let cur = 0;
     headings.forEach((hd, i) => {
-      const dom = editor.view.nodeDOM(hd.pos);
+      const dom = /** @type {HTMLElement | null} */ (editor.view.nodeDOM(hd.pos));
       if (dom && dom.getBoundingClientRect().top < 140) cur = i;
     });
     tocEl.querySelectorAll('.toc-item').forEach((b, i) => b.classList.toggle('active', i === cur));

@@ -65,6 +65,9 @@ function renderAnswer(text, sources) {
   return out.map((b) => (Array.isArray(b) ? `<ul>${b.join('')}</ul>` : b)).join('');
 }
 
+/**
+ * @param {{ mode?: 'search' | 'pick', onPick?: (page: any) => void, onOpen?: (page: any) => void, exclude?: string, tab?: 'search' | 'ai' }} [options]
+ */
 export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 'search' } = {}) {
   current?.close();
   const aiAvailable = mode === 'search' && session.can('ai');
@@ -75,7 +78,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
   let requestSeq = 0;
   let askController = null;
 
-  const opener = document.activeElement; // le focus y revient à la fermeture
+  const opener = /** @type {HTMLElement | null} */ (document.activeElement); // le focus y revient à la fermeture
   const input = h('input', {
     class: 'pal-input', autocomplete: 'off', spellcheck: 'false', role: 'combobox', 'aria-label': 'Rechercher',
     'aria-autocomplete': 'list', 'aria-expanded': 'true', 'aria-controls': 'pal-list',
