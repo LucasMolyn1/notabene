@@ -131,6 +131,8 @@ for (const scheme of ['light', 'dark'] as const) {
       await dialog.getByRole('button', { name: 'Différences avec la version actuelle' }).click();
       await dialog.locator('.diff').waitFor();
       expect(await violations(page, 'historique (différences)')).toEqual([]);
+    });
+
     test('blocs : dépliable, colonnes, formule, couleurs et palette', async ({ page, browser }) => {
       const t = (text: string, marks?: object[]) => ({ type: 'text', text, ...(marks ? { marks } : {}) });
       const colored = ['gray', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink'].flatMap((c) => [
