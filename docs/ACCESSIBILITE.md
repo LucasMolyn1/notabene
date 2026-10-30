@@ -31,3 +31,16 @@ Consigner pour chaque ligne : lecteur et version, navigateur, résultat, anomali
 - Zoom à 200 % : rien ne se chevauche ni ne sort de l'écran.
 - Mode « réduire les animations » du système : aucune animation essentielle.
 - Navigation au clavier seul, sans souris, sur chaque écran modifié.
+
+## Téléphone et écrans tactiles
+
+L'interface s'adapte aux écrans étroits (menu latéral en tiroir, barre du haut réduite à l'essentiel) et aux écrans tactiles (`pointer: coarse`) :
+
+- cibles tactiles d'au moins 40 px, 44 px pour les menus et la barre de mise en forme ;
+- champs à 16 px (en dessous, iOS zoome la page à la saisie) ;
+- aucune action qui n'apparaisse qu'au survol ; raccourcis clavier masqués ;
+- une barre de mise en forme se pose au-dessus du clavier virtuel dans l'éditeur (gras, italique, titres, listes, citation, code, annuler, et « + » pour insérer un bloc) ; la bulle de sélection de bureau est remplacée ;
+- zones sûres (encoche, barre de geste) prises en compte ;
+- Notabene peut s'installer comme une application (manifeste) : « Ajouter à l'écran d'accueil » sur téléphone, « Installer » dans Chrome / Edge, « Ajouter au Dock » dans Safari.
+
+Limites connues : le glisser-déposer de l'arborescence ne fonctionne pas au doigt (déplacer une page : la glisser dans un navigateur de bureau) ; les tests sont automatisés en émulation (Chromium, 390 px), pas sur un vrai iPhone ou Android.

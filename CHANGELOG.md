@@ -4,6 +4,12 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## Non publié
+
+### Ajouté
+- **Interface pour téléphone** : barre du haut réduite à l'essentiel (suivre, favoris, historique et permissions passent dans le menu « … »), cibles tactiles de 40 à 44 px, champs à 16 px (plus de zoom à la saisie sur iOS), rien qui dépende du survol, zones sûres, barre de mise en forme au-dessus du clavier virtuel (gras, italique, titres, listes, citation, code, annuler, « + » pour insérer un bloc), bande des sections des réglages centrée sur la section courante.
+- **Installable comme une application** : manifeste et icônes (« Ajouter à l'écran d'accueil », « Installer » dans Chrome et Edge, « Ajouter au Dock » dans Safari). Pas de mode hors ligne.
+
 ## [3.6.1] - 2026-10-30
 
 Adresses lisibles et pages publiques référençables, photo de profil, compose d'essai, bouton « Vérifier maintenant ».

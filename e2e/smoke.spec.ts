@@ -22,6 +22,7 @@ test('les anciennes versions d’API n’existent plus', async ({ request }) => 
 
 test('la recherche s’ouvre au clavier, prend le focus et se ferme avec Échap', async ({ page }) => {
   await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.getByRole('treeitem', { name: 'Bienvenue sur Notabene' }).waitFor(); // les raccourcis sont posés quand l'application a fini de démarrer
   await page.keyboard.press('Control+k');
   const input = page.getByRole('combobox', { name: 'Rechercher' });
   await expect(input).toBeFocused();

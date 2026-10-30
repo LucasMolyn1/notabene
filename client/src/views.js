@@ -60,6 +60,8 @@ function tidyAddress(path) {
   if (location.pathname !== path) history.replaceState(null, '', path + (app.embed ? '?embed' : ''));
 }
 
+const narrow = () => window.matchMedia('(max-width: 640px)').matches;
+
 function loading() {
   main().replaceChildren(topbar(h('nav', { class: 'crumbs' })), h('div', { class: 'scroller' }, h('div', { class: 'page-wrap' }, h('div', { class: 'skeleton' },
     h('div', { class: 'sk sk-title' }), h('div', { class: 'sk' }), h('div', { class: 'sk' }), h('div', { class: 'sk sk-short' })))));
@@ -105,9 +107,13 @@ function mountPage(page) {
   const presenceEl = h('div', { class: 'presence' });
   const saveEl = h('span', { class: 'save-state' });
   const starBtn = session.user && h('button', { class: 'icon-btn star-btn', 'aria-label': 'Ajouter aux favoris', 'aria-pressed': 'false', onClick: () => A.attempt(() => store.toggleFavorite(id)) }, icon('star'));
+  // Sur téléphone, ces boutons quittent la barre (trop serrée) et passent dans le menu « … » (voir pageMenu).
+  const watchBtn = watchButton(id);
+  const permBtn = permissionsButton(id);
   const modeBtn = canWrite && h('button', { class: 'btn btn-ghost btn-sm mode-btn', onClick: toggleMode });
   const moreBtn = h('button', { class: 'icon-btn', title: 'Plus d’options', onClick: (e) => pageMenu(e.currentTarget) }, icon('more'));
   const histBtn = h('button', { class: 'icon-btn', title: 'Historique des versions', onClick: async () => { await flush(); A.openHistory(id); } }, icon('history'));
+  for (const b of [watchBtn, permBtn, starBtn, histBtn]) b?.classList.add('tb-secondary');
 
   const iconBtn = h('button', { class: 'page-icon', title: 'Changer l’icône', onClick: (e) => !readOnly() && A.pickIcon(e.currentTarget, id) });
   const addIconBtn = h('button', { class: 'add-icon', onClick: (e) => A.pickIcon(e.currentTarget, id) }, icon('smile', 15), 'Ajouter une icône');
@@ -121,7 +127,7 @@ function mountPage(page) {
   const scroller = h('div', { class: 'scroller' }, wrap);
 
   main().replaceChildren(
-    topbar(crumbsEl, app.embed ? [] : [presenceEl, saveEl, commentsButton(id), watchButton(id), permissionsButton(id), starBtn, modeBtn, histBtn, moreBtn]),
+    topbar(crumbsEl, app.embed ? [] : [presenceEl, saveEl, commentsButton(id), watchBtn, permBtn, starBtn, modeBtn, histBtn, moreBtn]),
     scroller,
   );
 
@@ -339,6 +345,13 @@ function mountPage(page) {
   function pageMenu(anchor) {
     const p = store.page(id) || page;
     openMenu(anchor, [
+      ...(narrow() ? [
+        watchBtn && { label: watchBtn.getAttribute('aria-pressed') === 'true' ? 'Ne plus suivre la page' : 'Suivre la page', icon: 'bell', onClick: () => watchBtn.click() },
+        starBtn && { label: starBtn.getAttribute('aria-pressed') === 'true' ? 'Retirer des favoris' : 'Ajouter aux favoris', icon: 'star', onClick: () => starBtn.click() },
+        { label: 'Historique des versions', icon: 'history', onClick: () => histBtn.click() },
+        permBtn && { label: 'Permissions de la page', icon: 'lock', onClick: () => permBtn.click() },
+        { sep: true },
+      ] : []),
       canWrite && { label: 'Pleine largeur', icon: 'width', checked: !!p.fullWidth, onClick: () => A.attempt(() => store.updatePage(id, { fullWidth: !p.fullWidth })) },
       { label: 'Copier le lien', icon: 'link', onClick: () => A.copyLink(id) },
       { label: 'Intégrer (iframe)', icon: 'code', onClick: () => A.showEmbed(id) },
