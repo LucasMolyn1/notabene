@@ -1,9 +1,35 @@
 // Configuration lue depuis l'environnement et validée au démarrage.
 // Principe : une configuration dangereuse empêche le serveur de démarrer.
+import { isIP } from 'node:net';
 import { z } from 'zod';
 
 const bool = (def: 'true' | 'false') =>
   z.enum(['true', 'false', '1', '0']).default(def).transform((v) => v === 'true' || v === '1');
+
+// TRUST_PROXY : à qui faire confiance pour l'adresse du client (en-tête X-Forwarded-For).
+//   false (défaut)  personne : l'adresse est celle de la connexion ;
+//   2               un nombre de sauts de confiance (1 = un seul proxy devant l'application, 2 = deux, comme HAProxy puis Cloudflare) ;
+//   10.0.0.0/8,…    des adresses ou réseaux (CIDR) de proxys de confiance ;
+//   true            tous les sauts : déconseillé, un client peut alors falsifier son adresse avec X-Forwarded-For.
+// Le nombre de sauts et la liste lisent l'adresse du client en partant de la droite : une valeur ajoutée par le client, à gauche, est ignorée.
+const trustProxy = z.string().default('false').transform((raw, ctx): boolean | number | string => {
+  const v = raw.trim().toLowerCase();
+  if (v === '' || v === 'false' || v === '0') return false;
+  if (v === 'true') return true;
+  if (/^\d{1,2}$/.test(v)) return Number(v);
+  const items = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  const valid = (item: string) => {
+    const [addr = '', bits, extra] = item.split('/');
+    const kind = isIP(addr);
+    if (!kind || extra !== undefined) return false;
+    return bits === undefined || (/^\d{1,3}$/.test(bits) && Number(bits) <= (kind === 4 ? 32 : 128));
+  };
+  if (!items.length || !items.every(valid)) {
+    ctx.addIssue({ code: 'custom', message: 'attendu : false, true, un nombre de sauts (ex. 2) ou une liste d’adresses / réseaux CIDR séparés par des virgules' });
+    return z.NEVER;
+  }
+  return items.join(',');
+});
 
 const csv = (def = '') =>
   z.string().default(def).transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean));
@@ -22,7 +48,7 @@ const schema = z
     PUBLIC_URL: z.string().url().transform((v) => v.replace(/\/+$/, '')),
     DATA_DIR: z.string().default('./data'),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
-    TRUST_PROXY: bool('false'),
+    TRUST_PROXY: trustProxy,
     ALLOW_INSECURE_HTTP: bool('false'),
     WEBHOOK_ALLOW_PRIVATE: bool('false'),
     // Autorise le fournisseur IA à viser un réseau privé (Ollama, LM Studio…). Variable d'environnement seulement : jamais modifiable depuis l'interface.

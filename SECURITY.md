@@ -26,6 +26,7 @@ Merci de ne pas ouvrir d’issue publique : utilisez les *GitHub Security Adviso
 
 ### Protection des requêtes
 - **CSRF** : en-tête `X-CSRF-Token` lié à la session, comparé en temps constant, et contrôle de l’en-tête `Origin` sur toute écriture authentifiée par cookie.
+- **Adresse du client** : `TRUST_PROXY` se règle en nombre de proxys de confiance (ou liste de proxys) ; l'adresse est lue à droite de `X-Forwarded-For`, donc une valeur ajoutée par le client est ignorée. `TRUST_PROXY=true` (tous les sauts) est déconseillé et signalé au démarrage.
 - **Limitation de débit** globale, renforcée sur l’authentification et l’IA.
 - **Validation Zod** de toutes les entrées, taille des requêtes bornée.
 - Les secrets des fournisseurs (LDAP, SMTP, OIDC, clé d'IA) ne suivent **jamais** un changement d'adresse sans être ressaisis ; désactiver une section efface ses secrets ; la clé d'IA exige la ressaisie du mot de passe.

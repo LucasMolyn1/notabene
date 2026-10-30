@@ -76,7 +76,9 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
       ...(typeof logger === 'object' ? logger : {}),
       redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-csrf-token"]'],
     },
-    trustProxy: config.TRUST_PROXY,
+    // Un nombre = nombre de proxys de confiance en partant de la connexion ; l'adresse du client est lue à droite de X-Forwarded-For.
+    // (L'option numérique de Fastify n'a pas cette sémantique : on passe par une fonction.)
+    trustProxy: typeof config.TRUST_PROXY === 'number' ? ((_address: string, hop: number) => hop < (config.TRUST_PROXY as number)) : config.TRUST_PROXY,
     bodyLimit: 12 * 1024 * 1024,
   });
 

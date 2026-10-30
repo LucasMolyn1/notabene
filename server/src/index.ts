@@ -49,4 +49,7 @@ process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 
 await app.listen({ host: config.HOST, port: config.PORT });
+if (config.TRUST_PROXY === true && config.NODE_ENV === 'production') {
+  app.log.warn('TRUST_PROXY=true fait confiance à tous les sauts de X-Forwarded-For : un client peut falsifier son adresse. Préférez un nombre de sauts (ex. TRUST_PROXY=2) ou la liste de vos proxys.');
+}
 if (config.DEV_LOGIN) app.log.warn('DEV_LOGIN actif : connexion sans fournisseur d’identité (développement uniquement).');
