@@ -541,6 +541,7 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
 .pal-text { display: grid; gap: 1px; min-width: 0; }
 .pal-title { font-weight: 500; }
 .pal-path { font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pal-item.active .pal-path { color: var(--text-2); }
 .pal-snippet { font-size: 13px; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pal-item mark { background: var(--mark); color: inherit; border-radius: 2px; }
 .pal-empty { padding: 28px; text-align: center; color: var(--text-3); }
