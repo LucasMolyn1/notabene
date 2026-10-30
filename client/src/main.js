@@ -19,6 +19,7 @@ import { showMfaSetup, showResetPassword } from './local-auth.js';
 import { refreshUnread } from './notifications.js';
 import { onCommentEvent } from './comments.js';
 import * as A from './actions.js';
+import { pagePath, parseRoute, spacePath, upgradeLegacyHash } from './urls.js';
 
 // L'accès est contrôlé par la session, pas par la route demandée.
 function openSettings(sectionId) {
@@ -27,16 +28,18 @@ function openSettings(sectionId) {
 }
 
 function route() {
-  const path = location.hash.slice(1) || '/';
-  let m;
-  if ((m = path.match(/^\/settings$/) || path.match(/^\/settings\/([a-z-]+)$/))) openSettings(m[1]);
+  upgradeLegacyHash(); // un ancien lien #/… arrivé pendant le démarrage ou dans l'application
+  const r = parseRoute(location.pathname);
+  if (r.kind === 'settings') openSettings(r.section);
   else if (!store.spaces.length) { showNoSpace(); scheduleSidebar(); return; }
-  else if ((m = path.match(/^\/p\/([A-Za-z0-9_-]+)/))) showPage(m[1]);
-  else if ((m = path.match(/^\/s\/([A-Za-z0-9_-]+)/))) showSpace(m[1]);
-  else if (path !== '/') showMissing(null);
+  else if (r.kind === 'page') showPage(r.id);
+  else if (r.kind === 'space') showSpace(r.id);
+  else if (r.kind === 'unknown') showMissing(null);
   else {
+    // Racine : dernière page consultée, sinon l'accueil de l'espace courant.
     const last = !app.embed && prefs.lastPage && store.page(prefs.lastPage);
-    location.replace(`#${last ? `/p/${last.id}` : `/s/${(store.space(prefs.space) || store.spaces[0]).id}`}`);
+    history.replaceState(null, '', (last ? pagePath(last) : spacePath(store.space(prefs.space) || store.spaces[0])) + location.search);
+    route();
     return;
   }
   document.body.classList.remove('sb-mobile-open');
@@ -65,10 +68,23 @@ function onKey(e) {
   else if (e.altKey && !mod && e.code === 'KeyN' && !app.embed && session.can('write')) { e.preventDefault(); A.newPage(prefs.space); }
 }
 
+// Les liens internes (/p/…, /s/…, /settings…) naviguent sans recharger la page ; un clic avec Ctrl, Maj ou la molette garde son sens habituel.
+function onLinkClick(e) {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target instanceof Element ? e.target.closest('a[href]') : null;
+  if (!a || a.target || a.hasAttribute('download') || a.getAttribute('href').startsWith('#')) return;
+  const url = new URL(a.href, location.href);
+  if (url.origin !== location.origin || (url.search && url.search !== '?embed')) return;
+  if (parseRoute(url.pathname).kind === 'unknown') return;
+  e.preventDefault();
+  A.go(url.pathname);
+}
+
 async function boot() {
   document.body.classList.toggle('embed', app.embed);
   document.body.classList.toggle('sb-collapsed', !prefs.sidebar);
 
+  upgradeLegacyHash();
   // Lien de réinitialisation reçu par e-mail : le jeton est dans le fragment (jamais envoyé au serveur) et retiré de l'URL.
   window.addEventListener('hashchange', () => { if (/^#\/reset\//.test(location.hash)) location.reload(); });
   const reset = /^#\/reset\/([\w-]{20,100})$/.exec(location.hash);
@@ -95,7 +111,7 @@ async function boot() {
     return;
   }
   toastAuthError();
-  if (params.has('auth_error')) history.replaceState(null, '', `/${location.hash}`);
+  if (params.has('auth_error')) history.replaceState(null, '', location.pathname);
   if (!store.space(prefs.space)) { prefs.space = store.spaces[0]?.id ?? null; savePrefs(); }
 
   if (session.user) { presence.enable(session.user.id); refreshUnread(); }
@@ -115,10 +131,14 @@ async function boot() {
     notifyStore(evt);
   });
 
+  window.addEventListener('popstate', route);
+  window.addEventListener('navigate', route);
+  // Ancien format d'adresse (#/p/…) ouvert pendant que l'application tourne.
   window.addEventListener('hashchange', route);
+  document.addEventListener('click', onLinkClick);
   window.addEventListener('avatars-changed', scheduleSidebar);
   document.addEventListener('keydown', onKey);
-  // Le routeur utilise le fragment (#/…) : le lien d'évitement déplace le focus au lieu de changer l'adresse.
+  // Le lien d'évitement déplace le focus au lieu de changer l'adresse.
   document.getElementById('skip-link').addEventListener('click', (e) => { e.preventDefault(); document.getElementById('main').focus(); });
   document.querySelector('[data-close-sidebar]').addEventListener('click', () => document.body.classList.remove('sb-mobile-open'));
   route();

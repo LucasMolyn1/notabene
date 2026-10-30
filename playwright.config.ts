@@ -34,6 +34,8 @@ export default defineConfig({
       COLLAB_ENABLED: 'true',
       // Beaucoup de connexions depuis la même IP pendant la série de tests.
       AUTH_RATE_LIMIT_PER_MINUTE: '500',
+      // Une seule IP et un seul compte pour toute la série, lancée vite : le plafond par défaut (600 requêtes par minute) est atteint.
+      RATE_LIMIT_PER_MINUTE: '20000',
       LOG_LEVEL: 'warn',
     },
   },

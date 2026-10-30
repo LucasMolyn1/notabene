@@ -270,7 +270,7 @@ export async function renderAbout(el) {
       h('li', null, h('strong', null, 'GitHub ne reçoit pas : '), 'vos pages, vos utilisateurs, le nom ou l’adresse de votre instance, ni aucun identifiant.')),
     h('p', { class: 'hint' }, 'Désactivée, l’instance n’appelle personne. Dans ce cas, vous pouvez vous abonner aux releases du dépôt sur GitHub pour être prévenu par e-mail.'));
 
-  const updateCard = update && card('Mise à jour', null, !update.enabled
+  const updateCard = update ? card('Mise à jour', null, !update.enabled
     ? h('div', { class: 'stack' },
       h('p', null, 'La vérification est désactivée : cette instance ne sait pas si une nouvelle version existe.'),
       explanation,
@@ -293,7 +293,7 @@ export async function renderAbout(el) {
       h('div', { class: 'row wrap' }, checkButton(),
         h('span', { class: 'hint' }, update.checkedAt ? `Dernière vérification : ${timeAgo(update.checkedAt)}` : 'Pas encore vérifié')),
       h('details', { class: 'hint' }, h('summary', null, 'Qu’est-ce qui est envoyé à GitHub ?'), explanation),
-      !update.locked && h('div', null, h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => setChecking(false) }, 'Désactiver la vérification'))));
+      !update.locked && h('div', null, h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => setChecking(false) }, 'Désactiver la vérification')))) : null;
 
   // Notes de la version à installer, lues dans sa release GitHub : on les lit avant de mettre à jour.
   const upcoming = update?.updateAvailable ? update.latest.notes : null;

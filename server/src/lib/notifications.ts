@@ -59,7 +59,7 @@ export function startNotifications(db: DB, bus: EventBus, mailer: Mailer, config
     if (!page) return;
     const actor = actorId ? user(actorId)?.name ?? 'Quelqu’un' : 'Quelqu’un';
     const title = oneLine(page.title || 'Sans titre');
-    const url = `${config().PUBLIC_URL}/#/p/${pageId}`;
+    const url = `${config().PUBLIC_URL}/p/${pageId}`;
     const what = { comment: 'a commenté', reply: 'a répondu à votre commentaire sur', 'page.updated': 'a modifié' }[type];
     await mailer.send({ to: target.email, ...mails.notification(`Notabene : ${oneLine(actor)} ${what} « ${title} »`, `${oneLine(actor)} ${what} la page « ${title} ».\n\nOuvrir la page : ${url}`) });
   };

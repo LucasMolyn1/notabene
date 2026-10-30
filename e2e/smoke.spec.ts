@@ -200,6 +200,45 @@ test('« Vérifier maintenant » relance la vérification et annonce une nouvell
   await expect(page.getByText('La version 9.9.9 est disponible').first()).toBeVisible();
 });
 
+test('les pages ont une adresse lisible, qui suit le titre ; les anciennes adresses # et le retour arrière fonctionnent', async ({ page }) => {
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.getByRole('treeitem', { name: 'Bienvenue sur Notabene' }).click();
+  await expect(page).toHaveURL(/\/p\/bienvenue-sur-notabene-[\w-]{12}$/);
+  const address = new URL(page.url()).pathname;
+  const id = address.slice(-12);
+
+  await page.getByText('Nouvelle page').first().click();
+  await expect(page).toHaveURL(/\/p\/[\w-]{12}$/); // sans titre : l'identifiant seul
+  await page.getByRole('textbox', { name: /titre/i }).first().fill('Éléphant à l’heure d’été');
+  await expect(page).toHaveURL(/\/p\/elephant-a-l-heure-d-ete-[\w-]{12}$/);
+
+  await page.goto(`/#/p/${id}`); // ancien format
+  await expect(page).toHaveURL(new RegExp(`${address}$`));
+  await expect(page.getByText('Bienvenue sur Notabene').first()).toBeVisible();
+  await page.goto(`/p/ancien-titre-${id}`); // titre périmé
+  await expect(page).toHaveURL(new RegExp(`${address}$`));
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/p\/(elephant|ancien|bienvenue)/);
+});
+
+test('un moteur de recherche reçoit le contenu d’une page publique en HTML, pas celui d’une page privée', async ({ request }) => {
+  const spaces = await (await request.get('/api/v3/spaces')).json();
+  expect(spaces.length).toBeGreaterThan(0); // visiteur anonyme : seulement les espaces publics
+  const pages = await (await request.get(`/api/v3/pages?spaceId=${spaces[0].id}`)).json();
+  const first = (pages.items ?? pages)[0];
+  const slugged = await request.get(`/p/${first.id}`, { maxRedirects: 0 });
+  expect(slugged.status()).toBe(301);
+  const res = await request.get(slugged.headers().location!);
+  const html = await res.text();
+  expect(html).toContain('<link rel="canonical"');
+  expect(html).toContain(`<h1>${first.title}</h1>`);
+  expect(res.headers()['x-robots-tag']).toBeUndefined();
+  const sitemap = await (await request.get('/sitemap.xml')).text();
+  expect(sitemap).toContain(`/p/${slugged.headers().location!.slice(3)}`);
+  expect(await (await request.get('/robots.txt')).text()).toContain('Sitemap:');
+});
+
 // PNG uni de 96 x 96 pixels, fabriqué sur place (aucun fichier de test à ranger).
 function solidPng(r: number, g: number, b: number, side = 96) {
   const row = Buffer.concat([Buffer.from([0]), Buffer.concat(Array.from({ length: side }, () => Buffer.from([r, g, b])))]);

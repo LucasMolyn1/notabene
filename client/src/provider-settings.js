@@ -92,7 +92,7 @@ function confirmWithProvider(what) {
           : 'Déconnectez-vous puis reconnectez-vous pour continuer.')),
       actions: [{ label: 'Annuler' }, {
         label: oidc ? 'Confirmer auprès de mon fournisseur' : 'Se déconnecter', primary: true,
-        onClick: () => { if (oidc) location.href = `/auth/login?reauth=1&returnTo=${encodeURIComponent(`/${location.hash}`)}`; else session.logout(); return undefined; },
+        onClick: () => { if (oidc) location.href = `/auth/login?reauth=1&returnTo=${encodeURIComponent(location.pathname)}`; else session.logout(); return undefined; },
       }],
     });
     m.el.addEventListener('close', () => resolve(null));
@@ -108,7 +108,7 @@ export function reauthNotice() {
   }
   return h('div', { class: 'notice info stack' },
     h('p', null, 'Ces réglages exigent une session ouverte il y a moins de 15 minutes. La vôtre est plus ancienne : confirmez votre identité avant de saisir quoi que ce soit.'),
-    session.provider === 'oidc' && h('div', null, h('a', { class: 'btn btn-primary btn-sm', href: `/auth/login?reauth=1&returnTo=${encodeURIComponent(`/${location.hash}`)}` }, icon('shield', 14), 'Confirmer auprès de mon fournisseur')));
+    session.provider === 'oidc' && h('div', null, h('a', { class: 'btn btn-primary btn-sm', href: `/auth/login?reauth=1&returnTo=${encodeURIComponent(location.pathname)}` }, icon('shield', 14), 'Confirmer auprès de mon fournisseur')));
 }
 
 // Demande la preuve d'identité. Renvoie l'objet `reauth` à joindre à la requête, ou null si annulé.

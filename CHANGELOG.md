@@ -4,9 +4,19 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
-## Non publié
+## [3.6.1] - 2026-10-30
+
+Adresses lisibles et pages publiques référençables, photo de profil, compose d'essai, bouton « Vérifier maintenant ».
+
+### Modifié
+- **Adresses lisibles** : `/p/titre-de-la-page-<identifiant>` et `/s/nom-de-l-espace-<identifiant>` à la place de `/#/p/<identifiant>`. Seul l'identifiant compte : renommer une page ne casse aucun lien (le titre périmé redirige, la barre d'adresse suit le titre). Les anciens liens `#/p/…` sont convertis à l'ouverture ; les liens des e-mails, de l'export Markdown et du serveur MCP utilisent la nouvelle forme. Le reverse proxy doit transmettre toutes les adresses à Notabene (docs/DEPLOIEMENT.md).
+- Plafond général de requêtes réglable (`RATE_LIMIT_PER_MINUTE`, 600 par défaut) ; la lecture de l'état des mises à jour passe de 60 à 600 par heure (chaque chargement de page d'un administrateur l'appelle, la limite basse faisait disparaître l'alerte).
+
+### Corrigé
+- Paramètres, À propos : si l'état des mises à jour ne pouvait pas être lu, le mot « undefined » s'affichait à la place de la carte.
 
 ### Ajouté
+- **Référencement des pages publiques** : pour les espaces publics, le serveur rend le contenu de chaque page en HTML (titre, description, adresse canonique, balises Open Graph) et publie `/sitemap.xml` et `/robots.txt`. Les pages privées ou à permissions restreintes ne sont jamais rendues ; le reste de l'application est en `noindex`. `SEO_INDEX=false` coupe tout.
 - **Photo de profil** (Paramètres, Profil) : ajouter, recadrer (déplacement et zoom) et retirer sa photo ; elle remplace les initiales dans la barre latérale, la présence sur une page et la liste des utilisateurs. L'image est recadrée et réduite (256 px, WebP) dans le navigateur, qui en retire les métadonnées ; le serveur revérifie le type sur les octets (PNG, JPEG ou WebP, jamais de SVG), le poids (256 Ko) et les dimensions, et la sert sans pouvoir être interprétée comme une page. Visible des personnes connectées seulement ; un administrateur peut retirer la photo d'un compte ; elle disparaît avec le compte (schéma v10).
 - **Compose d'essai** (`docker-compose.essai.yml`, [docs/ESSAI.md](docs/ESSAI.md)) : un fichier, aucune configuration, l'image publiée sur GHCR, comptes locaux, compte administrateur créé dans le navigateur avec le code d'installation des journaux. Sans Draw.io, connexion unique, IA ni e-mail, volontairement.
 - **Bouton « Vérifier maintenant » (Paramètres, À propos)** : relance la vérification de version sans attendre les 12 h du cache, et indique l'heure de la dernière vérification. Au plus un appel à GitHub toutes les 30 secondes, réservé aux administrateurs.

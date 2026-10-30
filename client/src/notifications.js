@@ -1,5 +1,6 @@
 // Notifications : cloche avec compteur, liste de la boîte de réception, suivi de page, préférences d'e-mail.
 import { h, timeAgo } from './util.js';
+import { pagePathById } from './urls.js';
 import { icon } from './icons.js';
 import { api3 } from './api.js';
 import { session } from './session.js';
@@ -46,7 +47,7 @@ async function openInbox() {
     list.replaceChildren(...(items.length
       ? items.map((n) => h('a', {
         class: `table-row notif${n.read ? '' : ' unread'}`,
-        href: `#/p/${n.page.id}`,
+        href: pagePathById(n.page.id),
         onClick: async () => { m.close(); if (!n.read) { await api3.post('/notifications/read', { ids: [n.id] }).catch(() => null); refreshUnread(); } },
       },
       h('span', { class: 'grow' }, h('span', null, `${(TEXT[n.type] || (() => ''))(n)} `), h('strong', null, pageIcon(n.page.icon), ` ${n.page.title || 'Sans titre'}`), h('small', null, timeAgo(n.createdAt))),

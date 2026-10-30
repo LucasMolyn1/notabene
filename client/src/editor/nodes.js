@@ -1,6 +1,7 @@
 // Nœuds personnalisés de l'éditeur : encadrés et liens de pages.
 import { Node, mergeAttributes } from '@tiptap/core';
 import { h } from '../util.js';
+import { pagePathById } from '../urls.js';
 import { icon } from '../icons.js';
 import { store } from '../store.js';
 import { pageIcon } from '../ui.js';
@@ -87,7 +88,7 @@ export const PageLink = Node.create({
       id: {
         default: null,
         parseHTML: (el) => el.getAttribute('data-page-link'),
-        renderHTML: (attrs) => ({ 'data-page-link': attrs.id, href: `#/p/${attrs.id}` }),
+        renderHTML: (attrs) => ({ 'data-page-link': attrs.id, href: `/p/${attrs.id}` }),
       },
     };
   },
@@ -103,7 +104,7 @@ export const PageLink = Node.create({
 
   addNodeView() {
     return ({ node }) => {
-      const dom = h('a', { class: 'page-link', href: `#/p/${node.attrs.id}`, contenteditable: 'false', 'data-page-link': node.attrs.id });
+      const dom = h('a', { class: 'page-link', href: pagePathById(node.attrs.id), contenteditable: 'false', 'data-page-link': node.attrs.id });
       const paint = () => {
         const p = store.page(node.attrs.id);
         const missing = !p || !!p.deletedAt;

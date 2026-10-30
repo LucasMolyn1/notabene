@@ -1,6 +1,7 @@
 // Palette ⌘K : recherche plein texte (serveur) et onglet « Demander à l'IA ».
 // Sert aussi à choisir une page à lier (mode « pick »).
 import { h, esc, norm, debounce } from './util.js';
+import { pagePath } from './urls.js';
 import { icon } from './icons.js';
 import { pageIcon } from './ui.js';
 import { store } from './store.js';
@@ -46,7 +47,7 @@ function renderAnswer(text, sources) {
     .replace(/(^|[\s(])_([^_]+)_(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>')
     .replace(/\[(\d{1,2})\]/g, (m, n) => {
       const src = byN.get(Number(n));
-      return src ? `<a class="cite" href="#/p/${src.id}" title="${esc(src.title)}">${n}</a>` : m;
+      return src ? `<a class="cite" href="${pagePath(src)}" title="${esc(src.title)}">${n}</a>` : m;
     });
   const out = [];
   let list = null;
@@ -239,7 +240,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
       onSources: (s) => {
         sources = s;
         sourceList.replaceChildren(...(s.length
-          ? [h('div', { class: 'pal-section' }, 'Sources'), ...s.map((src) => h('a', { class: 'ai-source', href: `#/p/${src.id}`, onClick: () => close() },
+          ? [h('div', { class: 'pal-section' }, 'Sources'), ...s.map((src) => h('a', { class: 'ai-source', href: pagePath(src), onClick: () => close() },
             h('span', { class: 'cite' }, String(src.n)), h('span', null, src.title)))]
           : [h('p', { class: 'hint' }, 'Aucune page pertinente trouvée.')]));
       },

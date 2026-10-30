@@ -80,7 +80,7 @@ const TOOLS: Tool[] = [
     schema: z.object({ spaceId: idSchema, title: z.string().trim().min(1).max(300), text: z.string().max(100_000).default(''), parentId: idSchema.optional() }),
     run: async (a: { spaceId: string; title: string; text: string; parentId?: string }, call) => {
       const page = JSON.parse(ok(await call('POST', '/api/v3/pages', { spaceId: a.spaceId, parentId: a.parentId, title: a.title, content: textToDoc(a.text) }))) as { id: string };
-      return JSON.stringify({ id: page.id, url: `/#/p/${page.id}` });
+      return JSON.stringify({ id: page.id, url: `/p/${page.id}` });
     },
   },
 ];
