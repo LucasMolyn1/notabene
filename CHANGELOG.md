@@ -8,6 +8,7 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ### Ajouté
 - **Photo de profil** (Paramètres, Profil) : ajouter, recadrer (déplacement et zoom) et retirer sa photo ; elle remplace les initiales dans la barre latérale, la présence sur une page et la liste des utilisateurs. L'image est recadrée et réduite (256 px, WebP) dans le navigateur, qui en retire les métadonnées ; le serveur revérifie le type sur les octets (PNG, JPEG ou WebP, jamais de SVG), le poids (256 Ko) et les dimensions, et la sert sans pouvoir être interprétée comme une page. Visible des personnes connectées seulement ; un administrateur peut retirer la photo d'un compte ; elle disparaît avec le compte (schéma v10).
+- **Compose d'essai** (`docker-compose.essai.yml`, [docs/ESSAI.md](docs/ESSAI.md)) : un fichier, aucune configuration, l'image publiée sur GHCR, comptes locaux, compte administrateur créé dans le navigateur avec le code d'installation des journaux. Sans Draw.io, connexion unique, IA ni e-mail, volontairement.
 - **Bouton « Vérifier maintenant » (Paramètres, À propos)** : relance la vérification de version sans attendre les 12 h du cache, et indique l'heure de la dernière vérification. Au plus un appel à GitHub toutes les 30 secondes, réservé aux administrateurs.
 
 ## [3.6.0] - 2026-10-30

@@ -1,0 +1,50 @@
+# Notabene : essai en 10 minutes, sans rien configurer (voir docs/ESSAI.md).
+#
+#   curl -O https://raw.githubusercontent.com/LucasMolyn1/notabene/main/docker-compose.essai.yml
+#   docker compose -f docker-compose.essai.yml up -d
+#   puis ouvrez http://localhost:3000 et créez le compte administrateur.
+#
+# Pensé pour essayer, pas pour héberger : pas de HTTPS, pas de fournisseur d'identité, pas de Draw.io, pas d'e-mail,
+# pas de recherche par IA. Pour une vraie instance, utilisez docker-compose.yml et scripts/setup.sh (docs/DEPLOIEMENT.md).
+
+services:
+  notabene:
+    image: ghcr.io/lucasmolyn1/notabene:${NOTABENE_VERSION:-latest}
+    restart: unless-stopped
+    # La clé qui chiffre les secrets de la base est créée au premier démarrage et rangée avec les données.
+    # Elle sert à des secrets que l'essai n'utilise pas (clé d'IA, SMTP) ; pour une vraie instance, elle se conserve à part.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        [ -s /data/essai.key ] || node -e "process.stdout.write(require('crypto').randomBytes(32).toString('base64'))" > /data/essai.key
+        ENCRYPTION_KEY=$$(cat /data/essai.key) exec node dist/server/index.js
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATA_DIR: /data
+      # Adresse saisie dans le navigateur. Depuis un autre poste : PUBLIC_URL=http://adresse-du-serveur:3000 et NOTABENE_BIND=0.0.0.0.
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      # Essai en HTTP, sur votre machine : à ne jamais exposer sur Internet.
+      ALLOW_INSECURE_HTTP: "true"
+      AUTH_LOCAL: "true"
+      SEED_DEMO: "true"
+    ports:
+      - "${NOTABENE_BIND:-127.0.0.1}:${NOTABENE_PORT:-3000}:3000"
+    volumes:
+      - notabene-essai:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+volumes:
+  notabene-essai:
