@@ -1,6 +1,7 @@
 // Fournisseurs LLM : Claude via le SDK officiel Anthropic, ou tout endpoint compatible
 // OpenAI (OpenAI, Mistral, Ollama, LM Studio…) via fetch. Les deux renvoient un flux de texte.
 import Anthropic from '@anthropic-ai/sdk';
+import { trimTrailingSlashes } from '../lib/http.js';
 import { guardedFetch, safeFetch } from '../lib/net-guard.js';
 import type { AiSettings } from './settings.js';
 
@@ -64,7 +65,7 @@ async function* streamAnthropic(s: AiSettings, prompt: Prompt, signal: AbortSign
 }
 
 async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: AbortSignal): AsyncGenerator<string> {
-  const base = (s.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const base = trimTrailingSlashes(s.baseUrl || 'https://api.openai.com/v1');
   let res: Response;
   try {
     res = await safeFetch(new URL(`${base}/chat/completions`), {
@@ -123,7 +124,7 @@ export async function listModels(s: AiSettings, signal: AbortSignal): Promise<st
         if (ids.size >= 300) break;
       }
     } else {
-      const base = (s.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+      const base = trimTrailingSlashes(s.baseUrl || 'https://api.openai.com/v1');
       const res = await safeFetch(new URL(`${base}/models`), {
         signal,
         redirect: 'error',

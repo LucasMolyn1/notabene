@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import type { DB } from '../db.js';
 import type { SecretBox } from '../lib/crypto.js';
-import { HttpError } from '../lib/http.js';
+import { HttpError, trimTrailingSlashes } from '../lib/http.js';
 import { reauthInput } from '../lib/reauth.js';
 
 const KEY = 'ai';
@@ -23,7 +23,7 @@ export const aiSettingsInput = z.object({
 });
 
 // Destination de la clé d'API : fournisseur + adresse. Si elle change, la clé enregistrée ne doit pas la suivre sans être ressaisie.
-export const aiDestination = (provider: string, baseUrl: string) => `${provider}|${baseUrl.trim().replace(/\/+$/, '')}`;
+export const aiDestination = (provider: string, baseUrl: string) => `${provider}|${trimTrailingSlashes(baseUrl.trim())}`;
 
 interface Stored {
   enabled: boolean;
