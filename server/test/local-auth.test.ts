@@ -33,7 +33,7 @@ describe('TOTP et mots de passe', () => {
   });
 });
 
-const env = { NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), AUTH_LOCAL: 'true', SEED_DEMO: 'false' };
+const env = { NODE_ENV: 'test',  PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), AUTH_LOCAL: 'true', SEED_DEMO: 'false' };
 let app: FastifyInstance;
 let db: DB;
 
@@ -65,9 +65,9 @@ describe('connexion locale', () => {
   });
 
   it('indique setupRequired tant qu’aucun admin local n’existe', async () => {
-    expect((await app.inject({ method: 'GET', url: '/api/v1/config' })).json().auth).toMatchObject({ local: true, setupRequired: true });
+    expect((await app.inject({ method: 'GET', url: '/api/v3/config' })).json().auth).toMatchObject({ local: true, setupRequired: true });
     await createAdmin();
-    expect((await app.inject({ method: 'GET', url: '/api/v1/config' })).json().auth.setupRequired).toBe(false);
+    expect((await app.inject({ method: 'GET', url: '/api/v3/config' })).json().auth.setupRequired).toBe(false);
   });
 
   it('se connecte, et refuse un mauvais mot de passe sans distinguer le compte', async () => {
@@ -93,14 +93,14 @@ describe('connexion locale', () => {
     await createAdmin();
     const { cookie } = await loginOk('admin@example.com', 'Sup3r-secret-pass');
     db.prepare('UPDATE users SET disabled = 1').run();
-    expect((await app.inject({ method: 'GET', url: '/api/v1/me', cookies: { nb_session: cookie! } })).json().user).toBeNull();
+    expect((await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: cookie! } })).json().user).toBeNull();
     expect((await post('/auth/local/login', { email: 'admin@example.com', password: 'Sup3r-secret-pass' })).statusCode).toBe(401);
   });
 
   it('active le MFA, l’exige à la connexion et accepte un code de secours une seule fois', async () => {
     await createAdmin();
     const { cookie } = await loginOk('admin@example.com', 'Sup3r-secret-pass');
-    const me = (await app.inject({ method: 'GET', url: '/api/v1/me', cookies: { nb_session: cookie! } })).json();
+    const me = (await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: cookie! } })).json();
     const setup = (await post('/auth/mfa/setup', {}, cookie, me.csrf)).json();
     const now = Date.now();
     const enable = await post('/auth/mfa/enable', { code: totpCode(base32Decode(setup.secret), Math.floor(now / 30_000)) }, cookie, me.csrf);
@@ -120,24 +120,24 @@ describe('connexion locale', () => {
     await createAdmin();
     const a = await loginOk('admin@example.com', 'Sup3r-secret-pass');
     const b = await loginOk('admin@example.com', 'Sup3r-secret-pass');
-    const me = (await app.inject({ method: 'GET', url: '/api/v1/me', cookies: { nb_session: a.cookie! } })).json();
+    const me = (await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: a.cookie! } })).json();
     expect((await post('/auth/local/password', { current: 'bad', next: 'Another-long-pass-1' }, a.cookie, me.csrf)).statusCode).toBe(403);
     expect((await post('/auth/local/password', { current: 'Sup3r-secret-pass', next: 'short' }, a.cookie, me.csrf)).statusCode).toBe(400);
     expect((await post('/auth/local/password', { current: 'Sup3r-secret-pass', next: 'Another-long-pass-1' }, a.cookie, me.csrf)).statusCode).toBe(200);
-    expect((await app.inject({ method: 'GET', url: '/api/v1/me', cookies: { nb_session: b.cookie! } })).json().user).toBeNull();
+    expect((await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: b.cookie! } })).json().user).toBeNull();
     expect((await loginOk('admin@example.com', 'Another-long-pass-1')).res.statusCode).toBe(200);
   });
 
   it('un admin crée un compte local, un lecteur ne le peut pas', async () => {
     await createAdmin();
     const { cookie } = await loginOk('admin@example.com', 'Sup3r-secret-pass');
-    const me = (await app.inject({ method: 'GET', url: '/api/v1/me', cookies: { nb_session: cookie! } })).json();
-    const made = await post('/api/v1/admin/local-users', { email: 'bob@example.com', name: 'Bob', role: 'reader', password: 'Bob-has-a-long-pass' }, cookie, me.csrf);
+    const me = (await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: cookie! } })).json();
+    const made = await post('/api/v3/admin/local-users', { email: 'bob@example.com', name: 'Bob', role: 'reader', password: 'Bob-has-a-long-pass' }, cookie, me.csrf);
     expect(made.statusCode).toBe(201);
     const bob = await loginOk('bob@example.com', 'Bob-has-a-long-pass');
-    const bobMe = (await app.inject({ method: 'GET', url: '/api/v1/me', cookies: { nb_session: bob.cookie! } })).json();
-    expect((await post('/api/v1/admin/local-users', { email: 'x@example.com', name: 'X', role: 'admin', password: 'Some-long-pass-123' }, bob.cookie, bobMe.csrf)).statusCode).toBe(403);
-    const self = await app.inject({ method: 'PATCH', url: '/api/v1/admin/local-users/adm1', payload: { disabled: true }, cookies: { nb_session: cookie! }, headers: { 'x-csrf-token': me.csrf } });
+    const bobMe = (await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: bob.cookie! } })).json();
+    expect((await post('/api/v3/admin/local-users', { email: 'x@example.com', name: 'X', role: 'admin', password: 'Some-long-pass-123' }, bob.cookie, bobMe.csrf)).statusCode).toBe(403);
+    const self = await app.inject({ method: 'PATCH', url: '/api/v3/admin/local-users/adm1', payload: { disabled: true }, cookies: { nb_session: cookie! }, headers: { 'x-csrf-token': me.csrf } });
     expect(self.statusCode).toBe(400);
   });
 });
@@ -150,9 +150,9 @@ describe('MFA imposée', () => {
       .run('u1', 'local:a@example.com', 'a@example.com', 'A', 'admin', Date.now(), await hashPassword('Sup3r-secret-pass'));
     const login = await strict.inject({ method: 'POST', url: '/auth/local/login', payload: { email: 'a@example.com', password: 'Sup3r-secret-pass' } });
     const cookies = { nb_session: login.cookies.find((c) => c.name === 'nb_session')!.value };
-    const me = (await strict.inject({ method: 'GET', url: '/api/v1/me', cookies })).json();
+    const me = (await strict.inject({ method: 'GET', url: '/api/v3/me', cookies })).json();
     expect(me.mfaSetupRequired).toBe(true);
-    const blocked = await strict.inject({ method: 'GET', url: '/api/v1/spaces', cookies });
+    const blocked = await strict.inject({ method: 'GET', url: '/api/v3/spaces', cookies });
     expect(blocked.statusCode).toBe(403);
     expect(blocked.json().mfaSetupRequired).toBe(true);
 
@@ -160,7 +160,7 @@ describe('MFA imposée', () => {
     const setup = (await strict.inject({ method: 'POST', url: '/auth/mfa/setup', cookies, headers: h, payload: {} })).json();
     const code = totpCode(base32Decode(setup.secret), Math.floor(Date.now() / 30_000));
     expect((await strict.inject({ method: 'POST', url: '/auth/mfa/enable', cookies, headers: h, payload: { code } })).statusCode).toBe(200);
-    expect((await strict.inject({ method: 'GET', url: '/api/v1/spaces', cookies })).statusCode).toBe(200);
+    expect((await strict.inject({ method: 'GET', url: '/api/v3/spaces', cookies })).statusCode).toBe(200);
     await strict.close();
     strictDb.close();
   });

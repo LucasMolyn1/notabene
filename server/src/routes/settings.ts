@@ -31,7 +31,6 @@ const canonical = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typ
 
 export default async function settingsRoutes(app: FastifyInstance, opts: { ldapFactory?: ClientFactory } = {}) {
   const { db, rt } = app;
-  const tags = ['admin'];
   // Tests réussis : identifiant aléatoire -> contenu exact testé (en mémoire seulement) + expiration. Valable une fois.
   const passed = new Map<string, { content: string; exp: number }>();
   const contentOf = (userId: string, section: SectionName, body: z.output<typeof writeBody>) => canonical([userId, section, body.config, body.secrets]);

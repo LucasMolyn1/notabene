@@ -9,7 +9,7 @@ import { seedDemo } from '../src/seed.js';
 
 const KEY = randomBytes(32).toString('base64');
 const baseEnv = {
-  NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2',
+  NODE_ENV: 'test', 
   PUBLIC_URL: 'http://localhost:3000',
   ENCRYPTION_KEY: KEY,
   DEV_LOGIN: 'true',
@@ -32,7 +32,7 @@ afterEach(async () => {
 async function login(role: 'admin' | 'editor' | 'reader') {
   const res = await app.inject({ method: 'POST', url: '/auth/dev-login', payload: { role } });
   const cookie = res.cookies.find((c) => c.name === 'nb_session')!;
-  const me = await app.inject({ method: 'GET', url: '/api/v1/me', cookies: { nb_session: cookie.value } });
+  const me = await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: cookie.value } });
   return { cookies: { nb_session: cookie.value }, csrf: me.json().csrf as string, headers: { 'x-csrf-token': me.json().csrf as string } };
 }
 
@@ -56,27 +56,27 @@ describe('configuration', () => {
 
 describe('contrôle d’accès', () => {
   it('un visiteur anonyme ne voit que les espaces publics', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/v1/spaces' });
+    const res = await app.inject({ method: 'GET', url: '/api/v3/spaces' });
     expect(res.json().every((s: { visibility: string }) => s.visibility === 'public')).toBe(true);
     const priv = spaces().find((s) => s.visibility === 'private')!;
     const pageId = (db.prepare('SELECT id FROM pages WHERE space_id = ?').get(priv.id) as { id: string }).id;
-    expect((await app.inject({ method: 'GET', url: `/api/v1/pages/${pageId}` })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: `/api/v3/pages/${pageId}` })).statusCode).toBe(404);
   });
 
   it('un lecteur ne peut pas écrire', async () => {
     const s = await login('reader');
-    const res = await app.inject({ method: 'POST', url: '/api/v1/pages', ...s, payload: { spaceId: spaces()[0].id } });
+    const res = await app.inject({ method: 'POST', url: '/api/v3/pages', ...s, payload: { spaceId: spaces()[0].id } });
     expect(res.statusCode).toBe(403);
   });
 
   it('seul un admin supprime définitivement', async () => {
     const editor = await login('editor');
-    const created = await app.inject({ method: 'POST', url: '/api/v1/pages', ...editor, payload: { spaceId: spaces()[0].id, title: 'À jeter' } });
+    const created = await app.inject({ method: 'POST', url: '/api/v3/pages', ...editor, payload: { spaceId: spaces()[0].id, title: 'À jeter' } });
     const id = created.json().id;
-    await app.inject({ method: 'DELETE', url: `/api/v1/pages/${id}`, ...editor });
-    expect((await app.inject({ method: 'DELETE', url: `/api/v1/pages/${id}/permanent`, ...editor })).statusCode).toBe(403);
+    await app.inject({ method: 'DELETE', url: `/api/v3/pages/${id}`, ...editor });
+    expect((await app.inject({ method: 'DELETE', url: `/api/v3/pages/${id}/permanent`, ...editor })).statusCode).toBe(403);
     const admin = await login('admin');
-    expect((await app.inject({ method: 'DELETE', url: `/api/v1/pages/${id}/permanent`, ...admin })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'DELETE', url: `/api/v3/pages/${id}/permanent`, ...admin })).statusCode).toBe(204);
     expect(db.prepare("SELECT COUNT(*) AS n FROM pages_fts WHERE pages_fts MATCH '\"jeter\"'").get()).toEqual({ n: 0 });
   });
 });
@@ -84,20 +84,20 @@ describe('contrôle d’accès', () => {
 describe('CSRF et origine', () => {
   it('refuse une écriture par cookie sans jeton CSRF', async () => {
     const { cookies } = await login('editor');
-    const res = await app.inject({ method: 'POST', url: '/api/v1/pages', cookies, payload: { spaceId: spaces()[0].id } });
+    const res = await app.inject({ method: 'POST', url: '/api/v3/pages', cookies, payload: { spaceId: spaces()[0].id } });
     expect(res.statusCode).toBe(403);
   });
   it('refuse une origine tierce', async () => {
     const s = await login('editor');
     const res = await app.inject({
-      method: 'POST', url: '/api/v1/pages', cookies: s.cookies,
+      method: 'POST', url: '/api/v3/pages', cookies: s.cookies,
       headers: { ...s.headers, origin: 'https://evil.example' }, payload: { spaceId: spaces()[0].id },
     });
     expect(res.statusCode).toBe(403);
   });
   it('accepte une écriture avec le bon jeton CSRF', async () => {
     const s = await login('editor');
-    const res = await app.inject({ method: 'POST', url: '/api/v1/pages', ...s, payload: { spaceId: spaces()[0].id, title: 'OK' } });
+    const res = await app.inject({ method: 'POST', url: '/api/v3/pages', ...s, payload: { spaceId: spaces()[0].id, title: 'OK' } });
     expect(res.statusCode).toBe(201);
   });
 });
@@ -113,28 +113,31 @@ describe('contenu', () => {
         { type: 'paragraph', attrs: { onclick: 'x' }, content: [{ type: 'text', text: 'ok' }] },
       ],
     };
-    const res = await app.inject({ method: 'POST', url: '/api/v1/pages', ...s, payload: { spaceId: spaces()[0].id, content } });
+    const res = await app.inject({ method: 'POST', url: '/api/v3/pages', ...s, payload: { spaceId: spaces()[0].id, content } });
     const saved = res.json().content;
     expect(JSON.stringify(saved)).not.toMatch(/javascript|text\/html|onclick/);
   });
   it('refuse un type de nœud inconnu', async () => {
     const s = await login('editor');
     const content = { type: 'doc', content: [{ type: 'script', content: [] }] };
-    const res = await app.inject({ method: 'POST', url: '/api/v1/pages', ...s, payload: { spaceId: spaces()[0].id, content } });
+    const res = await app.inject({ method: 'POST', url: '/api/v3/pages', ...s, payload: { spaceId: spaces()[0].id, content } });
     expect(res.statusCode).toBe(400);
   });
   it('détecte les modifications concurrentes', async () => {
     const s = await login('editor');
-    const { id, version } = (await app.inject({ method: 'POST', url: '/api/v1/pages', ...s, payload: { spaceId: spaces()[0].id } })).json();
-    const first = await app.inject({ method: 'PATCH', url: `/api/v1/pages/${id}`, ...s, payload: { content: doc('a'), baseVersion: version } });
+    const { id, version } = (await app.inject({ method: 'POST', url: '/api/v3/pages', ...s, payload: { spaceId: spaces()[0].id } })).json();
+    const match = { ...s.headers, 'if-match': `"${version}"` };
+    const first = await app.inject({ method: 'PATCH', url: `/api/v3/pages/${id}`, cookies: s.cookies, headers: match, payload: { content: doc('a') } });
     expect(first.statusCode).toBe(200);
-    const stale = await app.inject({ method: 'PATCH', url: `/api/v1/pages/${id}`, ...s, payload: { content: doc('b'), baseVersion: version } });
-    expect(stale.statusCode).toBe(409);
+    const stale = await app.inject({ method: 'PATCH', url: `/api/v3/pages/${id}`, cookies: s.cookies, headers: match, payload: { content: doc('b') } });
+    expect(stale.statusCode).toBe(412);
+    const missing = await app.inject({ method: 'PATCH', url: `/api/v3/pages/${id}`, ...s, payload: { content: doc('c') } });
+    expect(missing.statusCode).toBe(428);
   });
   it('recherche sans accents et résiste aux opérateurs FTS', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/v1/search?q=editeur' });
-    expect(res.json().length).toBeGreaterThan(0);
-    const weird = await app.inject({ method: 'GET', url: `/api/v1/search?q=${encodeURIComponent('"x" OR NEAR( * ^ -')}` });
+    const res = await app.inject({ method: 'GET', url: '/api/v3/search?q=editeur' });
+    expect(res.json().items.length).toBeGreaterThan(0);
+    const weird = await app.inject({ method: 'GET', url: `/api/v3/search?q=${encodeURIComponent('"x" OR NEAR( * ^ -')}` });
     expect(weird.statusCode).toBe(200);
   });
 });
@@ -142,24 +145,24 @@ describe('contenu', () => {
 describe('jetons d’API', () => {
   it('respecte les portées, ne crée pas de jeton et peut être révoqué', async () => {
     const s = await login('editor');
-    const created = await app.inject({ method: 'POST', url: '/api/v1/tokens', ...s, payload: { name: 'ci', scopes: ['read'], expiresInDays: 7 } });
+    const created = await app.inject({ method: 'POST', url: '/api/v3/tokens', ...s, payload: { name: 'ci', scopes: ['read'], expiresInDays: 7 } });
     expect(created.statusCode).toBe(201);
     const { token, id } = created.json();
     const auth = { authorization: `Bearer ${token}` };
-    expect((await app.inject({ method: 'GET', url: '/api/v1/spaces', headers: auth })).json()).toHaveLength(2);
-    expect((await app.inject({ method: 'POST', url: '/api/v1/pages', headers: auth, payload: { spaceId: spaces()[0].id } })).statusCode).toBe(403);
-    expect((await app.inject({ method: 'POST', url: '/api/v1/tokens', headers: auth, payload: { name: 'x', scopes: ['read'] } })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'GET', url: '/api/v3/spaces', headers: auth })).json()).toHaveLength(2);
+    expect((await app.inject({ method: 'POST', url: '/api/v3/pages', headers: auth, payload: { spaceId: spaces()[0].id } })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'POST', url: '/api/v3/tokens', headers: auth, payload: { name: 'x', scopes: ['read'] } })).statusCode).toBe(403);
     expect(JSON.stringify(db.prepare('SELECT * FROM api_tokens').all())).not.toContain(token);
-    await app.inject({ method: 'DELETE', url: `/api/v1/tokens/${id}`, ...s });
-    expect((await app.inject({ method: 'GET', url: '/api/v1/spaces', headers: auth })).statusCode).toBe(401);
+    await app.inject({ method: 'DELETE', url: `/api/v3/tokens/${id}`, ...s });
+    expect((await app.inject({ method: 'GET', url: '/api/v3/spaces', headers: auth })).statusCode).toBe(401);
   });
   it('n’accorde pas de portée au-delà du rôle', async () => {
     const s = await login('editor');
-    const res = await app.inject({ method: 'POST', url: '/api/v1/tokens', ...s, payload: { name: 'x', scopes: ['admin'] } });
+    const res = await app.inject({ method: 'POST', url: '/api/v3/tokens', ...s, payload: { name: 'x', scopes: ['admin'] } });
     expect(res.statusCode).toBe(403);
   });
   it('rejette un jeton mal formé', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/v1/spaces', headers: { authorization: 'Bearer nope' } });
+    const res = await app.inject({ method: 'GET', url: '/api/v3/spaces', headers: { authorization: 'Bearer nope' } });
     expect(res.statusCode).toBe(401);
   });
 });
@@ -169,7 +172,7 @@ describe('réglages IA', () => {
     const s = await login('admin');
     const secret = 'sk-ant-test-0123456789abcdef';
     const res = await app.inject({
-      method: 'PUT', url: '/api/v1/admin/ai', ...s,
+      method: 'PUT', url: '/api/v3/admin/ai', ...s,
       payload: { enabled: true, provider: 'anthropic', model: 'claude-opus-5-5', apiKey: secret },
     });
     expect(res.statusCode).toBe(200);
@@ -177,7 +180,7 @@ describe('réglages IA', () => {
     expect(res.json().keyHint).toBe('…cdef');
     expect(JSON.stringify(db.prepare('SELECT value FROM settings').all())).not.toContain(secret);
     const editor = await login('editor');
-    expect((await app.inject({ method: 'GET', url: '/api/v1/admin/ai', ...editor })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'GET', url: '/api/v3/admin/ai', ...editor })).statusCode).toBe(403);
   });
 });
 
@@ -193,23 +196,23 @@ describe('redirections', () => {
 describe('paramètres', () => {
   it('vue d’ensemble réservée aux admins et sans secret', async () => {
     const editor = await login('editor');
-    expect((await app.inject({ method: 'GET', url: '/api/v1/admin/instance', ...editor })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'GET', url: '/api/v3/admin/instance', ...editor })).statusCode).toBe(403);
     const admin = await login('admin');
-    const res = await app.inject({ method: 'GET', url: '/api/v1/admin/instance', ...admin });
+    const res = await app.inject({ method: 'GET', url: '/api/v3/admin/instance', ...admin });
     expect(res.statusCode).toBe(200);
     expect(JSON.stringify(res.json())).not.toContain(KEY);
     expect(res.json().stats.spaces).toBe(2);
-    expect((await app.inject({ method: 'GET', url: '/api/v1/admin/users', ...admin })).json().length).toBeGreaterThan(0);
+    expect((await app.inject({ method: 'GET', url: '/api/v3/admin/users', ...admin })).json().length).toBeGreaterThan(0);
   });
 
   it('ferme les autres sessions sans fermer la session courante', async () => {
     const first = await login('editor');
     const second = await login('editor');
-    const list = (await app.inject({ method: 'GET', url: '/api/v1/sessions', ...second })).json();
+    const list = (await app.inject({ method: 'GET', url: '/api/v3/sessions', ...second })).json();
     expect(list.filter((s: { current: boolean }) => s.current)).toHaveLength(1);
-    const res = await app.inject({ method: 'DELETE', url: '/api/v1/sessions/others', ...second });
+    const res = await app.inject({ method: 'DELETE', url: '/api/v3/sessions/others', ...second });
     expect(res.json().closed).toBe(1);
-    expect((await app.inject({ method: 'GET', url: '/api/v1/me', cookies: first.cookies })).json().user).toBeNull();
-    expect((await app.inject({ method: 'GET', url: '/api/v1/me', cookies: second.cookies })).json().user).not.toBeNull();
+    expect((await app.inject({ method: 'GET', url: '/api/v3/me', cookies: first.cookies })).json().user).toBeNull();
+    expect((await app.inject({ method: 'GET', url: '/api/v3/me', cookies: second.cookies })).json().user).not.toBeNull();
   });
 });

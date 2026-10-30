@@ -1,4 +1,4 @@
-// Pages, v2 et suivantes : listes paginées par curseur avec filtres, ETag / If-Match, recherche paginée.
+// Pages (lecture et modification) : listes paginées par curseur avec filtres, ETag / If-Match, recherche paginée.
 // La logique métier reste celle de lib/ ; seuls la forme des réponses et le contrôle de concurrence changent.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -17,7 +17,7 @@ const patchBody = z.object({
 
 const etag = (version: number) => `"${version}"`;
 
-export default async function pagesV2(app: FastifyInstance) {
+export default async function pageQueryRoutes(app: FastifyInstance) {
   const { db, bus } = app;
   const tags = ['pages'];
   const userId = (req: FastifyRequest) => req.auth?.user.id ?? null;

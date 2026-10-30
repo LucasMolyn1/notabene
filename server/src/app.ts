@@ -18,7 +18,7 @@ import { startNotifications } from './lib/notifications.js';
 import { startWebhooks } from './lib/webhooks.js';
 import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
-import pagesV2 from './routes/pages-v2.js';
+import pageQueryRoutes from './routes/pages-query.js';
 import v3Routes from './routes/v3.js';
 import { sessionAuth as sessionAuthWithIdle, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
@@ -39,7 +39,7 @@ import pageRoutes from './routes/pages.js';
 import spaceRoutes from './routes/spaces.js';
 import ssoRoutes from './routes/sso.js';
 import tokenRoutes from './routes/tokens.js';
-import versionRoutes, { deprecationHeaders } from './routes/versions.js';
+import versionRoutes from './routes/versions.js';
 import webhookRoutes from './routes/webhooks.js';
 
 declare module 'fastify' {
@@ -102,7 +102,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     return result.success ? { value: result.data } : { error: result.error };
   });
 
-  // Format d'erreur : JSON historique en v1, problem+json (RFC 9457) à partir de la v2.
+  // Format d'erreur : problem+json (RFC 9457) sous /api/v3 ; JSON { error, message } pour /auth/* et le reste.
   const fail = (req: { url: string }, reply: import('fastify').FastifyReply, status: number, legacy: Record<string, unknown>, extensions: Record<string, unknown> = {}) => {
     const message = String(legacy.message ?? '');
     if (usesProblemFormat(req.url)) {
@@ -190,7 +190,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
       const row = db.prepare('SELECT password_hash IS NOT NULL AS local, totp_enabled AS mfa FROM users WHERE id = ?').get(req.auth.user.id) as { local: number; mfa: number } | undefined;
       req.auth.mfaPending = !!row?.local && !row.mfa;
       const path = req.url.split('?')[0]!;
-      if (req.auth.mfaPending && /^\/(api\/|mcp)/.test(path) && !/^\/api\/v1\/(me|config)$/.test(path)) {
+      if (req.auth.mfaPending && /^\/(api\/|mcp)/.test(path) && !/^\/api\/v3\/(me|config)$/.test(path)) {
         throw new HttpError(403, 'Activez la double authentification pour continuer', { mfaSetupRequired: true });
       }
     }
@@ -198,23 +198,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
 
   app.addHook('onSend', async (_req, reply, payload) => {
     if (!reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
-    reply.headers(deprecationHeaders(_req.url));
     return payload;
-  });
-
-  // Versions héritées activées : on journalise qui les utilise encore (une ligne par appelant et par heure).
-  const legacySeen = new Map<string, number>();
-  app.addHook('onResponse', async (req, reply) => {
-    const version = /^\/api\/(v[12])\//.exec(req.url)?.[1];
-    if (!version) return;
-    const who = req.auth ? `${req.auth.via}:${req.auth.tokenId ?? req.auth.user.id}` : 'anonyme';
-    const ua = String(req.headers['user-agent'] ?? '').slice(0, 120);
-    const key = `${version}|${who}|${ua}`;
-    const now = Date.now();
-    if (now - (legacySeen.get(key) ?? 0) < 3_600_000) return;
-    legacySeen.set(key, now);
-    if (legacySeen.size > 5000) legacySeen.clear();
-    req.log.warn({ legacyApi: version, caller: who, userAgent: ua, status: reply.statusCode }, 'appel à une version d’API dépréciée');
   });
 
   await app.register(swagger, {
@@ -252,24 +236,20 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   // Enregistré à la racine pour que `injectWS` et les routes WebSocket soient visibles de tous les plugins.
   if (config.COLLAB_ENABLED) await app.register(websocket, { options: { maxPayload: 4 * 1024 * 1024 } });
   await app.register(collabRoutes);
-  // Chaque version expose les mêmes ressources, avec la même logique et les mêmes contrôles d'accès (lib/).
-  // Seule la v3 est servie par défaut ; v1 et v2 (dépréciées) se réactivent par API_LEGACY_VERSIONS.
-  const versioned = async (scope: FastifyInstance, opts: { version: 1 | 2 | 3 }) => {
+  // API publique : v3 uniquement (v1 et v2 ont été retirées ; voir docs/API-VERSIONING.md).
+  await app.register(async (scope) => {
     await scope.register(coreRoutes);
     await scope.register(spaceRoutes);
-    await scope.register(pageRoutes, { version: opts.version });
-    if (opts.version >= 2) await scope.register(pagesV2);
+    await scope.register(pageRoutes);
+    await scope.register(pageQueryRoutes);
     await scope.register(tokenRoutes);
     await scope.register(aiRoutes);
     await scope.register(adminRoutes);
     await scope.register(settingsRoutes, { ldapFactory });
     await scope.register(webhookRoutes);
     await scope.register(importRoutes);
-    if (opts.version === 3) await scope.register(v3Routes);
-  };
-  if (config.API_LEGACY_VERSIONS.includes('v1')) await app.register(versioned, { prefix: '/api/v1', version: 1 });
-  if (config.API_LEGACY_VERSIONS.includes('v2')) await app.register(versioned, { prefix: '/api/v2', version: 2 });
-  await app.register(versioned, { prefix: '/api/v3', version: 3 });
+    await scope.register(v3Routes);
+  }, { prefix: '/api/v3' });
   await app.register(mcpRoutes);
   await app.register(versionRoutes);
   app.get('/healthz', { schema: { hide: true } }, async () => ({ ok: true }));

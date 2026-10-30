@@ -8,7 +8,7 @@ import { type DB, openDb } from '../src/db.js';
 import { Mailer, type Mail } from '../src/lib/mail.js';
 import { hashPassword } from '../src/lib/password.js';
 
-const env = { NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), AUTH_LOCAL: 'true', SEED_DEMO: 'false' };
+const env = { NODE_ENV: 'test',  PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), AUTH_LOCAL: 'true', SEED_DEMO: 'false' };
 const PASS = 'Sup3r-secret-pass';
 
 class FakeMailer extends Mailer {
@@ -48,11 +48,11 @@ async function addUser(email: string, role: 'admin' | 'editor' | 'reader', passw
 async function login(email: string, password = PASS) {
   const res = await app.inject({ method: 'POST', url: '/auth/local/login', payload: { email, password } });
   const cookie = res.cookies.find((c) => c.name === 'nb_session')!.value;
-  const me = (await app.inject({ method: 'GET', url: '/api/v1/me', cookies: { nb_session: cookie } })).json();
+  const me = (await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: cookie } })).json();
   return { cookies: { nb_session: cookie }, headers: { 'x-csrf-token': me.csrf as string } };
 }
 const api = (s: Awaited<ReturnType<typeof login>>, method: 'GET' | 'PUT' | 'POST', url: string, payload?: object) =>
-  app.inject({ method, url: `/api/v1${url}`, payload, ...s });
+  app.inject({ method, url: `/api/v3${url}`, payload, ...s });
 
 const ldapConfig = { enabled: true, url: 'ldaps://ldap.example.org', bindDn: 'cn=svc,dc=example,dc=org', baseDn: 'dc=example,dc=org', adminGroups: ['wiki-admins'] };
 const reauth = { password: PASS };
@@ -62,7 +62,7 @@ describe('réglages modifiables à chaud', () => {
     await addUser('ed@example.com', 'editor');
     const ed = await login('ed@example.com');
     expect((await api(ed, 'GET', '/admin/settings')).statusCode).toBe(403);
-    expect((await app.inject({ method: 'GET', url: '/api/v1/admin/settings' })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/api/v3/admin/settings' })).statusCode).toBe(401);
   });
 
   it('exige la ressaisie du mot de passe', async () => {
@@ -99,7 +99,7 @@ describe('réglages modifiables à chaud', () => {
   it('exige un test réussi avant d’enregistrer LDAP, chiffre le secret et active le fournisseur', async () => {
     await addUser('a@example.com', 'admin');
     const s = await login('a@example.com');
-    expect((await app.inject({ method: 'GET', url: '/api/v1/config' })).json().auth.ldap).toBe(false);
+    expect((await app.inject({ method: 'GET', url: '/api/v3/config' })).json().auth.ldap).toBe(false);
     const body = { config: ldapConfig, secrets: { bindPassword: 'service-pass' }, reauth };
 
     expect((await api(s, 'PUT', '/admin/settings/ldap', body)).statusCode).toBe(409); // pas de test
@@ -121,7 +121,7 @@ describe('réglages modifiables à chaud', () => {
 
     const stored = (db.prepare("SELECT value FROM settings WHERE key = 'cfg:ldap'").get() as { value: string }).value;
     expect(stored).not.toContain('service-pass');
-    expect((await app.inject({ method: 'GET', url: '/api/v1/config' })).json().auth.ldap).toBe(true);
+    expect((await app.inject({ method: 'GET', url: '/api/v3/config' })).json().auth.ldap).toBe(true);
     expect(app.rt.get().LDAP_BIND_PASSWORD).toBe('service-pass');
     const view = (await api(s, 'GET', '/admin/settings')).json();
     expect(JSON.stringify(view)).not.toContain('service-pass');
@@ -137,7 +137,7 @@ describe('réglages modifiables à chaud', () => {
     const moved = { config: { ...ldapConfig, url: 'ldaps://evil.example.net' }, reauth };
     const res = await api(s, 'POST', '/admin/settings/ldap/test', moved);
     expect(res.statusCode).toBe(400);
-    expect(res.json().message).toMatch(/ressaisissez/i);
+    expect(res.json().detail).toMatch(/ressaisissez/i);
     expect(ldapBinds.every((b) => b.endsWith('service-pass'))).toBe(true);
     expect(ldapBinds.some((b) => b.includes('evil'))).toBe(false);
   });
@@ -232,7 +232,7 @@ describe('mot de passe oublié et invitations', () => {
   it('invite un utilisateur par e-mail sans connaître son mot de passe', async () => {
     await addUser('a@example.com', 'admin');
     const s = await login('a@example.com');
-    const res = await app.inject({ method: 'POST', url: '/api/v1/admin/local-users', payload: { email: 'new@example.com', name: 'Nouvelle', role: 'editor', invite: true }, ...s });
+    const res = await app.inject({ method: 'POST', url: '/api/v3/admin/local-users', payload: { email: 'new@example.com', name: 'Nouvelle', role: 'editor', invite: true }, ...s });
     expect(res.statusCode).toBe(201);
     const mail = mailer.sent.at(-1)!;
     expect(mail.to).toBe('new@example.com');
@@ -241,7 +241,7 @@ describe('mot de passe oublié et invitations', () => {
     expect((await app.inject({ method: 'POST', url: '/auth/local/login', payload: { email: 'new@example.com', password: 'Mon-propre-mot-de-passe-7' } })).statusCode).toBe(200);
     // Échec d'envoi : le compte n'est pas créé.
     mailer.fail = true;
-    const failed = await app.inject({ method: 'POST', url: '/api/v1/admin/local-users', payload: { email: 'x@example.com', name: 'X', role: 'reader', invite: true }, ...s });
+    const failed = await app.inject({ method: 'POST', url: '/api/v3/admin/local-users', payload: { email: 'x@example.com', name: 'X', role: 'reader', invite: true }, ...s });
     expect(failed.statusCode).toBe(502);
     expect(db.prepare("SELECT 1 FROM users WHERE email = 'x@example.com'").get()).toBeUndefined();
   });

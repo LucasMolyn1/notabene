@@ -8,7 +8,7 @@ import { type Mail, Mailer } from '../src/lib/mail.js';
 import { hashPassword } from '../src/lib/password.js';
 import { seedDemo } from '../src/seed.js';
 
-const env = { NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), AUTH_LOCAL: 'true', SEED_DEMO: 'false' };
+const env = { NODE_ENV: 'test',  PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), AUTH_LOCAL: 'true', SEED_DEMO: 'false' };
 const PASS = 'Sup3r-secret-pass';
 
 class FakeMailer extends Mailer {
@@ -36,7 +36,7 @@ afterEach(async () => { await app.close(); db.close(); });
 async function login(email: string) {
   const res = await app.inject({ method: 'POST', url: '/auth/local/login', payload: { email, password: PASS } });
   const cookie = res.cookies.find((c) => c.name === 'nb_session')!.value;
-  const me = (await app.inject({ method: 'GET', url: '/api/v1/me', cookies: { nb_session: cookie } })).json();
+  const me = (await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: cookie } })).json();
   return { cookies: { nb_session: cookie }, headers: { 'x-csrf-token': me.csrf as string } };
 }
 type S = Awaited<ReturnType<typeof login>>;
@@ -93,7 +93,7 @@ describe('notifications', () => {
     await call(ed2, 'PUT', '/api/v3/notifications/preferences', { emailComments: true, emailChanges: true });
     const id = pageId();
     await call(ed2, 'PUT', `/api/v3/pages/${id}/watch`);
-    for (const title of ['A', 'B', 'C']) await call(ed1, 'PATCH', `/api/v1/pages/${id}`, { title });
+    for (const title of ['A', 'B', 'C']) await call(ed1, 'PATCH', `/api/v3/pages/${id}`, { title });
     await tick();
     const items = (await inbox(ed2)).items;
     expect(items).toHaveLength(1);
@@ -121,7 +121,7 @@ describe('notifications', () => {
   it('fait suivre automatiquement les pages qu’on crée', async () => {
     const ed1 = await login('ed1@example.com');
     const space = (db.prepare("SELECT id FROM spaces WHERE visibility = 'private'").get() as { id: string }).id;
-    const created = (await call(ed1, 'POST', '/api/v1/pages', { spaceId: space, title: 'Neuve' })).json();
+    const created = (await call(ed1, 'POST', '/api/v3/pages', { spaceId: space, title: 'Neuve' })).json();
     expect((await call(ed1, 'GET', `/api/v3/pages/${created.id}/watch`)).json()).toEqual({ watching: true });
     expect((await call(ed1, 'DELETE', `/api/v3/pages/${created.id}/watch`)).json()).toEqual({ watching: false });
   });

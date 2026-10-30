@@ -8,8 +8,8 @@ import { audit } from '../lib/audit.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { toMarkdown } from '../lib/markdown.js';
 import {
-  createPage, destroyPage, duplicatePage, getPageRow, getVersion, isFavorite, listPages, listVersions,
-  movePage, type PageRow, restorePage, searchPages, toMeta, toPage, trashPage, updatePage,
+  createPage, destroyPage, duplicatePage, getPageRow, getVersion, listPages, listVersions,
+  movePage, type PageRow, restorePage, toMeta, toPage, trashPage, updatePage,
 } from '../lib/pages.js';
 
 const title = z.string().max(300);
@@ -25,23 +25,14 @@ const createBody = z.object({
   afterId: idSchema.nullable().optional(),
 });
 
-const updateBody = z.object({
-  title: title.optional(),
-  icon: icon.optional(),
-  content: content.optional(),
-  fullWidth: z.boolean().optional(),
-  baseVersion: z.number().int().positive().optional(),
-});
-
 const moveBody = z.object({
   parentId: idSchema.nullable(),
   index: z.number().int().min(0).optional(),
   spaceId: idSchema.optional(),
 });
 
-// `version` : les routes de liste, de lecture, de modification et de recherche diffèrent en v2 et v3 (routes/pages-v2.ts).
-export default async function pageRoutes(app: FastifyInstance, opts: { version?: number } = {}) {
-  const v1 = (opts.version ?? 1) === 1;
+// Les routes de liste, de lecture, de modification et de recherche sont dans routes/pages-query.ts.
+export default async function pageRoutes(app: FastifyInstance) {
   const { db, bus } = app;
   const tags = ['pages'];
   const by = (req: FastifyRequest) => (req.auth ? { id: req.auth.user.id, name: req.auth.user.name } : undefined);
@@ -49,16 +40,6 @@ export default async function pageRoutes(app: FastifyInstance, opts: { version?:
 
   // Une page modifiable doit d'abord être lisible (sinon 404).
   const writable = (req: FastifyRequest, id: string, opts?: { allowTrashed?: boolean }) => loadWritablePage(db, req, id, opts);
-
-  if (v1) {
-    app.get('/pages', {
-      schema: { tags, summary: 'Lister les pages (métadonnées, sans contenu)', querystring: z.object({ spaceId: idSchema.optional() }) },
-    }, async (req) => {
-      const { spaceId } = req.query as { spaceId?: string };
-      const spaces = readableSpaceIds(db, req).filter((s) => !spaceId || s === spaceId);
-      return filterReadable(db, req.auth, listPages(db, spaces, userId(req)));
-    });
-  }
 
   app.post('/pages', { preHandler: guard('write'), schema: { tags, summary: 'Créer une page', body: createBody } }, async (req, reply) => {
     const body = req.body as z.output<typeof createBody>;
@@ -68,13 +49,6 @@ export default async function pageRoutes(app: FastifyInstance, opts: { version?:
     bus.publish({ type: 'page.created', spaceId: row.space_id, pageId: row.id, version: row.version, by: by(req) });
     return reply.status(201).send(toPage(row));
   });
-
-  if (v1) {
-    app.get('/pages/:id', { schema: { tags, summary: 'Lire une page avec son contenu', params: idParams } }, async (req) => {
-      const row = loadReadablePage(db, req, (req.params as { id: string }).id);
-      return toPage(row, isFavorite(db, userId(req), row.id));
-    });
-  }
 
   app.get('/pages/:id/export', {
     schema: { tags, summary: 'Exporter une page', params: idParams, querystring: z.object({ format: z.enum(['markdown', 'json']).default('markdown') }) },
@@ -89,19 +63,6 @@ export default async function pageRoutes(app: FastifyInstance, opts: { version?:
     };
     return reply.type('text/markdown; charset=utf-8').send(toMarkdown(row.title, row.icon, JSON.parse(row.content), titleOf));
   });
-
-  if (v1) {
-    app.patch('/pages/:id', {
-      preHandler: guard('write'),
-      schema: { tags, summary: 'Modifier une page (baseVersion pour détecter les conflits)', params: idParams, body: updateBody },
-    }, async (req) => {
-      const { id } = req.params as { id: string };
-      writable(req, id);
-      const row = updatePage(db, id, req.body as z.output<typeof updateBody>, userId(req));
-      bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: id, version: row.version, by: by(req) });
-      return toMeta(row, isFavorite(db, userId(req), id));
-    });
-  }
 
   app.post('/pages/:id/move', {
     preHandler: guard('write'),
@@ -204,16 +165,4 @@ export default async function pageRoutes(app: FastifyInstance, opts: { version?:
     return toMeta(row);
   });
 
-  if (v1) {
-    app.get('/search', {
-      schema: {
-        tags: ['search'],
-        summary: 'Recherche plein texte (insensible aux accents)',
-        querystring: z.object({ q: z.string().trim().min(1).max(200), limit: z.coerce.number().int().min(1).max(50).default(20) }),
-      },
-    }, async (req) => {
-      const { q, limit } = req.query as { q: string; limit: number };
-      return filterReadable(db, req.auth, searchPages(db, q, readableSpaceIds(db, req), limit * 3)).slice(0, limit).map(({ text: _text, rank: _rank, ...r }) => r);
-    });
-  }
 }

@@ -101,7 +101,7 @@ export function seedDemo(db: DB) {
 
     page(pub, welcome, 'code', 'Utiliser l’API REST', doc(
       p('Créez un jeton depuis **menu utilisateur → Jetons d’API**, en choisissant ses portées (`read`, `write`, `ai`, `admin`) et sa durée de validité. Le jeton n’est affiché qu’une seule fois.'),
-      code('bash', 'export NOTABENE_TOKEN="nb_…"\n\n# Lister les espaces\ncurl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v1/spaces\n\n# Rechercher\ncurl -H "Authorization: Bearer $NOTABENE_TOKEN" "https://wiki.example.com/api/v1/search?q=deploiement"\n\n# Exporter une page en Markdown\ncurl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v1/pages/<id>/export'),
+      code('bash', 'export NOTABENE_TOKEN="nb_…"\n\n# Lister les espaces\ncurl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v3/spaces\n\n# Rechercher\ncurl -H "Authorization: Bearer $NOTABENE_TOKEN" "https://wiki.example.com/api/v3/search?q=deploiement"\n\n# Exporter une page en Markdown\ncurl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v3/pages/<id>/export'),
       p('La documentation interactive OpenAPI est disponible sur `/api/docs`.'),
       callout('danger', p('Ne stockez jamais un jeton dans un dépôt Git : utilisez les secrets de votre CI.')),
     ));

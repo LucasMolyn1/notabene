@@ -60,14 +60,14 @@ describe('route de téléchargement', () => {
   it('est réservée aux administrateurs connectés par session', async () => {
     const db = openDb(':memory:');
     seedDemo(db);
-    const app = await buildApp({ config: loadConfig({ NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), DEV_LOGIN: 'true', SEED_DEMO: 'false' }), db, clientDir: '/nonexistent' });
+    const app = await buildApp({ config: loadConfig({ NODE_ENV: 'test',  PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), DEV_LOGIN: 'true', SEED_DEMO: 'false' }), db, clientDir: '/nonexistent' });
     const sess = async (role: string) => {
       const r = await app.inject({ method: 'POST', url: '/auth/dev-login', payload: { role } });
       return { nb_session: r.cookies.find((c) => c.name === 'nb_session')!.value };
     };
-    expect((await app.inject({ method: 'GET', url: '/api/v1/admin/backup' })).statusCode).toBe(401);
-    expect((await app.inject({ method: 'GET', url: '/api/v1/admin/backup', cookies: await sess('editor') })).statusCode).toBe(403);
-    const ok = await app.inject({ method: 'GET', url: '/api/v1/admin/backup', cookies: await sess('admin') });
+    expect((await app.inject({ method: 'GET', url: '/api/v3/admin/backup' })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/api/v3/admin/backup', cookies: await sess('editor') })).statusCode).toBe(403);
+    const ok = await app.inject({ method: 'GET', url: '/api/v3/admin/backup', cookies: await sess('admin') });
     expect(ok.statusCode).toBe(200);
     expect(ok.headers['content-disposition']).toMatch(/notabene-\d{8}-\d{6}\.db/);
     expect(ok.rawPayload.subarray(0, 15).toString()).toBe('SQLite format 3');

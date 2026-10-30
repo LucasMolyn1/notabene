@@ -42,7 +42,7 @@ describe('conversion JSON <-> Yjs', () => {
   });
 });
 
-const env = { NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), DEV_LOGIN: 'true', SEED_DEMO: 'false' };
+const env = { NODE_ENV: 'test',  PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), DEV_LOGIN: 'true', SEED_DEMO: 'false' };
 let app: FastifyInstance;
 let db: DB;
 let pageId: string;
@@ -59,7 +59,7 @@ afterEach(async () => { await app.close(); db.close(); });
 async function login(role: string) {
   const r = await app.inject({ method: 'POST', url: '/auth/dev-login', payload: { role } });
   const cookie = r.cookies.find((c) => c.name === 'nb_session')!.value;
-  const me = (await app.inject({ method: 'GET', url: '/api/v1/me', cookies: { nb_session: cookie } })).json();
+  const me = (await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: cookie } })).json();
   return { cookie, csrf: me.csrf as string };
 }
 
@@ -158,7 +158,8 @@ describe('co-édition en temps réel', () => {
     const a = await connect(cookie);
     await until(() => textOf(a.json()).length > 10);
     const res = await app.inject({
-      method: 'PATCH', url: `/api/v1/pages/${pageId}`, cookies: { nb_session: cookie }, headers: { 'x-csrf-token': csrf },
+      method: 'PATCH', url: `/api/v3/pages/${pageId}`, cookies: { nb_session: cookie },
+      headers: { 'x-csrf-token': csrf, 'if-match': `"${(db.prepare('SELECT version FROM pages WHERE id = ?').get(pageId) as { version: number }).version}"` },
       payload: { content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Modifié par API' }] }] } },
     });
     expect(res.statusCode).toBe(200);
@@ -174,7 +175,7 @@ describe('co-édition en temps réel', () => {
     const { cookie, csrf } = await login('editor');
     const a = await connect(cookie);
     await until(() => textOf(a.json()).length > 10);
-    await app.inject({ method: 'PATCH', url: `/api/v1/pages/${pageId}`, cookies: { nb_session: cookie }, headers: { 'x-csrf-token': csrf }, payload: { title: 'Nouveau titre' } });
+    await app.inject({ method: 'PATCH', url: `/api/v3/pages/${pageId}`, cookies: { nb_session: cookie }, headers: { 'x-csrf-token': csrf }, payload: { title: 'Nouveau titre' } });
     await wait(150);
     expect(a.state.closed).toBeNull();
     a.ws.close();

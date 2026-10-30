@@ -6,7 +6,7 @@ import { loadConfig } from '../src/config.js';
 import { type DB, openDb } from '../src/db.js';
 import { seedDemo } from '../src/seed.js';
 
-const env = { NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), DEV_LOGIN: 'true', SEED_DEMO: 'false' };
+const env = { NODE_ENV: 'test',  PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), DEV_LOGIN: 'true', SEED_DEMO: 'false' };
 let app: FastifyInstance;
 let db: DB;
 
@@ -20,8 +20,8 @@ afterEach(async () => { await app.close(); db.close(); });
 async function token(role: 'admin' | 'editor' | 'reader', scopes: string[]) {
   const res = await app.inject({ method: 'POST', url: '/auth/dev-login', payload: { role } });
   const cookie = res.cookies.find((c) => c.name === 'nb_session')!.value;
-  const me = (await app.inject({ method: 'GET', url: '/api/v1/me', cookies: { nb_session: cookie } })).json();
-  const t = await app.inject({ method: 'POST', url: '/api/v1/tokens', cookies: { nb_session: cookie }, headers: { 'x-csrf-token': me.csrf }, payload: { name: 'mcp', scopes, expiresInDays: 7 } });
+  const me = (await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: cookie } })).json();
+  const t = await app.inject({ method: 'POST', url: '/api/v3/tokens', cookies: { nb_session: cookie }, headers: { 'x-csrf-token': me.csrf }, payload: { name: 'mcp', scopes, expiresInDays: 7 } });
   return { Authorization: `Bearer ${t.json().token}` };
 }
 
@@ -36,7 +36,7 @@ describe('serveur MCP', () => {
   it('refuse une session navigateur (cookie)', async () => {
     const res = await app.inject({ method: 'POST', url: '/auth/dev-login', payload: { role: 'admin' } });
     const cookie = res.cookies.find((c) => c.name === 'nb_session')!.value;
-    const me = (await app.inject({ method: 'GET', url: '/api/v1/me', cookies: { nb_session: cookie } })).json();
+    const me = (await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: cookie } })).json();
     const r = await app.inject({ method: 'POST', url: '/mcp', cookies: { nb_session: cookie }, headers: { 'x-csrf-token': me.csrf }, payload: rpc('ping') });
     expect(r.statusCode).toBe(401);
   });
@@ -88,10 +88,8 @@ describe('versions d’API', () => {
   it('liste les versions et leur état', async () => {
     const res = (await app.inject({ method: 'GET', url: '/api/versions' })).json();
     expect(res.current).toBe('v3');
-    expect(res.versions.map((v: { id: string; status: string }) => [v.id, v.status])).toEqual([['v1', 'deprecated'], ['v2', 'deprecated'], ['v3', 'stable']]);
-    const v1 = await app.inject({ method: 'GET', url: '/api/v1/config' });
-    expect(v1.headers.deprecation).toBe('true');
-    expect(v1.headers.sunset).toMatch(/2027/);
-    expect((await app.inject({ method: 'GET', url: '/api/v3/config' })).headers.deprecation).toBeUndefined();
+    expect(res.versions.map((v: { id: string; status: string }) => [v.id, v.status])).toEqual([['v1', 'removed'], ['v2', 'removed'], ['v3', 'stable']]);
+    for (const v of ['v1', 'v2']) expect((await app.inject({ method: 'GET', url: `/api/${v}/config` })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/api/v3/config' })).statusCode).toBe(200);
   });
 });
