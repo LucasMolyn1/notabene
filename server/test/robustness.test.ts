@@ -59,6 +59,13 @@ describe('corbeille', () => {
 });
 
 describe('santé et arrêt', () => {
+  it('répond aux sondes HEAD et OPTIONS sur la racine', async () => {
+    expect((await app.inject({ method: 'HEAD', url: '/' })).statusCode).toBe(200);
+    const options = await app.inject({ method: 'OPTIONS', url: '/' });
+    expect(options.statusCode).toBe(204);
+    expect(options.headers.allow).toContain('GET');
+  });
+
   it('signale une base inaccessible', async () => {
     expect((await app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
     const broken = openDb(':memory:');

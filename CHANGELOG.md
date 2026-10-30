@@ -4,7 +4,9 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
-## [Non publié]
+## [3.1.1] - 2026-10-30
+
+Correctif de la connexion OIDC (Authentik) et des sondes de répartiteur, remontés par un premier déploiement en production.
 
 ### Ajouté
 - **Vérification de types du client** (`checkJs`, `npm run typecheck`) : les 45 erreurs initiales sont corrigées (types des options par JSDoc, déclarations des modules CSS et des commandes TipTap). Mode non strict ; le passer en strict demanderait environ 700 annotations, à faire progressivement.
@@ -15,7 +17,13 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 - L'image Draw.io du `docker-compose.yml` est épinglée par digest (tag + sha256).
 
 ### Corrigé
+- **OIDC : le « / » final de l'issuer est conservé** (Authentik le publie ainsi ; sa suppression faisait échouer la découverte, `/auth/login` répondait 500).
+- `HEAD /` et `OPTIONS /` répondent sans erreur : les sondes HAProxy ne marquent plus le service hors service.
+- Ouvert en HTTP (adresse IP), l'écran de chargement affiche un message au lieu de tourner indéfiniment.
 - Expressions régulières réécrites sans quantificateur imbriqué (import Markdown, origines autorisées, routes des réglages).
+
+### Documentation
+- Authentik (mappings, issuer), `SEED_DEMO=false` par défaut, second nom d'hôte pour Draw.io, code d'installation, sondes de santé ; la double authentification obligatoire est un choix, pas un défaut.
 
 ## [3.1.0] - 2026-10-30
 

@@ -16,6 +16,10 @@ Exemple : Notabene sur `https://wiki.example.com`, Authentik sur `https://auth.e
 | Scopes | `openid`, `email`, `profile` (le scope `profile` d’Authentik fournit la claim `groups`) |
 | Subject mode | `Based on the User's hashed ID` (recommandé) |
 
+Si vous créez le fournisseur par l’API ou `ak shell`, ajoutez les trois *scope mappings* par défaut (`authentik default OAuth Mapping: OpenID 'openid'`, `'email'`, `'profile'`) : un fournisseur créé ainsi naît sans mapping, l’id_token n’a pas de claim `groups` et la connexion échoue avec `auth_error=callback`. Les `grant_types` doivent contenir `authorization_code`.
+
+L’issuer (`https://auth.example.com/application/o/<slug>/`) se recopie **avec le slash final**, tel qu’Authentik le publie.
+
 Notez le **Client ID** et le **Client Secret**.
 
 ## 2. Application
