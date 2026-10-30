@@ -62,6 +62,21 @@ for (const scheme of ['light', 'dark'] as const) {
       expect(await violations(page, 'bloc de code')).toEqual([]);
     });
 
+    test('libellés : pastille et champ d’ajout', async ({ page }) => {
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.getByText('Nouvelle page').first().click();
+      await page.locator('.prose').first().waitFor();
+      await page.locator('.label-add').click();
+      await page.getByRole('combobox', { name: 'Nouveau libellé' }).fill(`a11y-${scheme}`);
+      await page.keyboard.press('Enter');
+      await page.getByRole('link', { name: `a11y-${scheme}` }).waitFor();
+      const found = await violations(page, 'libellés (pastille)');
+      await page.locator('.label-add').click();
+      await page.getByRole('combobox', { name: 'Nouveau libellé' }).waitFor();
+      found.push(...await violations(page, 'libellés (champ)'));
+      expect(found).toEqual([]);
+    });
+
     test('paramètres : toutes les sections', async ({ page }) => {
       await loginUi(page, ADMIN.email, ADMIN.password);
       const found: string[] = [];

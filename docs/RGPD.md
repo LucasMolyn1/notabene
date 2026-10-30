@@ -7,7 +7,7 @@ Ce document aide la personne ou l'organisation qui **déploie** Notabene à resp
 | Catégorie | Contenu | Où |
 |---|---|---|
 | Compte | nom, adresse e-mail, rôle, date de création et de dernière connexion ; pour un compte local : hash du mot de passe, secret TOTP chiffré | base SQLite |
-| Contenu | pages, versions, commentaires, favoris, suivis, permissions ; l'auteur est rattaché par identifiant | base SQLite |
+| Contenu | pages, versions, commentaires, libellés, favoris, suivis, permissions ; l'auteur est rattaché par identifiant | base SQLite |
 | Sessions et jetons | hash de l'identifiant de session, hash des jetons d'API, dates | base SQLite |
 | Journal d'audit | action, date, identifiant de l'utilisateur, **adresse IP** | base SQLite |
 | Notifications | type, page concernée, auteur, état de lecture ; l'e-mail ne contient que le titre, le nom et un lien | base SQLite, serveur SMTP |
@@ -42,7 +42,7 @@ Adaptez ces durées à votre finalité et documentez-les dans votre registre des
 
 ### Effacement
 
-La suppression est une **anonymisation** : le compte et ce qui lui est propre disparaissent (sessions, jetons, favoris, suivis, notifications, permissions, préférences). Les pages, versions et commentaires restent, **sans nom d'auteur**, pour que le wiki reste cohérent. Les adresses IP et la cible des entrées du journal qui le concernent sont effacées. L'effacement lui-même est journalisé, sans l'identité de la personne.
+La suppression est une **anonymisation** : le compte et ce qui lui est propre disparaissent (sessions, jetons, favoris, suivis, notifications, permissions, préférences). Les pages, versions, commentaires et libellés restent, **sans nom d'auteur**, pour que le wiki reste cohérent. Les adresses IP et la cible des entrées du journal qui le concernent sont effacées. L'effacement lui-même est journalisé, sans l'identité de la personne.
 
 - Un compte fédéré (SSO, LDAP) est **recréé** à sa prochaine connexion s'il reste autorisé par l'annuaire : retirez-le d'abord des groupes.
 - Le texte d'un commentaire peut contenir des données personnelles écrites par la personne ; un administrateur peut le supprimer à part si la demande le justifie.

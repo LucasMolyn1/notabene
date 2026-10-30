@@ -224,6 +224,7 @@ export function duplicatePage(db: DB, id: string, userId: string | null) {
     }, userId);
     // La copie reste aussi restreinte que la source : sinon dupliquer une page cachée la rendrait visible à tout le parent.
     db.prepare('INSERT INTO page_acl (page_id, user_id, level) SELECT ?, user_id, level FROM page_acl WHERE page_id = ?').run(copy.id, id);
+    db.prepare('INSERT INTO page_labels (page_id, name, created_at, created_by) SELECT ?, name, created_at, created_by FROM page_labels WHERE page_id = ?').run(copy.id, id);
     return copy;
   })();
 }
@@ -284,7 +285,7 @@ export function ftsQuery(input: string, operator: 'AND' | 'OR' = 'AND', maxTerms
   return terms.length ? terms.join(` ${operator} `) : null;
 }
 
-export function searchPages(db: DB, query: string, spaceIds: string[], limit = 20, operator: 'AND' | 'OR' = 'AND') {
+export function searchPages(db: DB, query: string, spaceIds: string[], limit = 20, operator: 'AND' | 'OR' = 'AND', label: string | null = null) {
   const match = ftsQuery(query, operator);
   if (!match) return [];
   return db.prepare(
@@ -292,8 +293,9 @@ export function searchPages(db: DB, query: string, spaceIds: string[], limit = 2
             snippet(pages_fts, 1, char(2), char(3), '…', 20) AS snippet, bm25(pages_fts, 8.0, 1.0) AS rank
      FROM pages_fts JOIN pages p ON p.seq = pages_fts.rowid
      WHERE pages_fts MATCH ? AND p.deleted_at IS NULL AND p.space_id IN (SELECT value FROM json_each(?))
+       AND (? IS NULL OR EXISTS (SELECT 1 FROM page_labels l WHERE l.page_id = p.id AND l.name = ?))
      ORDER BY rank LIMIT ?`,
-  ).all(match, JSON.stringify(spaceIds), limit) as {
+  ).all(match, JSON.stringify(spaceIds), label, label, limit) as {
     id: string; spaceId: string; parentId: string | null; title: string; icon: string; updatedAt: number; text: string; snippet: string; rank: number;
   }[];
 }

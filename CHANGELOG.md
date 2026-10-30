@@ -7,6 +7,7 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 ## Non publié
 
 ### Ajouté
+- **Libellés de page** : pastilles sous le titre (ajout avec suggestions, retrait, jusqu'à 20 par page), page « toutes les pages portant ce libellé » (`/labels/<nom>`), filtre `#libellé` dans la recherche rapide (`#libellé mots` restreint la recherche). API v3 : `GET /labels`, `GET/POST /pages/:id/labels`, `DELETE /pages/:id/labels/:name`, paramètre `label` sur `GET /pages` et `GET /search` ; outils MCP `list_labels`, `add_label`, `remove_label`. Un libellé n'existe que par les pages qui le portent : liste, totaux et filtres ne comptent que les pages que la personne peut lire (jamais de fuite depuis une page à permissions restreintes). Noms en minuscules, 40 caractères au plus (lettres, chiffres, tirets, soulignés) ; la duplication d'une page copie ses libellés. Schéma v11.
 - **Interface pour téléphone** : barre du haut réduite à l'essentiel (suivre, favoris, historique et permissions passent dans le menu « … »), cibles tactiles de 40 à 44 px, champs à 16 px (plus de zoom à la saisie sur iOS), rien qui dépende du survol, zones sûres, barre de mise en forme au-dessus du clavier virtuel (gras, italique, titres, listes, citation, code, annuler, « + » pour insérer un bloc), bande des sections des réglages centrée sur la section courante.
 - **Installable comme une application** : manifeste et icônes (« Ajouter à l'écran d'accueil », « Installer » dans Chrome et Edge, « Ajouter au Dock » dans Safari). Pas de mode hors ligne.
 

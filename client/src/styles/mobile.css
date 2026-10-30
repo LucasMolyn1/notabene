@@ -8,6 +8,9 @@
   .icon-btn { width: 40px; height: 40px; }
   .mini-btn { width: 36px; height: 36px; }
   .btn, .btn-sm { min-height: 40px; }
+  .label-link, .label-add { min-height: 40px; display: inline-flex; align-items: center; }
+  .label-x { width: 40px; height: 40px; }
+  .label-input { width: 100%; font-size: 16px; }
   .sb-btn, .tree-row { height: 42px; }
   .tree-rename { height: 34px; }
   .caret { width: 36px; height: 36px; }

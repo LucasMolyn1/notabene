@@ -12,7 +12,7 @@ import { store } from './store.js';
 import { prefs, savePrefs, app } from './prefs.js';
 import { presence } from './presence.js';
 import { renderSidebar } from './sidebar.js';
-import { showLogin, showMissing, showPage, showSpace, notifyStore, toastAuthError } from './views.js';
+import { showLabel, showLogin, showMissing, showPage, showSpace, notifyStore, toastAuthError } from './views.js';
 import { showSettings } from './settings.js';
 import { h } from './util.js';
 import { icon } from './icons.js';
@@ -35,6 +35,7 @@ function route() {
   else if (!store.spaces.length) { showNoSpace(); scheduleSidebar(); return; }
   else if (r.kind === 'page') showPage(r.id);
   else if (r.kind === 'space') showSpace(r.id);
+  else if (r.kind === 'label') showLabel(r.id);
   else if (r.kind === 'unknown') showMissing(null);
   else {
     // Racine : dernière page consultée, sinon l'accueil de l'espace courant.
@@ -121,6 +122,7 @@ async function boot() {
     if (type === 'notification') { refreshUnread(); return; }
     if (type.startsWith('comment.')) { onCommentEvent(evt); return; }
     if (type === 'page.permissions') { store.scheduleRefresh(evt); return; }
+    if (type === 'page.labels') { window.dispatchEvent(new CustomEvent('notabene:labels', { detail: evt })); return; }
     // Nos propres sauvegardes reviennent aussi : inutile de recharger si la version est déjà connue.
     if (type === 'page.updated' && (store.page(evt.pageId)?.version ?? 0) >= (evt.version ?? 0)) return;
     store.scheduleRefresh(evt);

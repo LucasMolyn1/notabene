@@ -244,6 +244,18 @@ const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  // v11 : libellés de page. Le nom est stocké normalisé (voir lib/labels.ts) ; il n'existe aucune liste globale des
+  // libellés, donc un libellé n'est jamais visible que par ceux qui peuvent lire au moins une page qui le porte.
+  `
+  CREATE TABLE page_labels (
+    page_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 40),
+    created_at INTEGER NOT NULL,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    PRIMARY KEY (page_id, name)
+  );
+  CREATE INDEX page_labels_name ON page_labels(name);
+  `,
 ];
 
 export function openDb(file: string): DB {

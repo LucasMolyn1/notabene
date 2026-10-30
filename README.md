@@ -16,7 +16,7 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | **Collaboration** | Mise à jour en temps réel (SSE), présence des lecteurs, détection des modifications concurrentes, historique des versions |
 | **Commentaires et notifications** | Commentaires par page (fils, réponses, résolution), suivi de pages, cloche en temps réel, e-mails facultatifs sans contenu de page |
 | **Permissions par page** | Un administrateur réserve une page et ses sous-pages à des personnes, en lecture ou en écriture ; appliqué partout (liste, recherche, export, IA, flux, co-édition) |
-| **Organisation** | Glisser-déposer, favoris, corbeille, export Markdown / HTML, intégration iframe pour un portfolio |
+| **Organisation** | Glisser-déposer, favoris, libellés, corbeille, export Markdown / HTML, intégration iframe pour un portfolio |
 
 ## Essayer en 10 minutes
 

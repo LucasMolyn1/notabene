@@ -14,6 +14,8 @@ import { openPalette } from './palette.js';
 import { forgotPasswordForm, ldapLoginForm, localLoginForm } from './local-auth.js';
 import { bellButton, watchButton } from './notifications.js';
 import { commentsButton } from './comments.js';
+import { labelBar } from './labels.js';
+import { listAll } from './api.js';
 import { permissionsButton } from './permissions.js';
 import * as A from './actions.js';
 
@@ -120,9 +122,10 @@ function mountPage(page) {
   const titleEl = h('textarea', { class: 'page-title', rows: 1, placeholder: 'Sans titre', spellcheck: 'false', 'aria-label': 'Titre de la page', maxlength: '300' });
   titleEl.value = page.title;
   const metaEl = h('div', { class: 'page-meta' });
+  const labels = labelBar(id, { initial: page.labels ?? [], canWrite: canWrite && !app.embed });
   const editorHost = h('div', { class: 'editor-host' });
   const tocEl = h('aside', { class: 'toc', 'aria-label': 'Sommaire' });
-  const article = h('article', { class: 'page' }, h('div', { class: 'page-head' }, iconBtn, addIconBtn), titleEl, metaEl, editorHost);
+  const article = h('article', { class: 'page' }, h('div', { class: 'page-head' }, iconBtn, addIconBtn), titleEl, labels.el, metaEl, editorHost);
   const wrap = h('div', { class: 'page-wrap' }, article, tocEl);
   const scroller = h('div', { class: 'scroller' }, wrap);
 
@@ -402,6 +405,7 @@ function mountPage(page) {
       clearTimeout(saveTimer);
       offPresence();
       refreshDerived.cancel();
+      labels.destroy();
       window.removeEventListener('beforeunload', beforeUnload);
       editor.destroy();
       collab?.destroy();
@@ -469,6 +473,42 @@ export function showSpace(spaceId) {
   }
   render();
   view = { kind: 'space', id: spaceId, onStore: render };
+}
+
+// ---- Pages portant un libellé -----------------------------------------------
+
+export async function showLabel(name) {
+  teardown();
+  const seq = ++navSeq;
+  presence.setPage(null);
+  document.title = `${name} · Notabene`;
+  loading();
+  let pages;
+  try {
+    pages = await listAll(`/pages?label=${encodeURIComponent(name)}`);
+  } catch {
+    if (seq === navSeq) showMissing(null, 500);
+    return;
+  }
+  if (seq !== navSeq) return;
+  pages.sort((a, b) => b.updatedAt - a.updatedAt);
+  main().replaceChildren(
+    topbar(h('nav', { class: 'crumbs' }, h('span', { class: 'crumb current' }, `Libellé « ${name} »`))),
+    h('div', { class: 'scroller' }, h('div', { class: 'space-home' },
+      h('div', { class: 'space-hero' }, h('div', null,
+        h('h1', null, name),
+        h('div', { class: 'space-stats' }, h('span', null, `${pages.length} page${pages.length > 1 ? 's' : ''}`)))),
+      pages.length
+        ? h('div', { class: 'cards' }, pages.map((p) => {
+          const space = store.space(p.spaceId);
+          return h('a', { class: 'card', href: pagePath(p) },
+            h('div', { class: 'card-icon' }, pageIcon(p.icon)),
+            h('strong', { class: 'card-title' }, p.title || 'Sans titre'),
+            h('p', { class: 'card-snippet' }, p.excerpt ? p.excerpt.slice(0, 120) + (p.excerpt.length > 120 ? '…' : '') : 'Page vide'),
+            h('div', { class: 'card-foot' }, h('span', null, timeAgo(p.updatedAt)), space && h('span', { class: 'card-parent' }, space.name)));
+        }))
+        : h('div', { class: 'empty' }, h('p', null, 'Aucune page ne porte ce libellé.'), h('a', { class: 'btn btn-ghost', href: '/' }, 'Retour à l’accueil')))));
+  view = { kind: 'label', id: name };
 }
 
 // ---- Connexion --------------------------------------------------------------

@@ -148,7 +148,8 @@ export const store = {
     return meta;
   },
 
-  search: async (q, spaceId) => (await api.get(`/search?q=${encodeURIComponent(q)}&limit=40${spaceId ? `&spaceId=${encodeURIComponent(spaceId)}` : ''}`)).items,
+  search: async (q, spaceId, label) => (await api.get(`/search?q=${encodeURIComponent(q)}&limit=40${spaceId ? `&spaceId=${encodeURIComponent(spaceId)}` : ''}${label ? `&label=${encodeURIComponent(label)}` : ''}`)).items,
+  byLabel: async (label, spaceId) => (await api.get(`/pages?label=${encodeURIComponent(label)}&limit=40${spaceId ? `&spaceId=${encodeURIComponent(spaceId)}` : ''}`)).items,
 
   // ---- Espaces ----------------------------------------------------------
   async createSpace(input) {
