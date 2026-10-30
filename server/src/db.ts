@@ -256,11 +256,22 @@ function migrate(db: DB) {
   }
 }
 
-// Purge périodique des données expirées.
-export function cleanup(db: DB) {
+export interface Retention { trashDays: number; notificationDays: number; auditIpDays: number; auditDays: number }
+export const DEFAULT_RETENTION: Retention = { trashDays: 30, notificationDays: 90, auditIpDays: 90, auditDays: 365 };
+
+// Purge périodique : données expirées, puis limitation de la conservation (0 jour = jamais purgé).
+export function cleanup(db: DB, retention: Retention = DEFAULT_RETENTION) {
   const now = Date.now();
+  const before = (days: number) => now - days * 86_400_000;
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
   db.prepare('DELETE FROM login_states WHERE expires_at < ?').run(now);
   db.prepare('DELETE FROM password_resets WHERE expires_at < ?').run(now);
-  db.prepare('DELETE FROM audit_log WHERE at < ?').run(now - 365 * 86_400_000);
+  if (retention.auditDays > 0) db.prepare('DELETE FROM audit_log WHERE at < ?').run(before(retention.auditDays));
+  if (retention.auditIpDays > 0) db.prepare('UPDATE audit_log SET ip = NULL WHERE ip IS NOT NULL AND at < ?').run(before(retention.auditIpDays));
+  if (retention.notificationDays > 0) db.prepare('DELETE FROM notifications WHERE read_at IS NOT NULL AND read_at < ?').run(before(retention.notificationDays));
+  if (retention.trashDays > 0) {
+    // Racines de corbeille seulement : leurs sous-pages suivent (ON DELETE CASCADE).
+    const { changes } = db.prepare('DELETE FROM pages WHERE trash_root = id AND deleted_at < ?').run(before(retention.trashDays));
+    if (changes) db.prepare('INSERT INTO audit_log (at, user_id, action, target, ip, meta) VALUES (?, NULL, ?, NULL, NULL, ?)').run(now, 'trash.purge', JSON.stringify({ count: changes }));
+  }
 }

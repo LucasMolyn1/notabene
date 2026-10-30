@@ -16,8 +16,14 @@ try {
 mkdirSync(config.DATA_DIR, { recursive: true, mode: 0o700 });
 const db = openDb(resolve(config.DATA_DIR, 'notabene.db'));
 if (config.SEED_DEMO && seedDemo(db)) console.log('Contenu de démonstration créé.');
-cleanup(db);
-setInterval(() => cleanup(db), 3_600_000).unref();
+const retention = {
+  trashDays: config.TRASH_RETENTION_DAYS,
+  notificationDays: config.NOTIFICATION_RETENTION_DAYS,
+  auditIpDays: config.AUDIT_IP_RETENTION_DAYS,
+  auditDays: config.AUDIT_RETENTION_DAYS,
+};
+cleanup(db, retention);
+setInterval(() => cleanup(db, retention), 3_600_000).unref();
 
 const app = await buildApp({
   config,

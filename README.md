@@ -180,7 +180,7 @@ server/src/
 server/test/        Tests de sécurité (CSRF, portées, XSS, conflits…)
 ```
 
-Sécurité : voir [SECURITY.md](SECURITY.md).
+Sécurité : voir [SECURITY.md](SECURITY.md). Données personnelles (RGPD) : voir [docs/RGPD.md](docs/RGPD.md).
 
 ## Licence
 

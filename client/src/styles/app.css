@@ -755,6 +755,11 @@ select.input { height: 36px; }
 .table-row .grow { display: grid; min-width: 0; }
 .table-row small { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
 .table-row.inactive { opacity: .55; }
+/* Ligne avec beaucoup d'actions : le nom garde sa place, les actions passent à la ligne. */
+.table-row.wrap { flex-wrap: wrap; }
+.table-row.wrap .grow { flex: 1 1 200px; }
+.table-row .row-actions .input { width: auto; }
+.table-row .row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
 .method { min-width: 58px; text-align: center; font-weight: 600; }
 .method.get { color: #2f9e44; } .method.post { color: #1971c2; } .method.patch { color: #e67700; } .method.delete { color: var(--danger); }
 .audit-time { width: 110px; flex: none; color: var(--text-3); font-size: 12.5px; }
