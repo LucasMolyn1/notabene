@@ -26,6 +26,7 @@ export type Fetcher = (repo: string, current: string) => Promise<unknown>;
 const payload = z.object({ tag_name: z.string().max(40), html_url: z.string().max(300), published_at: z.string().max(40).nullish(), draft: z.boolean().optional(), prerelease: z.boolean().optional(), body: z.string().max(100_000).nullish() });
 const OK_TTL = 12 * 3_600_000;
 const ERROR_TTL = 15 * 60_000;
+const FORCE_COOLDOWN = 30_000;
 
 // Lecteur réel : GitHub, 5 s, sans redirection, réponse bornée.
 export const githubFetcher: Fetcher = async (repo, current) => {
@@ -56,12 +57,14 @@ export class UpdateChecker {
   readonly #setting: () => { enabled: boolean; source: 'env' | 'db'; locked: boolean };
   get enabled() { return this.#setting().enabled; }
 
-  async status(): Promise<UpdateStatus> {
+  // `force` : « Vérifier maintenant » ignore le cache, mais pas plus d'une fois toutes les 30 s (GitHub limite les appels anonymes).
+  async status({ force = false } = {}): Promise<UpdateStatus> {
     const setting = this.#setting();
     const base = { ...setting, current: this.current };
     if (!setting.enabled) return { ...base, latest: null, updateAvailable: false, checkedAt: null, error: null };
     const now = Date.now();
-    if (!this.#cached || now - this.#cached.at > this.#cached.ttl) {
+    const stale = !this.#cached || now - this.#cached.at > this.#cached.ttl;
+    if (stale || (force && now - this.#cached!.at > FORCE_COOLDOWN)) {
       try {
         const raw = await this.fetcher(this.repo, this.current);
         const parsed = raw === null ? null : payload.parse(raw);
@@ -72,7 +75,7 @@ export class UpdateChecker {
         this.#cached = { at: now, ttl: ERROR_TTL, latest: null, error: 'Vérification impossible (GitHub injoignable ou réponse inattendue).' };
       }
     }
-    const { latest, error, at } = this.#cached;
+    const { latest, error, at } = this.#cached!;
     return { ...base, latest, updateAvailable: !!latest && compareVersions(latest.version, this.current) > 0, checkedAt: at, error };
   }
 }

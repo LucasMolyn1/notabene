@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { type DB, openDb } from '../src/db.js';
@@ -68,6 +68,25 @@ describe('vérification de mise à jour', () => {
     expect(failing.error).toMatch(/impossible/);
     expect(JSON.stringify(failing)).not.toContain('secret interne');
   });
+
+  it('« vérifier maintenant » ignore le cache, mais au plus une fois toutes les 30 secondes', async () => {
+    vi.useFakeTimers();
+    try {
+      let latest = 'v3.1.0';
+      let calls = 0;
+      const c = new UpdateChecker(true, 'o/r', '3.0.0', async () => { calls++; return release(latest); });
+      expect((await c.status()).latest?.version).toBe('3.1.0');
+      latest = 'v3.2.0';
+      expect((await c.status()).latest?.version).toBe('3.1.0'); // cache
+      expect((await c.status({ force: true })).latest?.version).toBe('3.1.0'); // trop tôt : GitHub n'est pas rappelé
+      expect(calls).toBe(1);
+      vi.advanceTimersByTime(31_000);
+      expect((await c.status({ force: true })).latest?.version).toBe('3.2.0');
+      expect(calls).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('routes À propos', () => {
@@ -112,5 +131,17 @@ describe('routes À propos', () => {
     await boot(new UpdateChecker(true, 'o/r', VERSION, async () => ({ tag_name: 'v99.0.0', html_url: 'https://github.com/o/r/releases/tag/v99.0.0' })));
     const adm = await login('adm');
     expect((await app.inject({ method: 'GET', url: '/api/v3/admin/update-check', cookies: adm.cookies })).json()).toMatchObject({ enabled: true, updateAvailable: true, latest: { version: '99.0.0' } });
+  });
+
+  it('« vérifier maintenant » : réservé aux administrateurs, exige le jeton CSRF', async () => {
+    await boot(new UpdateChecker(true, 'o/r', VERSION, async () => ({ tag_name: 'v99.0.0', html_url: 'https://github.com/o/r/releases/tag/v99.0.0' })));
+    const ed = await login('ed');
+    const adm = await login('adm');
+    const url = '/api/v3/admin/update-check/refresh';
+    expect((await app.inject({ method: 'POST', url, cookies: ed.cookies, headers: { 'x-csrf-token': ed.me.csrf } })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'POST', url, cookies: adm.cookies })).statusCode).toBe(403); // sans CSRF
+    const ok = await app.inject({ method: 'POST', url, cookies: adm.cookies, headers: { 'x-csrf-token': adm.me.csrf } });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toMatchObject({ enabled: true, updateAvailable: true, latest: { version: '99.0.0' } });
   });
 });
