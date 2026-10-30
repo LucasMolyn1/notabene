@@ -7,6 +7,7 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 ## Non publié
 
 ### Ajouté
+- **Compose d'essai** (`docker-compose.essai.yml`, [docs/ESSAI.md](docs/ESSAI.md)) : un fichier, aucune configuration, l'image publiée sur GHCR, comptes locaux, compte administrateur créé dans le navigateur avec le code d'installation des journaux. Sans Draw.io, connexion unique, IA ni e-mail, volontairement.
 - **Bouton « Vérifier maintenant » (Paramètres, À propos)** : relance la vérification de version sans attendre les 12 h du cache, et indique l'heure de la dernière vérification. Au plus un appel à GitHub toutes les 30 secondes, réservé aux administrateurs.
 
 ## [3.6.0] - 2026-10-30
