@@ -63,3 +63,10 @@ describe('TRUST_PROXY : adresse retenue pour un client', () => {
     expect(await loggedIp('true')).toBe('9.9.9.9');
   });
 });
+
+describe('OIDC_ISSUER', () => {
+  it('conserve le « / » final, comparé littéralement à la découverte', () => {
+    const cfg = loadConfig({ ...base, OIDC_ISSUER: 'https://auth.example.com/application/o/notabene/', OIDC_CLIENT_ID: 'a', OIDC_CLIENT_SECRET: 'b' });
+    expect(cfg.OIDC_ISSUER).toBe('https://auth.example.com/application/o/notabene/');
+  });
+});

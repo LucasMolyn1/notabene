@@ -40,6 +40,9 @@ const optionalUrl = z
   .transform((v) => (v ? v.replace(/\/+$/, '') : undefined))
   .pipe(z.string().url().optional());
 
+// L'issuer OIDC est comparé littéralement au document de découverte : le « / » final en fait partie (Authentik le publie).
+const issuerUrl = z.string().url().optional();
+
 const schema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('production'),
@@ -65,7 +68,7 @@ const schema = z
       message: 'doit contenir 32 octets encodés en base64 (openssl rand -base64 32)',
     }),
 
-    OIDC_ISSUER: optionalUrl,
+    OIDC_ISSUER: issuerUrl,
     OIDC_CLIENT_ID: z.string().optional(),
     OIDC_CLIENT_SECRET: z.string().optional(),
     OIDC_SCOPES: z.string().default('openid profile email'),

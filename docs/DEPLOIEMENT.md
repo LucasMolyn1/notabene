@@ -30,7 +30,7 @@ services:
     security_opt: ["no-new-privileges:true"]
 ```
 
-`.env` (permissions `600`) : `PUBLIC_URL=https://…`, `NODE_ENV=production`, `TRUST_PROXY=<nombre de proxys devant l'application>`, `ENCRYPTION_KEY` (`openssl rand -base64 32`), `AUTH_LOCAL=true`, `LOCAL_REQUIRE_MFA=true`. Toutes les variables : `.env.example`.
+`.env` (permissions `600`) : `PUBLIC_URL=https://…`, `NODE_ENV=production`, `TRUST_PROXY=<nombre de proxys devant l'application>`, `ENCRYPTION_KEY` (`openssl rand -base64 32`), `AUTH_LOCAL=true`. `LOCAL_REQUIRE_MFA=true` (double authentification obligatoire) est conseillé pour une instance exposée ; laissez-le à `false` pour un essai, chaque personne pouvant activer le TOTP depuis son profil. Toutes les variables : `.env.example`.
 
 **Conservez `ENCRYPTION_KEY` à part** (gestionnaire de mots de passe) : elle chiffre les secrets en base ; sans elle, une sauvegarde restaurée a des secrets illisibles.
 
@@ -59,7 +59,11 @@ docker compose exec -T notabene node dist/server/cli.js create-admin admin@exemp
 docker compose exec -T notabene node dist/server/backup.js keygen     # la clé privée age : hors du serveur
 ```
 
-Avec `LOCAL_REQUIRE_MFA=true`, l'administrateur active la double authentification à la première connexion. Mettez ensuite la clé **publique** dans `BACKUP_AGE_RECIPIENT` : en production, une sauvegarde non chiffrée est refusée. Voir [BACKUP.md](BACKUP.md) (minuterie, restauration à exercer une fois).
+Le code d'installation affiché dans les journaux au premier démarrage est un secret temporaire : ne partagez pas la sortie de `docker logs` ; `create-admin` ci-dessus est l'alternative. Avec `LOCAL_REQUIRE_MFA=true`, l'administrateur active la double authentification à la première connexion. Mettez ensuite la clé **publique** dans `BACKUP_AGE_RECIPIENT` : en production, une sauvegarde non chiffrée est refusée. Voir [BACKUP.md](BACKUP.md) (minuterie, restauration à exercer une fois).
+
+## Sondes de santé
+
+Pour un répartiteur (HAProxy, etc.), utilisez `GET /healthz` (`{"ok":true}`, 503 si la base ne répond pas). `HEAD /` et `OPTIONS /` répondent aussi sans erreur. L'interface ne fonctionne que depuis l'adresse `PUBLIC_URL` (HTTPS) : l'ouvrir par une adresse IP en HTTP affiche un message explicatif.
 
 ## Mettre à jour
 

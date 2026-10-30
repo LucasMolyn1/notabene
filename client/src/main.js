@@ -126,7 +126,10 @@ async function boot() {
 boot()
   .catch((err) => {
     console.error(err);
-    document.querySelector('#boot p').textContent = 'Impossible de joindre le serveur. Réessayez dans un instant.';
+    // Ouvert en HTTP (par adresse IP, par exemple) : la politique de sécurité réécrit les requêtes en HTTPS et elles échouent.
+    document.querySelector('#boot p').textContent = window.isSecureContext
+      ? 'Impossible de joindre le serveur. Réessayez dans un instant.'
+      : 'Cette page doit être ouverte par l’adresse HTTPS publique de l’instance : depuis cette adresse, le navigateur bloque les requêtes.';
     return 'failed';
   })
   .then((state) => { if (state !== 'failed') document.getElementById('boot').hidden = true; });

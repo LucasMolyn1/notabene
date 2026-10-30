@@ -287,6 +287,10 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     });
   }
   app.setNotFoundHandler((req, reply) => {
+    // Sondes HTTP (HAProxy, répartiteurs) : HEAD et OPTIONS sur la racine répondent sans corps.
+    if (req.url === '/' && (req.method === 'HEAD' || req.method === 'OPTIONS')) {
+      return reply.header('allow', 'GET, HEAD, OPTIONS').status(req.method === 'HEAD' ? 200 : 204).send();
+    }
     const isApi = req.url.startsWith('/api/') || req.url.startsWith('/auth/');
     if (hasClient && req.method === 'GET' && !isApi) {
       return reply.header('cache-control', 'no-cache').sendFile('index.html');
