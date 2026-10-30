@@ -22,6 +22,11 @@ const oneOf = (...values: string[]) => (v: unknown) => (typeof v === 'string' &&
 const bool = (v: unknown) => (typeof v === 'boolean' ? v : undefined);
 const nullable = (f: (v: unknown) => unknown) => (v: unknown) => (v === null ? null : f(v));
 
+// Palette fixe : le contenu ne porte qu'un nom de couleur, jamais une valeur CSS (le style est dans la feuille de l'application).
+export const COLORS = ['gray', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink'] as const;
+const color = nullable(oneOf(...COLORS));
+const align = nullable(oneOf('left', 'center', 'right', 'justify'));
+
 export function isSafeHref(href: unknown): href is string {
   if (typeof href !== 'string' || href.length > 2048) return false;
   // eslint-disable-next-line no-control-regex -- on refuse justement les caractères de contrôle (contournement de schéma)
@@ -48,10 +53,10 @@ const cell: AttrRules = { colspan: int(1, 64), rowspan: int(1, 64), colwidth };
 
 const NODES: Record<string, AttrRules> = {
   doc: {},
-  paragraph: {},
+  paragraph: { align },
   text: {},
   hardBreak: {},
-  heading: { level: int(1, 3) },
+  heading: { level: int(1, 3), align },
   blockquote: {},
   bulletList: {},
   orderedList: { start: int(0, 1_000_000), type: nullable(oneOf('1', 'a', 'A', 'i', 'I')) },
@@ -76,6 +81,14 @@ const NODES: Record<string, AttrRules> = {
   // Mention d'une personne : seul l'identifiant est enregistré. Le nom n'entre jamais dans la page (il vient de la table des utilisateurs).
   mention: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined) },
   mermaid: { code: str(50_000), width: nullable(int(120, 4000)) },
+  // Formule LaTeX : seul le texte est enregistré, le rendu (KaTeX) se fait dans le navigateur.
+  math: { code: str(5_000), width: nullable(int(120, 4000)) },
+  // Bloc dépliable (titre + contenu) et colonnes (2 à 4, vérifiées par l'éditeur ; ici seulement la liste des types).
+  details: {},
+  detailsSummary: {},
+  detailsContent: {},
+  columns: {},
+  column: {},
   plantuml: { code: str(50_000), width: nullable(int(120, 4000)) },
   excalidraw: { scene: str(MAX_DIAGRAM), svg: isSvgDataUrl, width: nullable(int(120, 4000)) },
   drawio: { xml: str(MAX_DIAGRAM), svg: isSvgDataUrl, width: nullable(int(120, 4000)) },
@@ -87,7 +100,8 @@ const MARKS: Record<string, AttrRules> = {
   underline: {},
   strike: {},
   code: {},
-  highlight: {},
+  highlight: { color },
+  textColor: { color },
   link: { href: (v) => (isSafeHref(v) ? v : undefined) },
   // Texte commenté : `id` est celui du fil de commentaires (lu seulement s'il existe sur la même page).
   commentAnchor: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined) },
@@ -104,11 +118,26 @@ function cleanAttrs(rules: AttrRules, attrs: unknown): Record<string, unknown> |
   return Object.keys(out).length ? out : undefined;
 }
 
+// Les blocs à structure imposée (dépliable, colonnes) : un contenu mal formé rendrait l'éditeur muet pour tous les lecteurs.
+const INLINE = new Set(['text', 'hardBreak', 'pageLink', 'mention']);
+function checkStructure(node: DocNode, parent: string) {
+  const kids = node.content ?? [];
+  const fail = () => { throw new HttpError(400, `Structure invalide pour « ${node.type} »`); };
+  switch (node.type) {
+    case 'details': if (kids.length !== 2 || kids[0]!.type !== 'detailsSummary' || kids[1]!.type !== 'detailsContent') fail(); break;
+    case 'detailsSummary': if (parent !== 'details' || kids.some((k) => !INLINE.has(k.type))) fail(); break;
+    case 'detailsContent': if (parent !== 'details' || !kids.length) fail(); break;
+    case 'columns': if (kids.length < 2 || kids.length > 4 || kids.some((k) => k.type !== 'column')) fail(); break;
+    case 'column': if (parent !== 'columns' || !kids.length) fail(); break;
+    default:
+  }
+}
+
 export function sanitizeDoc(input: unknown): DocNode {
   let count = 0;
   let textLength = 0;
 
-  const walk = (raw: unknown, depth: number): DocNode | null => {
+  const walk = (raw: unknown, depth: number, parent = ''): DocNode | null => {
     if (depth > MAX_DEPTH) throw new HttpError(400, 'Document trop profond');
     if (++count > MAX_NODES) throw new HttpError(400, 'Document trop volumineux');
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new HttpError(400, 'Nœud de document invalide');
@@ -129,6 +158,7 @@ export function sanitizeDoc(input: unknown): DocNode {
           const attrs = cleanAttrs(MARKS[mark.type], mark.attrs);
           if (mark.type === 'link' && !attrs?.href) return [];
           if (mark.type === 'commentAnchor' && !attrs?.id) return [];
+          if (mark.type === 'textColor' && !attrs?.color) return [];
           return [attrs ? { type: mark.type, attrs } : { type: mark.type }];
         });
         if (marks.length) out.marks = marks;
@@ -142,8 +172,9 @@ export function sanitizeDoc(input: unknown): DocNode {
     if (type === 'pageLink' && !attrs?.id) return null;
     if (type === 'mention' && !attrs?.id) return null;
     if (Array.isArray(node.content)) {
-      out.content = node.content.map((c) => walk(c, depth + 1)).filter((c): c is DocNode => c !== null);
+      out.content = node.content.map((c) => walk(c, depth + 1, type)).filter((c): c is DocNode => c !== null);
     }
+    checkStructure(out, parent);
     return out;
   };
 
@@ -181,7 +212,7 @@ export function docText(node: DocNode | undefined): string {
   if (!node) return '';
   if (node.type === 'text') return node.text ?? '';
   if (node.type === 'hardBreak') return ' ';
-  if (node.type === 'mermaid' || node.type === 'plantuml') return ` ${String(node.attrs?.code ?? '')} `;
+  if (node.type === 'mermaid' || node.type === 'plantuml' || node.type === 'math') return ` ${String(node.attrs?.code ?? '')} `;
   const sep = TEXT_BLOCKS.has(node.type) ? '' : ' ';
   const out = (node.content ?? []).map(docText).join(sep);
   return node.type === 'doc' ? out.replace(/\s+/g, ' ').trim() : out;

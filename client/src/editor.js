@@ -3,12 +3,12 @@ import { Editor, generateHTML } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { Placeholder } from '@tiptap/extensions';
 import { TaskList, TaskItem } from '@tiptap/extension-list';
-import Highlight from '@tiptap/extension-highlight';
 import Typography from '@tiptap/extension-typography';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
-import { DrawIo, Excalidraw, Mermaid, PlantUml } from './diagrams.js';
+import { DrawIo, Excalidraw, MathBlock, Mermaid, PlantUml } from './diagrams.js';
+import { Column, Columns, ColoredHighlight, Details, DetailsContent, DetailsSummary, TextAlign, TextColor } from './editor/blocks.js';
 import { CodeBlockEditor } from './editor/code-block.js';
 import { ResizableImage } from './editor/image.js';
 import { CommentAnchor } from './editor/comment-anchor.js';
@@ -28,7 +28,14 @@ function baseExtensions({ collab = false } = {}) {
       link: { openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener noreferrer' } },
     }),
     CodeBlockEditor,
-    Highlight,
+    ColoredHighlight,
+    TextColor,
+    TextAlign,
+    Details,
+    DetailsSummary,
+    DetailsContent,
+    Columns,
+    Column,
     TaskList,
     TaskItem.configure({ nested: true }),
     ResizableImage.configure({ allowBase64: true }),
@@ -42,6 +49,7 @@ function baseExtensions({ collab = false } = {}) {
     Mention,
     CommentAnchor,
     Mermaid,
+    MathBlock,
     PlantUml,
     Excalidraw,
     DrawIo,
