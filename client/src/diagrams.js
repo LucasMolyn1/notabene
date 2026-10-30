@@ -143,6 +143,25 @@ function textDiagramNode({ name, label, defaultCode, renderer: renderDiagram }) 
   });
 }
 
+// ---- Formule (KaTeX) ---------------------------------------------------------
+// Seul le texte LaTeX est enregistré ; le rendu se fait ici. `trust: false` interdit les commandes qui ouvriraient
+// un lien, une image ou du HTML (\href, \url, \includegraphics, \htmlClass…), `maxExpand` borne les macros récursives.
+
+export const DEFAULT_MATH = 'E = mc^2';
+
+async function renderMath(code, target) {
+  try {
+    const [{ default: katex }] = await Promise.all([import('katex'), import('katex/dist/katex.min.css')]);
+    katex.render(code, target, { displayMode: true, throwOnError: true, trust: false, strict: 'ignore', maxExpand: 500, maxSize: 20, output: 'htmlAndMathml' });
+    target.classList.remove('error');
+  } catch (err) {
+    target.textContent = `Formule invalide : ${String(err?.message || err).slice(0, 200)}`;
+    target.classList.add('error');
+  }
+}
+
+export const MathBlock = textDiagramNode({ name: 'math', label: 'Formule', defaultCode: DEFAULT_MATH, renderer: renderMath });
+
 export const Mermaid = textDiagramNode({ name: 'mermaid', label: 'Mermaid', defaultCode: DEFAULT_MERMAID, renderer: renderMermaid });
 
 // ---- PlantUML ---------------------------------------------------------------

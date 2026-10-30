@@ -92,6 +92,7 @@
     "@types/ws": "^8.18.2",
     "@vitest/coverage-v8": "^5.0.5",
     "emojibase-data": "^18.0.0",
+    "katex": "0.18.10",
     "mermaid": "^12.2.0",
     "qrcode-generator": "^2.0.4",
     "react": "^18.3.1",

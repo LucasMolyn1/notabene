@@ -2,6 +2,7 @@
 import { posToDOMRect } from '@tiptap/core';
 import { h } from '../util.js';
 import { icon } from '../icons.js';
+import { COLORS } from './blocks.js';
 
 // ---- Barre de mise en forme flottante ------------------------------------
 
@@ -9,11 +10,13 @@ export function createBubbleMenu(editor, ctx = {}) {
   const el = h('div', { class: 'bubble', hidden: true });
   document.body.append(el);
   let linkMode = false;
+  let colorMode = false;
 
   const btn = (label, title, isActive, run, cls = '') => h('button', {
     class: `bubble-btn ${cls}${isActive() ? ' active' : ''}`,
     type: 'button',
     title,
+    'aria-label': title,
     onMouseDown: (e) => { e.preventDefault(); run(); },
   }, label);
 
@@ -32,6 +35,7 @@ export function createBubbleMenu(editor, ctx = {}) {
       btn('❝', 'Citation', () => editor.isActive('blockquote'), () => c().toggleBlockquote().run()),
       h('span', { class: 'bubble-sep' }),
       btn('↗', 'Lien', () => editor.isActive('link'), () => { linkMode = true; renderLink(); }),
+      btn('A', 'Couleurs et alignement', () => editor.isActive('textColor') || editor.isActive('highlight'), () => { colorMode = true; renderColors(); }, 'color-btn'),
       ...(ctx.onComment ? [
         h('span', { class: 'bubble-sep' }),
         btn(icon('comment', 15), 'Commenter la sélection', () => false, () => {
@@ -80,7 +84,34 @@ export function createBubbleMenu(editor, ctx = {}) {
     input.select();
   }
 
-  const hide = () => { el.hidden = true; };
+  // Couleur du texte, fond, alignement : trois lignes, une seule palette fixe (le contenu ne garde que le nom de la couleur).
+  function renderColors() {
+    const close = () => { colorMode = false; editor.view.focus(); update(); }; // focus synchrone : TipTap 3 diffère editor.commands.focus() d'une frame
+    const row = (caption, ...items) => h('div', { class: 'bubble-row', role: 'group', 'aria-label': caption }, h('span', { class: 'bubble-cap' }, caption), ...items);
+    const swatch = (c, kind) => h('button', {
+      class: `swatch swatch-${kind}`, type: 'button', 'data-color': c.id,
+      title: `${kind === 'text' ? 'Texte' : 'Fond'} ${c.label}`, 'aria-label': `${kind === 'text' ? 'Texte' : 'Fond'} ${c.label}`,
+      onMouseDown: (e) => {
+        e.preventDefault();
+        (kind === 'text' ? c0().setTextColor(c.id) : c0().setHighlight({ color: c.id })).run();
+        close();
+      },
+    }, kind === 'text' ? 'A' : '');
+    const c0 = () => editor.chain().focus();
+    const plain = (label, run) => h('button', { class: 'bubble-btn small', type: 'button', onMouseDown: (e) => { e.preventDefault(); run(); close(); } }, label);
+    const align = (label, value) => plain(label, () => c0().setAlign(value).run());
+    el.replaceChildren(
+      row('Texte', ...COLORS.map((c) => swatch(c, 'text')), plain('Par défaut', () => c0().unsetTextColor().run())),
+      row('Fond', ...COLORS.map((c) => swatch(c, 'bg')), plain('Sans fond', () => c0().unsetHighlight().run())),
+      row('Alignement', align('Gauche', 'left'), align('Centre', 'center'), align('Droite', 'right'), align('Justifié', 'justify')),
+    );
+    el.classList.add('bubble-wide');
+    el.onkeydown = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+    position();
+    el.querySelector('button')?.focus({ preventScroll: true });
+  }
+
+  const hide = () => { el.hidden = true; el.classList.remove('bubble-wide'); };
 
   function position() {
     const { from, to } = editor.state.selection;
@@ -94,7 +125,8 @@ export function createBubbleMenu(editor, ctx = {}) {
   }
 
   function update() {
-    if (linkMode) return;
+    if (linkMode || colorMode) return;
+    el.classList.remove('bubble-wide');
     const { selection } = editor.state;
     const show = editor.isEditable && editor.view.hasFocus() && !selection.empty && !selection.node && !editor.isActive('codeBlock');
     if (!show) return hide();
@@ -103,8 +135,8 @@ export function createBubbleMenu(editor, ctx = {}) {
   }
 
   editor.on('selectionUpdate', update);
-  editor.on('transaction', () => { if (!el.hidden && !linkMode) update(); });
-  editor.on('blur', ({ event }) => { if (!el.contains(event?.relatedTarget) && !linkMode) hide(); });
+  editor.on('transaction', () => { if (!el.hidden && !linkMode && !colorMode) update(); });
+  editor.on('blur', ({ event }) => { if (!el.contains(event?.relatedTarget) && !linkMode && !colorMode) hide(); });
   const onScroll = () => { if (!el.hidden) position(); };
   document.addEventListener('scroll', onScroll, true);
   return { destroy: () => { el.remove(); document.removeEventListener('scroll', onScroll, true); } };
