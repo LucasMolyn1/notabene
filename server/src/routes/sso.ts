@@ -12,7 +12,6 @@ import { audit } from '../lib/audit.js';
 import { randomToken } from '../lib/crypto.js';
 import { HttpError } from '../lib/http.js';
 
-const strict = { rateLimit: { max: 10, timeWindow: '1 minute', keyGenerator: (req: { ip: string }) => req.ip } };
 const STATE_TTL = 10 * 60_000;
 
 export default async function ssoRoutes(app: FastifyInstance, opts: { ldap?: LdapDirectory } = {}) {
@@ -21,6 +20,7 @@ export default async function ssoRoutes(app: FastifyInstance, opts: { ldap?: Lda
   const cfg = () => app.rt.get();
   const ldapFor = () => opts.ldap ?? (cfg().LDAP_URL ? new LdapDirectory(cfg()) : null);
   const config = app.config;
+  const strict = { rateLimit: { max: config.AUTH_RATE_LIMIT_PER_MINUTE, timeWindow: '1 minute', keyGenerator: (req: { ip: string }) => req.ip } };
 
   const cookieName = sessionCookieName(config.secureCookies);
   const cookieOptions = { path: '/', httpOnly: true, secure: config.secureCookies, sameSite: 'lax' as const };

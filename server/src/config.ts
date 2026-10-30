@@ -44,6 +44,8 @@ const schema = z
     // Rôle des utilisateurs authentifiés qui ne sont dans aucun groupe : « none » refuse l'accès.
     OIDC_DEFAULT_ROLE: z.enum(['reader', 'none']).default('none'),
     SESSION_TTL_HOURS: z.coerce.number().min(1).max(24 * 30).default(12),
+    // Connexions et opérations sensibles d'authentification : tentatives par minute et par adresse IP (défaut 10).
+    AUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(10),
     // Une session sans aucune requête pendant cette durée est fermée (en plus de la durée absolue ci-dessus).
     SESSION_IDLE_MINUTES: z.coerce.number().min(5).max(24 * 60).default(120),
     // Documentation interactive de l'API : auth (connectés seulement, défaut), public, off.
