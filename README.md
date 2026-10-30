@@ -43,6 +43,15 @@ cp .env.development.example .env       # puis renseignez ENCRYPTION_KEY (openssl
 npm run dev                            # API sur :3000, interface sur http://localhost:5173
 ```
 
+### Tests
+
+```bash
+npm test          # tests unitaires et d'intégration (vitest)
+npm run build && npx playwright install chromium && npm run e2e   # parcours complets dans un vrai navigateur
+```
+
+Les tests de bout en bout (dossier `e2e/`) démarrent un serveur de production sur une base temporaire et couvrent la connexion, l'activation de la double authentification, les pages restreintes, la co-édition à deux, la configuration web avec ressaisie du mot de passe et les notifications. Ils tournent aussi dans la CI.
+
 ### Co-édition en temps réel
 
 Les rédacteurs qui ouvrent la même page voient les modifications et les curseurs des autres en direct (Yjs via WebSocket, `/collab/:id`). Le serveur conserve l’état de co-édition en base et recopie le contenu dans la page (JSON assaini) toutes les 2 secondes : recherche, export, historique des versions et API REST fonctionnent comme avant. Une modification du contenu par l’API ou une restauration de version recharge automatiquement les éditeurs ouverts.

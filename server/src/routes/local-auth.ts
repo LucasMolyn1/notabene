@@ -16,7 +16,6 @@ const RESET_TTL_MIN = 30;
 const INVITE_TTL_H = 72;
 const MAX_FAILURES = 5;
 const LOCK_MS = 15 * 60_000;
-const strict = { rateLimit: { max: 10, timeWindow: '1 minute', keyGenerator: (req: { ip: string }) => req.ip } };
 
 const email = z.string().trim().toLowerCase().pipe(z.email().max(200));
 const password = z.string().min(1).max(256);
@@ -34,6 +33,7 @@ const newRecoveryCodes = () => Array.from({ length: 10 }, () => { const h = rand
 export default async function localAuthRoutes(app: FastifyInstance) {
   const { db, config, box } = app;
   if (!config.AUTH_LOCAL) return;
+  const strict = { rateLimit: { max: config.AUTH_RATE_LIMIT_PER_MINUTE, timeWindow: '1 minute', keyGenerator: (req: { ip: string }) => req.ip } };
   const cookieName = sessionCookieName(config.secureCookies);
   const cookieOptions = { path: '/', httpOnly: true, secure: config.secureCookies, sameSite: 'lax' as const };
   const publicOrigin = new URL(config.PUBLIC_URL).origin;
