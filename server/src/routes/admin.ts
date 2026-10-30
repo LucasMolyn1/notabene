@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard, requireAuth } from '../auth/context.js';
-import { backupName, backupTo, encryptFile } from '../backup.js';
+import { assertBackupAllowed, backupName, backupTo, encryptFile } from '../backup.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/http.js';
 
@@ -81,12 +81,19 @@ export default async function adminRoutes(app: FastifyInstance) {
     schema: { hide: true },
   }, async (req, reply) => {
     if (req.auth?.via !== 'session') throw new HttpError(403, 'Disponible uniquement depuis l’interface web');
+    // Même règle que la sauvegarde planifiée : en production, pas de copie en clair sans choix explicite.
+    try { assertBackupAllowed(process.env); } catch (err) { throw new HttpError(409, (err as Error).message); }
     const dir = mkdtempSync(resolve(tmpdir(), 'nb-backup-'));
     let name = backupName();
     let file = resolve(dir, name);
-    await backupTo(db, file);
-    // Destinataire age configuré : le téléchargement est chiffré comme les sauvegardes planifiées.
-    if (process.env.BACKUP_AGE_RECIPIENT) { file = await encryptFile(file, process.env.BACKUP_AGE_RECIPIENT); name = `${name}.age`; }
+    try {
+      await backupTo(db, file);
+      // Destinataire age configuré : le téléchargement est chiffré comme les sauvegardes planifiées.
+      if (process.env.BACKUP_AGE_RECIPIENT) { file = await encryptFile(file, process.env.BACKUP_AGE_RECIPIENT); name = `${name}.age`; }
+    } catch (err) {
+      rmSync(dir, { recursive: true, force: true }); // jamais de copie en clair laissée dans /tmp
+      throw err;
+    }
     audit(db, req, 'backup.download', null);
     const stream = createReadStream(file);
     stream.on('close', () => rmSync(dir, { recursive: true, force: true }));

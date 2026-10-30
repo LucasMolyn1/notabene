@@ -126,7 +126,8 @@ export default async function pageRoutes(app: FastifyInstance) {
 
   app.delete('/trash', { preHandler: guard('admin'), schema: { tags, summary: 'Vider la corbeille (admin)' } }, async (req, reply) => {
     const trashed = filterReadable(db, req.auth, listPages(db, readableSpaceIds(db, req), null, { trashed: true }));
-    for (const p of trashed) destroyPage(db, p.id);
+    // Une racine peut avoir disparu avec une autre (sous-page en cascade) : on ne détruit que ce qui reste, en une seule transaction.
+    db.transaction(() => { for (const p of trashed) if (getPageRow(db, p.id)) destroyPage(db, p.id); })();
     audit(db, req, 'trash.empty', null, { count: trashed.length });
     for (const spaceId of new Set(trashed.map((p) => p.spaceId))) bus.publish({ type: 'page.deleted', spaceId, by: by(req) });
     return reply.status(204).send();

@@ -253,7 +253,15 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   }, { prefix: '/api/v3' });
   await app.register(mcpRoutes);
   await app.register(versionRoutes);
-  app.get('/healthz', { schema: { hide: true } }, async () => ({ ok: true }));
+  // Santé : la base doit répondre, sinon le conteneur doit être signalé défaillant.
+  app.get('/healthz', { schema: { hide: true } }, async (_req, reply) => {
+    try {
+      db.prepare('SELECT 1').get();
+      return { ok: true };
+    } catch {
+      return reply.status(503).send({ ok: false });
+    }
+  });
 
   // Front compilé (production) : fichiers statiques + repli SPA.
   const dir = clientDir ?? resolve(process.cwd(), 'dist/client');

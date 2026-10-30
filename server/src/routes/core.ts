@@ -39,6 +39,10 @@ export default async function coreRoutes(app: FastifyInstance) {
     };
   });
 
+  // Flux ouverts : sans les terminer à l'arrêt, le serveur attendrait indéfiniment leur fermeture (docker stop).
+  const streams = new Set<import('node:http').ServerResponse>();
+  app.addHook('preClose', async () => { for (const res of streams) res.end(); });
+
   // Flux temps réel : changements de pages (sans contenu) et présence.
   app.get('/events', { schema: { tags: ['session'], summary: 'Flux SSE des changements' } }, async (req, reply) => {
     let spaces = new Set(readableSpaceIds(db, req));
@@ -52,6 +56,7 @@ export default async function coreRoutes(app: FastifyInstance) {
       'X-Accel-Buffering': 'no',
       'X-Content-Type-Options': 'nosniff',
     });
+    streams.add(res);
     const send = (event: AppEvent) => {
       if (event.type === 'space.changed') spaces = new Set(readableSpaceIds(db, req));
       if (event.type === 'presence' && !authed) return;
@@ -68,6 +73,7 @@ export default async function coreRoutes(app: FastifyInstance) {
     req.raw.on('close', () => {
       clearInterval(ping);
       unsubscribe();
+      streams.delete(res);
     });
   });
 
