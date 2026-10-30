@@ -62,6 +62,8 @@ Merci de ne pas ouvrir d’issue publique : utilisez les *GitHub Security Adviso
 - Tags de version `v*` protégés : création réservée aux administrateurs, ni modification ni suppression (ils déclenchent la publication de l’image).
 - Actions GitHub épinglées par **SHA de commit**, limitées aux éditeurs GitHub et vérifiés ; jeton `GITHUB_TOKEN` en lecture seule par défaut, permissions élevées limitées au job de publication.
 - Analyse de code **CodeQL**, *secret scanning* avec *push protection*, alertes et correctifs **Dependabot** (avec délai de carence avant d’adopter une nouvelle version), revue des dépendances sur chaque PR.
+- **Dépendances corrigées par `overrides`** (`package.json`) : `katex` 0.18.10 (GHSA-238p-pmpm-9mq7, prototype pollution ; dépendance indirecte de Mermaid, donc d'Excalidraw), `lodash-es` et `nanoid`. Ce ne sont pas des dépendances directes : ne les retirez pas sans vérifier que `npm ls katex` ne montre plus aucune version vulnérable.
+- **ESLint** (sécurité : regex quadratiques, `eval`, `innerHTML`) et **couverture de tests avec seuils** dans la CI ; images Docker épinglées par digest (Notabene, Draw.io).
 - Images publiées avec **SBOM** et **attestation de provenance SLSA**, vérifiable avec :
   `gh attestation verify oci://ghcr.io/lucasmolyn1/notabene:<version> --owner LucasMolyn1`
 

@@ -32,7 +32,8 @@ services:
           memory: 512m
 
   drawio:
-    image: jgraph/drawio:32.6.1
+    # Tag + digest : le tag seul peut être déplacé. Dependabot (docker-compose) met les deux à jour.
+    image: jgraph/drawio:32.6.1@sha256:3d0a5a5ffb4f76abcecd9d17ae1373e3eefd0db07b657c545637dc9c6a7412e1
     restart: unless-stopped
     ports:
       - "${DRAWIO_BIND:-127.0.0.1}:${DRAWIO_PORT:-8081}:8080"
