@@ -4,6 +4,11 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## Non publié
+
+### Ajouté
+- **Bouton « Vérifier maintenant » (Paramètres, À propos)** : relance la vérification de version sans attendre les 12 h du cache, et indique l'heure de la dernière vérification. Au plus un appel à GitHub toutes les 30 secondes, réservé aux administrateurs.
+
 ## [3.6.0] - 2026-10-30
 
 Mise à jour depuis l'interface, sans donner à Notabene l'accès à Docker.

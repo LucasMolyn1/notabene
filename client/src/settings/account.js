@@ -201,6 +201,18 @@ export async function renderAbout(el) {
     toast(enabled ? 'Vérification des mises à jour activée' : 'Vérification des mises à jour désactivée');
     renderAbout(el);
   };
+  // « Vérifier maintenant » : relance la vérification sans attendre le cache de 12 h (pas de mot de passe : rien ne change).
+  const checkNow = async (button) => {
+    button.disabled = true;
+    button.textContent = 'Vérification…';
+    const fresh = await A.attempt(() => api.post('/admin/update-check/refresh'));
+    if (!fresh) { button.disabled = false; button.textContent = 'Vérifier maintenant'; return; }
+    session.update = fresh;
+    notifyNewsChange();
+    toast(fresh.error ? 'Vérification impossible pour le moment' : fresh.updateAvailable ? `La version ${fresh.latest.version} est disponible` : 'Notabene est à jour');
+    renderAbout(el);
+  };
+  const checkButton = () => h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: (e) => checkNow(e.currentTarget) }, 'Vérifier maintenant');
   // Mise à jour depuis l'interface : Notabene dépose une demande, le service de l'hôte décide et exécute (docs/MISE-A-JOUR.md).
   const applyUpdate = async () => {
     const target = update.latest.version;
@@ -273,6 +285,8 @@ export async function renderAbout(el) {
               h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'Guide de mise à jour ↗'), ' ',
               update.latest.url.startsWith('https://github.com/') && h('a', { href: update.latest.url, target: '_blank', rel: 'noopener' }, 'Notes sur GitHub ↗')))
           : h('p', null, pill('À jour', 'ok'), ' Vous utilisez la dernière version publiée.'),
+      h('div', { class: 'row wrap' }, checkButton(),
+        h('span', { class: 'hint' }, update.checkedAt ? `Dernière vérification : ${timeAgo(update.checkedAt)}` : 'Pas encore vérifié')),
       h('details', { class: 'hint' }, h('summary', null, 'Qu’est-ce qui est envoyé à GitHub ?'), explanation),
       !update.locked && h('div', null, h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => setChecking(false) }, 'Désactiver la vérification'))));
 

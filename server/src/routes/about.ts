@@ -19,6 +19,10 @@ export default async function aboutRoutes(app: FastifyInstance) {
 
   app.get('/admin/update-check', { preHandler: guard('admin'), config: { rateLimit: { max: 60, timeWindow: '1 hour' } }, schema: { tags: ['admin'], summary: 'Mise à jour disponible (si la vérification est activée)' } }, async () => ({ ...(await app.updates.status()), updater: readUpdater(app.config.UPDATER_DIR) }));
 
+  // « Vérifier maintenant » : même appel que la vérification périodique, sans attendre la fin du cache.
+  app.post('/admin/update-check/refresh', { preHandler: guard('admin'), config: { rateLimit: { max: 20, timeWindow: '1 hour' } }, schema: { hide: true } },
+    async () => ({ ...(await app.updates.status({ force: true })), updater: readUpdater(app.config.UPDATER_DIR) }));
+
   // Activer ou couper la vérification depuis l'interface (administrateur, mot de passe ressaisi).
   app.put('/admin/update-check/settings', {
     preHandler: guard('admin'),

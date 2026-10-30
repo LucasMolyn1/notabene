@@ -185,3 +185,16 @@ test('sans service sur l’hôte, la page explique comment l’installer au lieu
   await expect(page.getByText('installez le service de mise à jour sur l’hôte')).toBeVisible();
   await expect(page.getByRole('button', { name: /Mettre à jour vers/ })).toHaveCount(0);
 });
+
+test('« Vérifier maintenant » relance la vérification et annonce une nouvelle version', async ({ page }) => {
+  const status = (available: boolean) => ({ enabled: true, source: 'env', locked: false, current: '3.6.0', updateAvailable: available, checkedAt: Date.now(), error: null,
+    latest: { version: available ? '9.9.9' : '3.6.0', url: 'https://github.com/LucasMolyn1/notabene/releases/tag/v9.9.9', publishedAt: null, notes: null },
+    updater: { available: false, state: null, version: null, message: null, at: null } });
+  await page.route('**/api/v3/admin/update-check', (route) => route.fulfill({ json: status(false) }));
+  await page.route('**/api/v3/admin/update-check/refresh', (route) => route.fulfill({ json: status(true) }));
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto('/#/settings/about');
+  await expect(page.getByText('Vous utilisez la dernière version publiée.')).toBeVisible();
+  await page.getByRole('button', { name: 'Vérifier maintenant' }).click();
+  await expect(page.getByText('La version 9.9.9 est disponible').first()).toBeVisible();
+});
