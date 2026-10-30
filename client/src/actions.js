@@ -259,9 +259,9 @@ export function spaceForm(space = null) {
   const paintBtn = () => { iconBtn.replaceChildren(icon(spaceIcon, 20)); };
   iconBtn.addEventListener('click', () => iconPicker(iconBtn, (name) => { spaceIcon = name || 'folder'; paintBtn(); }, { allowRemove: false }));
   if (space?.icon) paintBtn();
-  const name = h('input', { class: 'input', placeholder: 'Ex. Produit, Équipe design…', maxlength: '80' });
+  const name = h('input', { class: 'input', 'aria-label': 'Nom de l’espace', placeholder: 'Ex. Produit, Équipe design…', maxlength: '80' });
   name.value = space?.name || '';
-  const desc = h('textarea', { class: 'input', rows: 3, placeholder: 'À quoi sert cet espace ?', maxlength: '1000' });
+  const desc = h('textarea', { class: 'input', 'aria-label': 'Description', rows: 3, placeholder: 'À quoi sert cet espace ?', maxlength: '1000' });
   desc.value = space?.description || '';
   const visibility = h('select', { class: 'input' },
     h('option', { value: 'private' }, 'Privé : utilisateurs connectés uniquement'),

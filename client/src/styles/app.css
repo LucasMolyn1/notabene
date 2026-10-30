@@ -10,9 +10,10 @@
   --active: rgba(40, 38, 30, 0.09);
   --text: #1f1f1d;
   --text-2: #5d5c58;
-  --text-3: #9a9994;
+  --text-3: #6b6a65; /* 5,4:1 sur fond blanc (WCAG AA) */
   --border: #ebebe8;
   --border-strong: #dcdcd7;
+  --control-border: #85847f; /* bordure des champs : 3,7:1 (WCAG 1.4.11) */
   --accent: #5b4cf5;
   --accent-hover: #4a3be6;
   --accent-soft: #efedff;
@@ -45,9 +46,10 @@
   --active: rgba(255, 255, 255, 0.09);
   --text: #ecebe8;
   --text-2: #b1b0ab;
-  --text-3: #75746f;
+  --text-3: #9a9994; /* 6,3:1 sur fond sombre */
   --border: #2b2b30;
   --border-strong: #38383e;
+  --control-border: #75747a;
   --accent: #8b80ff;
   --accent-hover: #9d94ff;
   --accent-soft: rgba(139, 128, 255, 0.14);
@@ -80,6 +82,12 @@ body {
 }
 button, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; background: none; border: 0; padding: 0; }
+/* Focus clavier visible partout ; les champs de saisie ont leur propre indicateur (bordure d'accent). */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.input:focus-visible, .pal-input:focus-visible, .bubble-input:focus-visible, .prose:focus-visible { outline: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip-link { position: absolute; left: 8px; top: -48px; z-index: 1000; padding: 8px 14px; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; }
+.skip-link:focus { top: 8px; }
 button:disabled { cursor: default; opacity: 0.45; }
 a { color: inherit; text-decoration: none; }
 [hidden] { display: none !important; }
@@ -134,7 +142,7 @@ kbd {
 }
 .input {
   width: 100%; padding: 8px 10px; border-radius: var(--radius);
-  border: 1px solid var(--border-strong); background: var(--bg); outline: none; resize: vertical;
+  border: 1px solid var(--control-border); background: var(--bg); outline: none; resize: vertical;
 }
 .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
@@ -850,3 +858,8 @@ select.input { height: 36px; }
 .comment-body { margin: 2px 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .comment.reply { margin-left: 14px; padding-left: 10px; border-left: 2px solid var(--border); }
 .comment.resolved .comment-body { opacity: .65; }
+
+/* Respecte la préférence « réduire les animations » du système. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

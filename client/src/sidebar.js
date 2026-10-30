@@ -88,6 +88,66 @@ function startRename(id) {
   input.select();
 }
 
+// Focus à rétablir après le prochain rendu (la barre latérale est reconstruite à chaque changement).
+let pendingFocus = null;
+
+function setExpanded(id, value) {
+  prefs.expanded[id] = value;
+  savePrefs();
+  pendingFocus = id;
+  renderSidebar();
+}
+
+// Clavier de l'arbre (modèle ARIA « tree ») : flèches, Début/Fin, Entrée, F2 renommer, menu contextuel,
+// Alt+Haut/Bas pour réordonner (équivalent clavier du glisser-déposer).
+function onTreeKey(e) {
+  const row = e.target;
+  if (!(row instanceof HTMLElement) || !row.matches('.tree-row[role=treeitem]')) return;
+  const page = store.page(row.dataset.id);
+  if (!page) return;
+  const rows = [...row.closest('[role=tree]').querySelectorAll('.tree-row[role=treeitem]')];
+  const i = rows.indexOf(row);
+  const focusRow = (r) => { if (!r) return; rows.forEach((x) => { x.tabIndex = -1; }); r.tabIndex = 0; r.focus(); };
+  const kids = store.children(page.spaceId, page.id);
+  const open = !!prefs.expanded[page.id];
+  const canWrite = session.can('write');
+
+  if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    if (!canWrite) return;
+    const siblings = store.children(page.spaceId, page.parentId);
+    const at = siblings.findIndex((s) => s.id === page.id);
+    const target = at + (e.key === 'ArrowDown' ? 1 : -1);
+    if (target >= 0 && target < siblings.length) {
+      pendingFocus = page.id;
+      A.attempt(() => store.movePage(page.id, page.parentId, target));
+    }
+    e.preventDefault();
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  switch (e.key) {
+    case 'ArrowDown': focusRow(rows[i + 1]); break;
+    case 'ArrowUp': focusRow(rows[i - 1]); break;
+    case 'Home': focusRow(rows[0]); break;
+    case 'End': focusRow(rows.at(-1)); break;
+    case 'ArrowRight':
+      if (kids.length && !open) setExpanded(page.id, true);
+      else if (kids.length) focusRow(rows[i + 1]);
+      break;
+    case 'ArrowLeft':
+      if (kids.length && open) setExpanded(page.id, false);
+      else focusRow(rows.find((r) => r.dataset.id === page.parentId));
+      break;
+    case 'Enter': case ' ': A.go(`/p/${page.id}`); break;
+    case 'F2': if (canWrite) startRename(page.id); break;
+    case 'ContextMenu': if (canWrite) pageMenu(row, page); break;
+    default:
+      if (e.key === 'F10' && e.shiftKey && canWrite) { pageMenu(row, page); break; }
+      return;
+  }
+  e.preventDefault();
+}
+
 function clearDrop() {
   document.querySelectorAll('.drop-before,.drop-after,.drop-inside').forEach((el) => el.classList.remove('drop-before', 'drop-after', 'drop-inside'));
 }
@@ -100,12 +160,20 @@ function treeNode(page, depth, activeId, canWrite) {
     style: { paddingLeft: `${6 + depth * 14}px` },
     draggable: canWrite ? 'true' : null,
     'data-id': page.id,
+    // Arbre ARIA : un seul élément de l'arbre est dans l'ordre de tabulation, les flèches font le reste (voir onTreeKey).
+    role: 'treeitem',
+    'aria-level': String(depth + 1),
+    'aria-label': page.title || 'Sans titre',
+    'aria-selected': page.id === activeId ? 'true' : 'false',
+    'aria-expanded': kids.length ? String(open) : null,
+    tabindex: page.id === activeId ? '0' : '-1',
     onClick: () => A.go(`/p/${page.id}`),
     onDblClick: (e) => { if (canWrite) { e.preventDefault(); startRename(page.id); } },
   },
   h('button', {
     class: `caret${kids.length ? '' : ' leaf'}${open ? ' open' : ''}`,
     'aria-label': open ? 'Replier' : 'Déplier',
+    tabindex: '-1',
     onClick: (e) => {
       e.stopPropagation();
       if (!kids.length) return;
@@ -117,8 +185,8 @@ function treeNode(page, depth, activeId, canWrite) {
   h('span', { class: 'tree-icon' }, pageIcon(page.icon, 15)),
   h('span', { class: 'tree-title' }, page.title || 'Sans titre'),
   canWrite && h('span', { class: 'tree-actions' },
-    h('button', { class: 'mini-btn', title: 'Options', onClick: (e) => { e.stopPropagation(); pageMenu(e.currentTarget, page); } }, icon('more', 15)),
-    h('button', { class: 'mini-btn', title: 'Ajouter une sous-page', onClick: (e) => { e.stopPropagation(); A.newPage(page.spaceId, page.id); } }, icon('plus', 15))));
+    h('button', { class: 'mini-btn', title: 'Options', tabindex: '-1', onClick: (e) => { e.stopPropagation(); pageMenu(e.currentTarget, page); } }, icon('more', 15)),
+    h('button', { class: 'mini-btn', title: 'Ajouter une sous-page', tabindex: '-1', onClick: (e) => { e.stopPropagation(); A.newPage(page.spaceId, page.id); } }, icon('plus', 15))));
 
   if (canWrite) {
     // Glisser-déposer : haut = avant, bas = après, milieu = à l'intérieur.
@@ -156,7 +224,7 @@ function treeNode(page, depth, activeId, canWrite) {
     });
   }
 
-  return h('li', null, row, open && kids.length ? h('ul', { class: 'tree' }, kids.map((k) => treeNode(k, depth + 1, activeId, canWrite))) : null);
+  return h('li', { role: 'none' }, row, open && kids.length ? h('ul', { class: 'tree', role: 'group' }, kids.map((k) => treeNode(k, depth + 1, activeId, canWrite))) : null);
 }
 
 function accountBox() {
@@ -175,6 +243,8 @@ function accountBox() {
 export function renderSidebar() {
   const el = document.getElementById('sidebar');
   const scrollTop = el.querySelector('.sb-scroll')?.scrollTop || 0;
+  // La barre est reconstruite à chaque changement (y compris ceux venus d'un autre onglet) : le focus clavier doit survivre.
+  const focusedRow = el.contains(document.activeElement) ? document.activeElement.closest?.('.tree-row[data-id]')?.dataset.id : null;
   const space = store.space(prefs.space) || store.spaces[0];
   const dark = currentTheme() === 'dark';
   const brand = h('div', { class: 'sb-brand' },
@@ -219,17 +289,18 @@ export function renderSidebar() {
     h('div', { class: 'sb-scroll' },
       favorites.length > 0 && h('section', { class: 'sb-section' },
         h('div', { class: 'sb-section-head' }, h('span', null, 'Favoris')),
-        h('ul', { class: 'tree' }, favorites.map((p) => h('li', null, h('div', {
+        h('ul', { class: 'tree' }, favorites.map((p) => h('li', null, h('a', {
           class: `tree-row${p.id === activeId ? ' active' : ''}`,
           style: { paddingLeft: '10px' },
-          onClick: () => A.go(`/p/${p.id}`),
+          href: `#/p/${p.id}`,
+          'aria-current': p.id === activeId ? 'page' : null,
         }, h('span', { class: 'tree-icon' }, pageIcon(p.icon, 15)), h('span', { class: 'tree-title' }, p.title || 'Sans titre')))))),
       h('section', { class: 'sb-section' },
         h('div', { class: 'sb-section-head' },
           h('span', null, 'Pages'),
           canWrite && h('button', { class: 'mini-btn', title: 'Nouvelle page', onClick: () => A.newPage(space.id) }, icon('plus', 15))),
         roots.length
-          ? h('ul', { class: 'tree' }, roots.map((p) => treeNode(p, 0, activeId, canWrite)))
+          ? h('ul', { class: 'tree', role: 'tree', 'aria-label': 'Pages', onKeydown: onTreeKey }, roots.map((p) => treeNode(p, 0, activeId, canWrite)))
           : canWrite
             ? h('button', { class: 'sb-empty', onClick: () => A.newPage(space.id) }, 'Aucune page. Créer la première →')
             : h('p', { class: 'sb-empty' }, 'Aucune page.'),
@@ -240,4 +311,13 @@ export function renderSidebar() {
       accountBox()));
 
   el.querySelector('.sb-scroll').scrollTop = scrollTop;
+  // L'arbre doit rester atteignable au clavier même si aucune page n'est ouverte : première ligne = point d'entrée.
+  const tree = el.querySelector('[role=tree]');
+  if (tree && !tree.querySelector('.tree-row[tabindex="0"]')) tree.querySelector('.tree-row[role=treeitem]')?.setAttribute('tabindex', '0');
+  const wanted = pendingFocus || focusedRow;
+  if (wanted) {
+    const target = tree?.querySelector(`.tree-row[data-id="${wanted}"]`);
+    pendingFocus = null;
+    if (target) { tree.querySelectorAll('.tree-row[tabindex="0"]').forEach((r) => { r.tabIndex = -1; }); target.tabIndex = 0; target.focus(); }
+  }
 }

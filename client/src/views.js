@@ -97,7 +97,7 @@ function mountPage(page) {
   const crumbsEl = h('nav', { class: 'crumbs', 'aria-label': 'Fil d’Ariane' });
   const presenceEl = h('div', { class: 'presence' });
   const saveEl = h('span', { class: 'save-state' });
-  const starBtn = session.user && h('button', { class: 'icon-btn star-btn', onClick: () => A.attempt(() => store.toggleFavorite(id)) }, icon('star'));
+  const starBtn = session.user && h('button', { class: 'icon-btn star-btn', 'aria-label': 'Ajouter aux favoris', 'aria-pressed': 'false', onClick: () => A.attempt(() => store.toggleFavorite(id)) }, icon('star'));
   const modeBtn = canWrite && h('button', { class: 'btn btn-ghost btn-sm mode-btn', onClick: toggleMode });
   const moreBtn = h('button', { class: 'icon-btn', title: 'Plus d’options', onClick: (e) => pageMenu(e.currentTarget) }, icon('more'));
   const histBtn = h('button', { class: 'icon-btn', title: 'Historique des versions', onClick: async () => { await flush(); A.openHistory(id); } }, icon('history'));
@@ -292,6 +292,8 @@ function mountPage(page) {
     if (starBtn) {
       starBtn.classList.toggle('on', !!p.favorite);
       starBtn.title = p.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris';
+      starBtn.setAttribute('aria-label', starBtn.title);
+      starBtn.setAttribute('aria-pressed', String(!!p.favorite));
     }
     iconBtn.replaceChildren(...(p.icon ? [pageIcon(p.icon, 40)] : []));
     iconBtn.hidden = !p.icon;

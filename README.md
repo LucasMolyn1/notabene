@@ -182,6 +182,14 @@ server/test/        Tests de sécurité (CSRF, portées, XSS, conflits…)
 
 Sécurité : voir [SECURITY.md](SECURITY.md). Données personnelles (RGPD) : voir [docs/RGPD.md](docs/RGPD.md).
 
+## Accessibilité
+
+L'interface vise le niveau **WCAG 2.1 AA** : contrastes vérifiés (texte secondaire et bordures de champs), focus clavier visible, lien « Aller au contenu », animations réduites si le système le demande, boîtes de dialogue nommées.
+
+Clavier dans l'arborescence des pages : **flèches** pour se déplacer, **droite/gauche** pour déplier ou replier, **Entrée** pour ouvrir, **F2** pour renommer, **Maj+F10** (ou la touche Menu) pour le menu de la page, **Alt+Haut/Bas** pour réordonner (équivalent du glisser-déposer). **⌘K / Ctrl K** ouvre la recherche.
+
+Un audit complet avec lecteur d'écran (VoiceOver, NVDA) reste à faire : n'hésitez pas à signaler ce qui bloque.
+
 ## Licence
 
 MIT. Inspiré de Docmost (AGPL-3.0), sans reprise de son code.

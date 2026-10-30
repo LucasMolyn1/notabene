@@ -20,10 +20,15 @@ let activePopover = null;
 
 export function closePopover() {
   if (!activePopover) return;
+  const { anchor, el } = activePopover;
+  const hadFocus = el.contains(document.activeElement);
+  anchor.setAttribute('aria-expanded', 'false');
   activePopover.el.remove();
   document.removeEventListener('mousedown', activePopover.outside, true);
   document.removeEventListener('keydown', activePopover.esc, true);
   activePopover = null;
+  // Le focus revient au déclencheur (sinon il retomberait au début de la page).
+  if (hadFocus && anchor.isConnected) anchor.focus();
 }
 
 export function openPopover(anchor, content, { align = 'left', className = '' } = {}) {
@@ -45,6 +50,7 @@ export function openPopover(anchor, content, { align = 'left', className = '' } 
   document.addEventListener('mousedown', outside, true);
   document.addEventListener('keydown', esc, true);
   activePopover = { el, outside, esc, anchor };
+  anchor.setAttribute('aria-expanded', 'true');
   return el;
 }
 
@@ -65,8 +71,29 @@ export function openMenu(anchor, items, opts) {
     it.checked != null ? h('span', { class: 'menu-check' }, it.checked ? icon('check') : null)
       : it.hint ? h('span', { class: 'menu-hint' }, it.hint) : null);
   }));
+  anchor.setAttribute('aria-haspopup', 'menu');
   openPopover(anchor, list, opts);
+  // Clavier : le focus entre dans le menu ; flèches, Début/Fin pour naviguer, Tab ferme, Échap ferme (voir openPopover).
+  const enabled = () => [...list.querySelectorAll('.menu-item:not(:disabled)')];
+  enabled()[0]?.focus();
+  list.addEventListener('keydown', (e) => {
+    const all = enabled();
+    const i = all.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') all[(i + 1) % all.length]?.focus();
+    else if (e.key === 'ArrowUp') all[(i - 1 + all.length) % all.length]?.focus();
+    else if (e.key === 'Home') all[0]?.focus();
+    else if (e.key === 'End') all.at(-1)?.focus();
+    else if (e.key === 'Tab') { closePopover(); return; }
+    else return;
+    e.preventDefault();
+  });
 }
+
+const ICON_LABELS = {
+  file: 'Page', folder: 'Dossier', home: 'Accueil', star: 'Étoile', layers: 'Couches', code: 'Code', settings: 'Réglages', shield: 'Bouclier',
+  key: 'Clé', lock: 'Cadenas', globe: 'Globe', eye: 'Œil', search: 'Loupe', link: 'Lien', pencil: 'Crayon', download: 'Téléchargement',
+  upload: 'Envoi', users: 'Personnes', sparkle: 'Étincelle', diamond: 'Diamant', hexagon: 'Hexagone', webhook: 'Webhook', pdf: 'PDF', wand: 'Baguette',
+};
 
 const PAGE_ICONS = [
   'file', 'folder', 'home', 'star', 'layers', 'code', 'settings', 'shield',
@@ -82,7 +109,7 @@ export function pageIcon(name, size = 16) {
 
 export function iconPicker(anchor, onPick, { allowRemove = true } = {}) {
   const grid = h('div', { class: 'emoji-grid' }, PAGE_ICONS.map((name) =>
-    h('button', { class: 'emoji-btn', type: 'button', onClick: () => { closePopover(); onPick(name); } }, icon(name, 20))));
+    h('button', { class: 'emoji-btn', type: 'button', 'aria-label': ICON_LABELS[name] || name, title: ICON_LABELS[name] || name, onClick: () => { closePopover(); onPick(name); } }, icon(name, 20))));
   const foot = h('div', { class: 'emoji-foot' },
     h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { closePopover(); onPick(PAGE_ICONS[Math.floor(Math.random() * PAGE_ICONS.length)]); } }, icon('wand', 14), ' Au hasard'),
     allowRemove && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { closePopover(); onPick(''); } }, 'Retirer'));
@@ -91,12 +118,14 @@ export function iconPicker(anchor, onPick, { allowRemove = true } = {}) {
 
 // ---- Modales --------------------------------------------------------------
 
+let modalSeq = 0;
 export function openModal({ title, body, actions = [], size = '' }) {
-  const dlg = h('dialog', { class: `modal ${size}` });
+  const titleId = `modal-title-${++modalSeq}`;
+  const dlg = h('dialog', { class: `modal ${size}`, 'aria-labelledby': titleId });
   const close = () => { if (dlg.open) dlg.close(); };
   dlg.append(h('div', { class: 'modal-inner' },
     h('div', { class: 'modal-head' },
-      h('h2', null, title),
+      h('h2', { id: titleId }, title),
       h('button', { class: 'icon-btn', 'aria-label': 'Fermer', onClick: close }, icon('x'))),
     h('div', { class: 'modal-body' }, body),
     actions.length > 0 && h('div', { class: 'modal-foot' }, actions.map((a) => h('button', {

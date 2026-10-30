@@ -74,13 +74,18 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
   let requestSeq = 0;
   let askController = null;
 
-  const input = h('input', { class: 'pal-input', autocomplete: 'off', spellcheck: 'false' });
-  const list = h('div', { class: 'pal-list', role: 'listbox' });
-  const tabs = aiAvailable && h('div', { class: 'pal-tabs' },
+  const opener = document.activeElement; // le focus y revient à la fermeture
+  const input = h('input', {
+    class: 'pal-input', autocomplete: 'off', spellcheck: 'false', role: 'combobox', 'aria-label': 'Rechercher',
+    'aria-autocomplete': 'list', 'aria-expanded': 'true', 'aria-controls': 'pal-list',
+  });
+  const list = h('div', { class: 'pal-list', role: 'listbox', id: 'pal-list', 'aria-label': 'Résultats' });
+  // null (et non false) sans IA : `false?.querySelectorAll` lèverait une erreur et la palette ne s'ouvrirait pas correctement.
+  const tabs = aiAvailable ? h('div', { class: 'pal-tabs' },
     h('button', { class: 'pal-tab', 'data-tab': 'search', onClick: () => switchTab('search') }, icon('search', 14), 'Rechercher'),
-    h('button', { class: 'pal-tab', 'data-tab': 'ai', onClick: () => switchTab('ai') }, icon('sparkle', 14), 'Demander à l\'IA'));
+    h('button', { class: 'pal-tab', 'data-tab': 'ai', onClick: () => switchTab('ai') }, icon('sparkle', 14), 'Demander à l\'IA')) : null;
   const foot = h('div', { class: 'pal-foot' });
-  const box = h('div', { class: 'palette' },
+  const box = h('div', { class: 'palette', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Recherche' },
     h('div', { class: 'pal-head' }, icon('search', 18), input, h('kbd', null, 'Échap')),
     tabs,
     list,
@@ -141,6 +146,10 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
       list.append(h('button', {
         class: `pal-item${i === active ? ' active' : ''}`,
         type: 'button',
+        role: 'option',
+        id: `pal-opt-${i}`,
+        'aria-selected': String(i === active),
+        tabindex: '-1',
         onMouseMove: () => { if (active !== i) { active = i; render(); } },
         onClick: () => choose(i),
       },
@@ -151,6 +160,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
         r.snippet ? h('span', { class: 'pal-snippet', html: snippetHTML(r.snippet) }) : null)));
     });
     list.querySelector('.pal-item.active')?.scrollIntoView({ block: 'nearest' });
+    input.setAttribute('aria-activedescendant', `pal-opt-${active}`);
   }
 
   function choose(i) {
@@ -199,6 +209,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
     askController?.abort();
     overlay.remove();
     current = null;
+    if (opener?.isConnected) opener.focus();
   }
 
   input.addEventListener('input', () => { if (activeTab === 'search') run(); });
