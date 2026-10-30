@@ -45,6 +45,7 @@ export function showSettings(sectionId) {
     if (s.group !== group) { group = s.group; nav.append(h('div', { class: 'set-nav-group' }, group)); }
     nav.append(h('a', { class: `set-nav-item${s.id === section.id ? ' active' : ''}`, href: `/settings/${s.id}` }, h('span', null, icon(s.ico, 16)), s.label, s.id === 'about' && newsPending(session.version) ? h('span', { class: 'news-dot', role: 'img', 'aria-label': 'Nouveautés' }) : null));
   }
+  requestAnimationFrame(() => nav.querySelector('.active')?.scrollIntoView({ inline: 'center', block: 'nearest' })); // téléphone : la section courante reste visible dans la bande
   const content = h('div', { class: 'set-content' });
   document.getElementById('main').replaceChildren(
     topbar(h('nav', { class: 'crumbs' },

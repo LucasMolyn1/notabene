@@ -1,0 +1,67 @@
+/* ==========================================================================
+   Téléphone et écrans tactiles
+   Principes : cibles tactiles d'au moins 40 px, champs à 16 px (sinon iOS zoome à la saisie),
+   rien qui n'apparaisse qu'au survol, zones sûres (encoche, barre de geste), clavier virtuel pris en compte.
+   ========================================================================== */
+
+@media (pointer: coarse) {
+  .icon-btn { width: 40px; height: 40px; }
+  .mini-btn { width: 36px; height: 36px; }
+  .btn, .btn-sm { min-height: 40px; }
+  .sb-btn, .tree-row { height: 42px; }
+  .tree-rename { height: 34px; }
+  .caret { width: 36px; height: 36px; }
+  .menu-item, .slash-item, .set-nav-item, .pal-item, .modal-foot .btn { min-height: 44px; }
+  .input, select.input, input.input, textarea.input, .pal-input, .bubble-input, .tree-rename { font-size: 16px; }
+  select.input { height: 44px; }
+  /* Rien ne doit dépendre du survol. */
+  .tree-actions { display: flex; }
+  .sb-section-head .mini-btn { opacity: 1; }
+  /* Raccourcis clavier : inutiles ici. */
+  .sb-btn kbd, .pal-hint, .kbd-hint { display: none; }
+  /* Menu et fenêtres : ne dépassent pas la zone visible quand le clavier est ouvert. */
+  .modal, .modal-inner { max-height: calc(100dvh - 32px); }
+  .slash-menu { max-height: 40dvh; }
+}
+
+/* Zones sûres (encoche, bord arrondi, barre de geste d'iOS). */
+.topbar { padding-top: env(safe-area-inset-top); height: calc(var(--topbar-h) + env(safe-area-inset-top)); }
+.sidebar { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+.scroller, .page-wrap { scroll-padding-bottom: env(safe-area-inset-bottom); }
+
+/* Barre de mise en forme au-dessus du clavier (voir editor/mobile-toolbar.js). */
+.mtb {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; display: flex; gap: 2px; overflow-x: auto;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: var(--elevated); border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 14px rgba(0, 0, 0, .08); overscroll-behavior-x: contain; scrollbar-width: none;
+}
+.mtb::-webkit-scrollbar { display: none; }
+.mtb[hidden] { display: none; }
+.mtb-btn { flex: none; min-width: 44px; height: 44px; padding: 0 10px; border-radius: 8px; color: var(--text-2); font: 600 16px/1 var(--font, system-ui, sans-serif); }
+.mtb-btn.b { font-weight: 800; }
+.mtb-btn.i { font-style: italic; }
+.mtb-btn.mono { font: 600 14px/1 var(--mono, ui-monospace, monospace); }
+.mtb-btn.plus { color: #fff; background: var(--accent); font-size: 22px; }
+[data-theme='dark'] .mtb-btn.plus { color: #15131f; }
+.mtb-btn.active { color: var(--accent-text); background: var(--accent-soft); }
+/* Le contenu reste atteignable derrière la barre. */
+.mtb-on .page-wrap { padding-bottom: calc(50vh + 56px); }
+/* La bulle de mise en forme fait double emploi (et gêne le menu de sélection du système). */
+@media (pointer: coarse) { .bubble:not(.table-menu) { display: none !important; } }
+
+@media (max-width: 640px) {
+  /* Barre du haut : l'essentiel (menu, fil d'Ariane, commentaires, lecture/édition, « … », notifications). */
+  .tb-secondary { display: none; }
+  .topbar-right { gap: 0; }
+  .crumbs { min-width: 0; flex: 1; overflow: hidden; }
+  .crumb.current { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .page-icon { font-size: 36px; }
+  .add-icon { padding: 6px 10px; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .modal, .modal.medium, .modal.wide { width: calc(100vw - 16px); }
+  .modal-foot { flex-wrap: wrap; }
+  .prose table { font-size: 13.5px; }
+  .set-nav { scroll-snap-type: x proximity; margin: 0 -16px; padding: 0 16px 8px; scrollbar-width: none; }
+  .set-nav::-webkit-scrollbar { display: none; }
+  .set-nav-item { scroll-snap-align: center; }
+}

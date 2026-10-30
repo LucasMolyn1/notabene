@@ -13,6 +13,7 @@ import { CodeBlockEditor } from './editor/code-block.js';
 import { ResizableImage } from './editor/image.js';
 import { createBubbleMenu, createTableMenu } from './editor/menus.js';
 import { Callout, PageLink } from './editor/nodes.js';
+import { createMobileToolbar } from './editor/mobile-toolbar.js';
 import { createSlashMenu, insertImageFile } from './editor/slash.js';
 
 function baseExtensions({ collab = false } = {}) {
@@ -97,6 +98,7 @@ export function createEditor({ element, content, editable = true, onChange, cont
   slash = createSlashMenu(editor, context);
   const bubble = createBubbleMenu(editor);
   const tableMenu = createTableMenu(editor);
+  const mobileToolbar = createMobileToolbar(editor);
 
   // Liens : navigation interne au clic, liens externes avec ⌘/Ctrl (ou en mode lecture).
   const onClick = (e) => {
@@ -117,6 +119,7 @@ export function createEditor({ element, content, editable = true, onChange, cont
     slash.destroy();
     bubble.destroy();
     tableMenu.destroy();
+    mobileToolbar.destroy();
     element.removeEventListener('click', onClick);
   });
   return editor;
