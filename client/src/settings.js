@@ -441,6 +441,9 @@ async function renderMail(el) {
     h('p', { class: 'hint' }, 'Sans SMTP, tout continue de fonctionner : un administrateur réinitialise les mots de passe depuis l’onglet Utilisateurs.')));
 }
 
+// TRUST_PROXY : false, true (tous les sauts), un nombre de sauts ou une liste de proxys.
+const proxyLabel = (v) => (v === false ? 'Non' : v === true ? 'Oui, tous les sauts (déconseillé : adresse falsifiable)' : typeof v === 'number' ? `Oui, ${v} saut${v > 1 ? 's' : ''} de confiance` : `Oui, proxys : ${v}`);
+
 async function renderUsers(el) {
   el.replaceChildren(loadingEl());
   const users = await A.attempt(() => api.get('/admin/users'));
@@ -571,7 +574,7 @@ async function renderInstance(el) {
       ['Version', h('code', null, info.commit ? `${info.version} (${info.commit})` : info.version)],
       ['URL publique', copyable(info.publicUrl)],
       ['Environnement', info.environment === 'production' ? pill('production', 'ok') : pill(info.environment, 'warn')],
-      ['Reverse proxy', info.integrations.trustProxy ? 'Oui (TRUST_PROXY)' : 'Non'],
+      ['Reverse proxy', proxyLabel(info.integrations.trustProxy)],
       ['Recherche IA', status(session.config.ai, 'Configurée', 'Non configurée')],
       ['Draw.io', status(!!info.integrations.drawioUrl, 'Configuré', 'Non configuré')],
     ])),

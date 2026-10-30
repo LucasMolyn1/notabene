@@ -30,7 +30,7 @@ services:
     security_opt: ["no-new-privileges:true"]
 ```
 
-`.env` (permissions `600`) : `PUBLIC_URL=https://…`, `NODE_ENV=production`, `TRUST_PROXY=true`, `ENCRYPTION_KEY` (`openssl rand -base64 32`), `AUTH_LOCAL=true`, `LOCAL_REQUIRE_MFA=true`. Toutes les variables : `.env.example`.
+`.env` (permissions `600`) : `PUBLIC_URL=https://…`, `NODE_ENV=production`, `TRUST_PROXY=<nombre de proxys devant l'application>`, `ENCRYPTION_KEY` (`openssl rand -base64 32`), `AUTH_LOCAL=true`, `LOCAL_REQUIRE_MFA=true`. Toutes les variables : `.env.example`.
 
 **Conservez `ENCRYPTION_KEY` à part** (gestionnaire de mots de passe) : elle chiffre les secrets en base ; sans elle, une sauvegarde restaurée a des secrets illisibles.
 
@@ -48,7 +48,7 @@ Dans un conteneur LXC non privilégié, le chown se fait dans le conteneur LXC (
 
 - **TLS obligatoire** : `PUBLIC_URL` en `https://` (cookies `Secure`, préfixe `__Host-`, HSTS). Le nom doit être exactement celui que voient les navigateurs.
 - **WebSocket** (co-édition) : le proxy doit laisser passer `Upgrade`. HAProxy : `timeout tunnel` d'au moins une heure pour la ressource concernée ; le serveur envoie un ping toutes les 30 s. Si les curseurs ne bougent pas, c'est ici.
-- **Adresse IP des clients** : `TRUST_PROXY=true` fait confiance à tous les sauts de `X-Forwarded-For`. Assurez-vous que le proxy frontal **écrase** cet en-tête au lieu de le prolonger, sinon un client peut falsifier l'adresse enregistrée dans le journal et utilisée pour la limitation de débit (le verrouillage par compte reste actif).
+- **Adresse IP des clients (`TRUST_PROXY`)** : indiquez le **nombre de proxys** entre Internet et l'application. Une seule étape (Traefik, Nginx, Caddy) : `TRUST_PROXY=1`. Cloudflare puis HAProxy : `TRUST_PROXY=2` (chaque proxy doit ajouter l'adresse de son interlocuteur à `X-Forwarded-For`, par exemple `option forwardfor` sur HAProxy). Vous pouvez aussi lister vos proxys : `TRUST_PROXY=10.0.0.5,192.168.1.0/24`. L'adresse du client est lue **en partant de la droite** : ce qu'un client ajoute lui-même à gauche est ignoré. `TRUST_PROXY=true` fait confiance à tous les sauts et laisse un client falsifier son adresse (journal d'audit, limitation de débit) : déconseillé. Pour vérifier, Paramètres, Instance affiche la valeur retenue ; une connexion de test apparaît dans le journal d'audit avec votre vraie adresse.
 - **Santé** : `GET /healthz` renvoie `{"ok":true}` (HTTP 200) quand la base répond, 5xx sinon. N'utilisez pas `OPTIONS` pour la sonde.
 
 ## Premier démarrage

@@ -55,4 +55,4 @@ Notabene appelle l’`end_session_endpoint` d’Authentik avec `id_token_hint` e
 
 - **`auth_error=callback`** : vérifiez l’issuer (slash final), le secret et que le serveur Notabene peut joindre Authentik (DNS / réseau Docker). Les détails sont dans les logs du conteneur.
 - **`auth_error=forbidden`** : l’utilisateur n’est dans aucun groupe autorisé.
-- **Boucle de connexion derrière un proxy** : `TRUST_PROXY=true` et `PUBLIC_URL` en `https://` doivent correspondre à l’URL vue par le navigateur.
+- **Boucle de connexion derrière un proxy** : `TRUST_PROXY` (nombre de proxys, voir [DEPLOIEMENT.md](DEPLOIEMENT.md)) et `PUBLIC_URL` en `https://` doivent correspondre à l’URL vue par le navigateur.
