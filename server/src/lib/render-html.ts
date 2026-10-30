@@ -52,3 +52,24 @@ export function renderHtml(doc: DocNode, titleOf: TitleOf): string {
 
   return children(doc);
 }
+
+// Page d'application (index.html) enrichie pour les moteurs de recherche : titre, description, adresse canonique, Open Graph, contenu.
+// Le contenu est remplacé dès que l'application affiche la page. Fonction pure : tout ce qui vient de la base passe par escapeHtml.
+export function injectSeo(indexHtml: string, page: { title: string; description: string; url: string; modifiedAt: number; body: string }): string {
+  const { title, description, url } = page;
+  const head = [
+    `<link rel="canonical" href="${escapeHtml(url)}">`,
+    '<meta name="robots" content="index, follow">',
+    '<meta property="og:type" content="article">',
+    `<meta property="og:title" content="${escapeHtml(title)}">`,
+    `<meta property="og:url" content="${escapeHtml(url)}">`,
+    '<meta property="og:site_name" content="Notabene">',
+    ...(description ? [`<meta property="og:description" content="${escapeHtml(description)}">`] : []),
+    `<meta property="article:modified_time" content="${new Date(page.modifiedAt).toISOString()}">`,
+  ].join('\n  ');
+  return indexHtml
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${escapeHtml(title)} · Notabene</title>`)
+    .replace(/<meta name="description"[^>]*>/, () => (description ? `<meta name="description" content="${escapeHtml(description)}">` : ''))
+    .replace('</head>', () => `  ${head}\n</head>`)
+    .replace(/(<main id="main"[^>]*>)(<\/main>)/, (_m, open: string, close: string) => `${open}<article class="prose seo"><h1>${escapeHtml(title)}</h1>${page.body}</article>${close}`);
+}

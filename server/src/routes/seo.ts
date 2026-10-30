@@ -4,7 +4,7 @@
 import type { FastifyInstance } from 'fastify';
 import { canReadPage, filterReadable } from '../lib/page-acl.js';
 import { getPageRow } from '../lib/pages.js';
-import { escapeHtml, renderHtml } from '../lib/render-html.js';
+import { escapeHtml, injectSeo, renderHtml } from '../lib/render-html.js';
 import { idFromSegment, segmentOf } from '../lib/slug.js';
 import type { DocNode } from '../lib/content.js';
 
@@ -47,25 +47,13 @@ export default async function seoRoutes(app: FastifyInstance, { indexHtml }: { i
 
     let body = '';
     try { body = renderHtml(JSON.parse(row.content) as DocNode, titleOf); } catch { /* contenu illisible : le titre seul est rendu */ }
-    const description = row.text.replace(/\s+/g, ' ').trim().slice(0, 160);
-    const title = row.title || 'Sans titre';
-    const url = `${base}/p/${canonical}`;
-    const head = [
-      `<link rel="canonical" href="${escapeHtml(url)}">`,
-      '<meta name="robots" content="index, follow">',
-      '<meta property="og:type" content="article">',
-      `<meta property="og:title" content="${escapeHtml(title)}">`,
-      `<meta property="og:url" content="${escapeHtml(url)}">`,
-      '<meta property="og:site_name" content="Notabene">',
-      ...(description ? [`<meta property="og:description" content="${escapeHtml(description)}">`] : []),
-      `<meta property="article:modified_time" content="${new Date(row.updated_at).toISOString()}">`,
-    ].join('\n  ');
-    const html = indexHtml
-      .replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(title)} · Notabene</title>`)
-      .replace(/<meta name="description"[^>]*>/, description ? `<meta name="description" content="${escapeHtml(description)}">` : '')
-      .replace('</head>', () => `  ${head}\n</head>`)
-      // Remplacé dès que l'application affiche la page.
-      .replace(/(<main id="main"[^>]*>)(<\/main>)/, (_m, open_: string, close: string) => `${open_}<article class="prose seo"><h1>${escapeHtml(title)}</h1>${body}</article>${close}`);
+    const html = injectSeo(indexHtml, {
+      title: row.title || 'Sans titre',
+      description: row.text.replace(/\s+/g, ' ').trim().slice(0, 160),
+      url: `${base}/p/${canonical}`,
+      modifiedAt: row.updated_at,
+      body,
+    });
     return reply.header('cache-control', 'no-cache').type('text/html; charset=utf-8').send(html);
   });
 }

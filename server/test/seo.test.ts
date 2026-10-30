@@ -9,7 +9,7 @@ import { loadConfig } from '../src/config.js';
 import { type DB, openDb } from '../src/db.js';
 import { newId } from '../src/lib/http.js';
 import { createPage } from '../src/lib/pages.js';
-import { escapeHtml, renderHtml } from '../src/lib/render-html.js';
+import { escapeHtml, injectSeo, renderHtml } from '../src/lib/render-html.js';
 import { idFromSegment, segmentOf, slugOf } from '../src/lib/slug.js';
 
 const INDEX = `<!doctype html>
@@ -74,6 +74,15 @@ describe('rendu HTML des pages publiques', () => {
     expect(html).toContain('<code>if (a &lt; b) {}</code>');
     expect(html).not.toContain('ignoré');
     expect(escapeHtml(`<a href='x'>&`)).toBe('&lt;a href=&#39;x&#39;&gt;&amp;');
+  });
+});
+
+describe('injection dans la page d’application', () => {
+  it('un titre qui ressemble à un motif de remplacement ($&, $1) est recopié tel quel', () => {
+    const out = injectSeo(INDEX, { title: 'Prix $& $1 $$ <b>', description: '', url: 'https://wiki.example.com/p/x', modifiedAt: 0, body: '' });
+    expect(out).toContain('<title>Prix $&amp; $1 $$ &lt;b&gt; · Notabene</title>');
+    expect(out).toContain('<h1>Prix $&amp; $1 $$ &lt;b&gt;</h1>');
+    expect(out).not.toContain('<meta name="description"'); // sans description, l'ancienne (générique) est retirée
   });
 });
 
