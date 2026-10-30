@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import zlib from 'node:zlib';
 import { ADMIN } from './accounts';
 import { loginUi } from './helpers';
 
@@ -197,4 +198,38 @@ test('« Vérifier maintenant » relance la vérification et annonce une nouvell
   await expect(page.getByText('Vous utilisez la dernière version publiée.')).toBeVisible();
   await page.getByRole('button', { name: 'Vérifier maintenant' }).click();
   await expect(page.getByText('La version 9.9.9 est disponible').first()).toBeVisible();
+});
+
+// PNG uni de 96 x 96 pixels, fabriqué sur place (aucun fichier de test à ranger).
+function solidPng(r: number, g: number, b: number, side = 96) {
+  const row = Buffer.concat([Buffer.from([0]), Buffer.concat(Array.from({ length: side }, () => Buffer.from([r, g, b])))]);
+  const chunk = (type: string, data: Buffer) => {
+    const head = Buffer.alloc(4); head.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(Buffer.concat([Buffer.from(type), data])));
+    return Buffer.concat([head, Buffer.from(type), data, crc]);
+  };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(side, 0); ihdr.writeUInt32BE(side, 4); ihdr[8] = 8; ihdr[9] = 2;
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.concat(Array.from({ length: side }, () => row)))), chunk('IEND', Buffer.alloc(0))]);
+}
+
+test('une photo de profil se choisit, se recadre, s’affiche partout et se retire', async ({ page }) => {
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto('/#/settings/profile');
+  await expect(page.locator('.profile .avatar img')).toHaveCount(0);
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Ajouter une photo' }).click();
+  (await chooser).setFiles({ name: 'moi.png', mimeType: 'image/png', buffer: solidPng(200, 60, 60) });
+  await expect(page.getByRole('dialog', { name: 'Ma photo de profil' })).toBeVisible();
+  await page.getByRole('slider', { name: 'Zoom' }).fill('2');
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(page.getByText('Photo de profil enregistrée')).toBeVisible();
+  const img = page.locator('.profile .avatar img');
+  await expect(img).toHaveCount(1);
+  await expect.poll(() => img.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth)).toBe(256);
+  await expect(page.locator('.account .avatar img')).toHaveCount(1); // barre latérale, après rechargement
+  await page.reload();
+  await expect(page.locator('.account .avatar img')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Retirer la photo' }).click();
+  await expect(page.locator('.profile .avatar img')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Ajouter une photo' })).toBeVisible();
 });

@@ -235,6 +235,15 @@ const MIGRATIONS: string[] = [
   -- Dernière preuve d'identité (mot de passe) donnée dans cette session : ouvre une fenêtre de réauthentification.
   ALTER TABLE sessions ADD COLUMN reauth_at INTEGER;
   `,
+  // v10 : photo de profil (une image par personne, supprimée avec le compte).
+  `
+  CREATE TABLE user_avatars (
+    user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    mime       TEXT NOT NULL CHECK (mime IN ('image/png', 'image/jpeg', 'image/webp')),
+    data       BLOB NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {

@@ -1,10 +1,10 @@
 // Paramètres du compte : profil, apparence, jetons, API et à propos.
-import { h, initials, timeAgo, download } from '../util.js';
+import { h, timeAgo, download } from '../util.js';
 import { icon } from '../icons.js';
 import { api } from '../api.js';
 import { session } from '../session.js';
 import { prefs, savePrefs, setTheme } from '../prefs.js';
-import { colorFor } from '../presence.js';
+import { avatarEl, chooseAvatar, removeAvatar } from '../avatar.js';
 import { toast, confirmModal } from '../ui.js';
 import { askReauth } from '../provider-settings.js';
 import { securityCard } from '../local-auth.js';
@@ -20,15 +20,20 @@ export async function renderProfile(el) {
   const u = session.user;
   const perms = [['read', 'Lire les pages'], ['write', 'Créer et modifier des pages'], ['ai', 'Utiliser la recherche IA'], ['admin', 'Administrer l’instance']];
   const sessionsBox = h('div', null, loadingEl());
+  const photo = avatarEl(u, { cls: 'xl static' });
+  const repaint = () => renderProfile(el);
   const security = session.config.auth.local ? await securityCard(card) : null;
   const notifPrefs = await preferencesCard(card);
   el.replaceChildren(...[
     card(null, null, h('div', { class: 'profile' },
-      h('span', { class: 'avatar xl static', style: { '--c': colorFor(u.id) } }, initials(u.name)),
+      photo,
       h('div', null,
         h('h2', null, u.name),
         h('p', { class: 'muted' }, u.email || 'Adresse e-mail non communiquée par le fournisseur'),
-        h('div', { class: 'row' }, pill(ROLE_LABELS[u.role], 'accent'), pill({ local: 'Compte local', ldap: 'Annuaire LDAP / AD', saml: 'SSO SAML', oidc: 'Connecté via Authentik (OIDC)', dev: 'Connexion de développement' }[session.provider] || 'Connecté'))))),
+        h('div', { class: 'row' }, pill(ROLE_LABELS[u.role], 'accent'), pill({ local: 'Compte local', ldap: 'Annuaire LDAP / AD', saml: 'SSO SAML', oidc: 'Connecté via Authentik (OIDC)', dev: 'Connexion de développement' }[session.provider] || 'Connecté')),
+        h('div', { class: 'row profile-photo-actions' },
+          h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => chooseAvatar(repaint) }, session.avatars?.[u.id] ? 'Changer la photo' : 'Ajouter une photo'),
+          session.avatars?.[u.id] && h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => removeAvatar(repaint) }, 'Retirer la photo'))))),
     card('Permissions', 'Votre rôle est attribué par vos groupes (fournisseur d’identité, annuaire) ou par un administrateur pour les comptes locaux.',
       h('ul', { class: 'perm-list' }, perms.map(([key, label]) => h('li', { class: session.can(key) ? 'ok' : 'off' }, icon(session.can(key) ? 'check' : 'x', 14), ' ', label)))),
     security,

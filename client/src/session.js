@@ -16,6 +16,7 @@ export const session = {
     this.mfaSetupRequired = !!me.mfaSetupRequired;
     this.provider = me.provider;
     this.version = me.version;
+    this.avatars = me.user ? await api.get('/users/avatars').catch(() => ({})) : {}; // qui a une photo (identifiant → date)
     this.reauthUntil = me.reauthUntil || 0;
     initNews(me.version);
     this.permissions = me.permissions;
@@ -26,6 +27,7 @@ export const session = {
 
   // Mise à jour disponible (administrateurs, si UPDATE_CHECK=true) : consultée une fois par chargement de la page, sans bloquer le démarrage.
   update: undefined,
+  avatars: {},
   async refreshUpdate() {
     this.update = null;
     try {

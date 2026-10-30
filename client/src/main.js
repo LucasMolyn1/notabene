@@ -116,6 +116,7 @@ async function boot() {
   });
 
   window.addEventListener('hashchange', route);
+  window.addEventListener('avatars-changed', scheduleSidebar);
   document.addEventListener('keydown', onKey);
   // Le routeur utilise le fragment (#/…) : le lien d'évitement déplace le focus au lieu de changer l'adresse.
   document.getElementById('skip-link').addEventListener('click', (e) => { e.preventDefault(); document.getElementById('main').focus(); });
