@@ -10,6 +10,7 @@ import { toast, openModal, confirmModal, pageIcon } from './ui.js';
 import { iconPicker } from './emoji-picker.js';
 import { openPalette } from './palette.js';
 import { jsonToHTML } from './editor.js';
+import { openTemplatePicker, saveAsTemplate } from './templates.js';
 
 // Exécute une action réseau et affiche l'erreur éventuelle.
 export async function attempt(fn) {
@@ -42,6 +43,18 @@ export async function newPage(spaceId = prefs.space, parentId = null) {
   go(`/p/${id}`);
   return id;
 }
+
+export function newPageFromTemplate(spaceId = prefs.space, parentId = null) {
+  if (!session.can('write')) return;
+  openTemplatePicker(async (tpl) => {
+    const id = await attempt(() => store.createPage({ spaceId, parentId, icon: tpl.icon, content: tpl.content }));
+    if (!id) return;
+    if (parentId) { prefs.expanded[parentId] = true; savePrefs(); }
+    go(`/p/${id}`);
+  }, { spaceId });
+}
+
+export { saveAsTemplate };
 
 export function toggleSidebar() {
   if (window.innerWidth < 860) {

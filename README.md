@@ -16,7 +16,7 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | **Collaboration** | Mise à jour en temps réel (SSE), présence des lecteurs, détection des modifications concurrentes, historique des versions |
 | **Commentaires et notifications** | Commentaires par page (fils, réponses, résolution), suivi de pages, cloche en temps réel, e-mails facultatifs sans contenu de page |
 | **Permissions par page** | Un administrateur réserve une page et ses sous-pages à des personnes, en lecture ou en écriture ; appliqué partout (liste, recherche, export, IA, flux, co-édition) |
-| **Organisation** | Glisser-déposer, favoris, libellés, corbeille, export Markdown / HTML, import Markdown et HTML (Wiki.js), intégration iframe pour un portfolio |
+| **Organisation** | Glisser-déposer, favoris, libellés, modèles de pages, corbeille, export Markdown / HTML, import Markdown et HTML (Wiki.js), intégration iframe pour un portfolio |
 | **Adresses et référencement** | Adresses lisibles `/p/titre-de-la-page-<id>` ; pour les espaces publics, contenu rendu en HTML, `sitemap.xml` et `robots.txt` (désactivable : `SEO_INDEX=false`). Voir [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) |
 | **Profil** | Photo de profil (recadrage dans le navigateur, validée côté serveur), double authentification TOTP facultative, export de ses données |
 | **Téléphone et application** | Interface adaptée au tactile (barre de mise en forme au-dessus du clavier), installable comme une application (Chrome, Edge, Safari). Voir [docs/ACCESSIBILITE.md](docs/ACCESSIBILITE.md) |

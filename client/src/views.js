@@ -364,6 +364,8 @@ function mountPage(page) {
       { label: 'Exporter en PDF', icon: 'pdf', onClick: async () => { await flush(); A.exportPDF(id); } },
       canWrite && { label: 'Dupliquer', icon: 'copy', onClick: async () => { await flush(); A.duplicate(id); } },
       canWrite && { label: 'Ajouter une sous-page', icon: 'plus', onClick: () => A.newPage(p.spaceId, id) },
+      canWrite && { label: 'Ajouter une sous-page depuis un modèle', icon: 'layers', onClick: () => A.newPageFromTemplate(p.spaceId, id) },
+      canWrite && { label: 'Enregistrer comme modèle', icon: 'copy', onClick: async () => { await flush(); A.saveAsTemplate(id); } },
       canWrite && { sep: true },
       canWrite && { label: 'Mettre à la corbeille', icon: 'trash', danger: true, onClick: () => A.trash(id) },
     ], { align: 'right' });
@@ -438,7 +440,7 @@ export function showSpace(spaceId) {
     const roots = store.children(spaceId, null);
     main().replaceChildren(
       topbar(h('nav', { class: 'crumbs' }, h('span', { class: 'crumb current' }, h('span', { class: 'crumb-ico' }, pageIcon(s.icon || 'folder', 14)), s.name)),
-        app.embed || !canWrite ? [] : [h('button', { class: 'btn btn-primary btn-sm', onClick: () => A.newPage(spaceId) }, icon('plus', 15), 'Nouvelle page')]),
+        app.embed || !canWrite ? [] : [h('button', { class: 'btn btn-ghost btn-sm', onClick: () => A.newPageFromTemplate(spaceId) }, icon('layers', 15), 'Depuis un modèle'), h('button', { class: 'btn btn-primary btn-sm', onClick: () => A.newPage(spaceId) }, icon('plus', 15), 'Nouvelle page')]),
       scroller);
     scroller.replaceChildren(h('div', { class: 'space-home' },
       h('div', { class: 'space-hero' },

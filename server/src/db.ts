@@ -256,6 +256,21 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX page_labels_name ON page_labels(name);
   `,
+  // v12 : modèles de pages. Table à part, jamais dans `pages` : un modèle n'apparaît donc ni dans l'arborescence, ni dans la
+  // recherche, ni dans les pages publiques, ni dans le contexte de l'IA. Le contenu est déjà assaini (voir lib/content.ts).
+  `
+  CREATE TABLE page_templates (
+    id         TEXT PRIMARY KEY,
+    space_id   TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+    icon       TEXT NOT NULL DEFAULT '',
+    content    TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX page_templates_space ON page_templates(space_id);
+  `,
 ];
 
 export function openDb(file: string): DB {

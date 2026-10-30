@@ -332,6 +332,18 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
   border-bottom: 1px solid var(--border); color: var(--text-3); font-size: 12.5px;
 }
 
+/* Modèles de pages */
+.modal.tpl-modal { width: min(560px, calc(100vw - 24px)); }
+.tpl-list { display: grid; gap: 14px; }
+.tpl-title { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); font-weight: 600; }
+.tpl-row { display: flex; align-items: center; gap: 4px; }
+.tpl-item { flex: 1; display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 8px; text-align: left; min-width: 0; }
+.tpl-item:hover, .tpl-item:focus-visible { background: var(--hover); }
+.tpl-ico { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-text); flex: none; }
+.tpl-text { display: grid; gap: 1px; min-width: 0; }
+.tpl-text small { color: var(--text-3); font-size: 12.5px; }
+.tpl-hint { margin: 0; font-size: 13px; }
+
 /* Libellés de page */
 .labels { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
 .labels[hidden] { display: none; }

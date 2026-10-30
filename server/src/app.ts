@@ -20,6 +20,7 @@ import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
 import labelRoutes from './routes/labels.js';
 import pageQueryRoutes from './routes/pages-query.js';
+import templateRoutes from './routes/templates.js';
 import seoRoutes from './routes/seo.js';
 import avatarRoutes from './routes/avatars.js';
 import v3Routes from './routes/v3.js';
@@ -256,6 +257,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(pageRoutes);
     await scope.register(pageQueryRoutes);
     await scope.register(labelRoutes);
+    await scope.register(templateRoutes);
     await scope.register(tokenRoutes);
     await scope.register(aiRoutes);
     await scope.register(adminRoutes);
