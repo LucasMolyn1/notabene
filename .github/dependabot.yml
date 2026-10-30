@@ -15,6 +15,11 @@ updates:
       # Les types suivent la version LTS de Node ciblée (22) : changement de majeure décidé manuellement.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
+      # Excalidraw (dessins) exige React 18 : la majeure 19 est à reprendre quand il la supportera.
+      - dependency-name: react
+        update-types: ['version-update:semver-major']
+      - dependency-name: react-dom
+        update-types: ['version-update:semver-major']
     groups:
       tiptap:
         patterns: ['@tiptap/*']
