@@ -6,6 +6,9 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## Non publié
 
+### Documentation
+- README : tableau des fonctionnalités complété (photo de profil, adresses et référencement, téléphone, mises à jour), index des guides, architecture à jour ; guide de déploiement : second nom d'hôte pour Draw.io ; sécurité et RGPD : photo de profil, pages publiques rendues pour les moteurs, service de mise à jour ; guide de mise à jour : « Vérifier maintenant ».
+
 ### Ajouté
 - **Interface pour téléphone** : barre du haut réduite à l'essentiel (suivre, favoris, historique et permissions passent dans le menu « … »), cibles tactiles de 40 à 44 px, champs à 16 px (plus de zoom à la saisie sur iOS), rien qui dépende du survol, zones sûres, barre de mise en forme au-dessus du clavier virtuel (gras, italique, titres, listes, citation, code, annuler, « + » pour insérer un bloc), bande des sections des réglages centrée sur la section courante.
 - **Installable comme une application** : manifeste et icônes (« Ajouter à l'écran d'accueil », « Installer » dans Chrome et Edge, « Ajouter au Dock » dans Safari). Pas de mode hors ligne.
