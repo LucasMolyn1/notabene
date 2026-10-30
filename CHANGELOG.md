@@ -7,7 +7,11 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 ## [Non publié]
 
 ### Ajouté
+- Mesure de la couverture de tests (`npm run coverage`) avec seuils dans la CI : 76 % des instructions, 80 % des lignes, 65 % des branches, 82 % des fonctions au départ ; les modules les moins couverts sont le client IA, la recherche IA (RAG), OIDC et les routes d'espaces et de webhooks.
 - **ESLint** dans la CI (`npm run lint`) : erreurs courantes, expressions régulières quadratiques (ReDoS), évaluation dynamique, processus enfants et HTML injecté côté client (chaque `innerHTML` est justifié). Installé dans `tools/lint` avec TypeScript 6, car `typescript-eslint` ne supporte pas encore TypeScript 7 ; le projet reste en TypeScript 7.
+
+### Modifié
+- L'image Draw.io du `docker-compose.yml` est épinglée par digest (tag + sha256).
 
 ### Corrigé
 - Expressions régulières réécrites sans quantificateur imbriqué (import Markdown, origines autorisées, routes des réglages).

@@ -22,6 +22,7 @@
     "lint:install": "npm ci --prefix tools/lint",
     "lint": "tools/lint/node_modules/.bin/eslint -c tools/lint/eslint.config.mjs .",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "audit:deps": "npm audit --omit=dev --audit-level=high",
     "e2e": "playwright test"
   },
@@ -71,6 +72,7 @@
     "@types/node": "^22.20.5",
     "@types/nodemailer": "^8.0.2",
     "@types/ws": "^8.18.2",
+    "@vitest/coverage-v8": "^5.0.5",
     "mermaid": "^12.2.0",
     "qrcode-generator": "^2.0.4",
     "react": "^18.3.1",
