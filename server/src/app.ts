@@ -42,7 +42,7 @@ import tokenRoutes from './routes/tokens.js';
 import versionRoutes from './routes/versions.js';
 import webhookRoutes from './routes/webhooks.js';
 import aboutRoutes from './routes/about.js';
-import { UpdateChecker } from './lib/update-check.js';
+import { UpdateChecker, updateSetting } from './lib/update-check.js';
 import { VERSION } from './version.js';
 
 declare module 'fastify' {
@@ -93,7 +93,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   app.decorate('box', box);
   const rt = new RuntimeSettings(config, db, box);
   app.decorate('rt', rt);
-  app.decorate('updates', updateChecker ?? new UpdateChecker(config.UPDATE_CHECK, config.UPDATE_CHECK_REPO, VERSION));
+  app.decorate('updates', updateChecker ?? new UpdateChecker(() => updateSetting(db, config), config.UPDATE_CHECK_REPO, VERSION));
   app.decorate('mail', mailer ?? new Mailer(() => rt.get()));
   const bus = new EventBus();
   app.decorate('bus', bus);

@@ -55,7 +55,7 @@ test('l’écran À propos affiche la version et les nouveautés, la pastille s�
   await page.goto('/#/settings/about');
   await expect(page.getByRole('heading', { name: 'Nouveautés' })).toBeVisible();
   await expect(page.getByText('Installée')).toBeVisible();
-  await expect(page.getByText('La vérification de mise à jour est désactivée')).toBeVisible();
+  await expect(page.getByText('La vérification est désactivée : cette instance ne sait pas')).toBeVisible();
   await expect(page.getByRole('img', { name: 'Nouveautés' })).toHaveCount(0);
 });
 
@@ -128,4 +128,17 @@ test('un emoji se cherche en français, s’affiche partout et se retrouve dans 
   await page.locator('.page-icon').click();
   await expect(page.getByText('Récents')).toBeVisible();
   await expect(page.locator('.emoji-section[data-group="recent"] .emoji-btn').first()).toHaveText('🚀');
+});
+
+test('la vérification de mise à jour s’active depuis l’interface, avec explication', async ({ page }) => {
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto('/#/settings/about');
+  await expect(page.getByText('Ce n’est pas une mise à jour automatique.')).toBeVisible();
+  await expect(page.getByText('l’adresse IP publique de votre serveur')).toBeVisible();
+  await page.getByRole('button', { name: 'Activer la vérification' }).click();
+  await page.getByLabel('Mot de passe', { exact: true }).fill(ADMIN.password);
+  await page.getByRole('button', { name: 'Confirmer' }).click();
+  await expect(page.getByRole('button', { name: 'Désactiver la vérification' })).toBeVisible();
+  await page.getByRole('button', { name: 'Désactiver la vérification' }).click(); // fenêtre de 10 min : pas de nouvelle saisie
+  await expect(page.getByRole('button', { name: 'Activer la vérification' })).toBeVisible();
 });

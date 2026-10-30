@@ -6,8 +6,9 @@ Pour une instance qui tourne avec l'image publiée (`ghcr.io/lucasmolyn1/notaben
 
 Une instance ne se met jamais à jour toute seule. Deux façons d'être prévenu :
 
-- **Dans l'application (recommandé)** : `UPDATE_CHECK=true` dans le `.env`, puis redémarrage. Quand un administrateur ouvre l'application, Notabene demande à GitHub quelle est la dernière release (au plus toutes les 12 heures). Si elle est plus récente, une alerte « Version X disponible » apparaît dans la barre latérale et mène à Paramètres, À propos, qui affiche les nouveautés de cette version, y compris « Attention à la mise à jour », et les commandes ci-dessous.
-  - Ce que GitHub voit : l'adresse IP du serveur et le numéro de version. Aucune donnée de l'instance n'est envoyée. C'est pourquoi la vérification est désactivée par défaut.
+- **Dans l'application (recommandé)** : Paramètres, À propos, « Activer la vérification » (administrateur ; ou `UPDATE_CHECK=true` dans le `.env`). Quand un administrateur ouvre l'application, Notabene demande à GitHub quelle est la dernière release (au plus toutes les 12 heures). Si elle est plus récente, une alerte « Version X disponible » apparaît dans la barre latérale et mène à Paramètres, À propos, qui affiche les nouveautés de cette version, y compris « Attention à la mise à jour », et les commandes ci-dessous.
+  - Ce que GitHub voit : l'adresse IP publique du serveur, l'heure et le numéro de version. Aucune donnée de l'instance n'est envoyée. Ce n'est pas une mise à jour automatique : l'instance prévient, vous installez. C'est pourquoi la vérification est désactivée par défaut.
+  - Si l'IP de sortie du serveur est celle que vous cachez derrière un proxy (Cloudflare), vérifiez-la avant d'activer.
   - Seuls les administrateurs voient l'alerte.
 - **Sans appel sortant** : surveiller les [releases du dépôt](https://github.com/LucasMolyn1/notabene/releases) (bouton « Watch », « Custom », « Releases » sur GitHub pour être prévenu par e-mail).
 
