@@ -6,6 +6,7 @@ import type { LdapLike } from '../src/auth/ldap.js';
 import { loadConfig } from '../src/config.js';
 import { type DB, openDb } from '../src/db.js';
 import { Mailer, type Mail } from '../src/lib/mail.js';
+import { createSession } from '../src/auth/session.js';
 import { hashPassword } from '../src/lib/password.js';
 
 const env = { NODE_ENV: 'test',  PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), AUTH_LOCAL: 'true', SEED_DEMO: 'false' };
@@ -235,6 +236,25 @@ describe('fenêtre de réauthentification', () => {
     await api(s, 'PUT', '/admin/settings/embed', embed(['https://a.example.com'], reauth));
     expect((await api(s, 'POST', `/admin/users/${victim}/erase`, { reauth: {} })).statusCode).toBe(401);
     expect((await api(s, 'POST', `/admin/users/${victim}/erase`, { reauth })).statusCode).toBe(200);
+  });
+});
+
+describe('confirmation de session d’un compte fédéré', () => {
+  it('annonce la fin de la fenêtre de 15 minutes et refuse les réglages passé ce délai', async () => {
+    db.prepare('INSERT INTO users (id, sub, email, name, role, created_at) VALUES (?,?,?,?,?,?)').run('fed', 'oidc:abc', 'fed@example.com', 'Fed', 'admin', Date.now());
+    const { token } = createSession(db, 'fed', null, 8);
+    const cookies = { nb_session: token };
+    const me = (await app.inject({ method: 'GET', url: '/api/v3/me', cookies })).json();
+    expect(me.reauthUntil).toBeGreaterThan(Date.now());
+    expect(me.reauthUntil).toBeLessThanOrEqual(Date.now() + 15 * 60_000);
+    const headers = { 'x-csrf-token': me.csrf as string };
+    const put = () => app.inject({ method: 'PUT', url: '/api/v3/admin/settings/embed', cookies, headers, payload: { config: { enabled: true, origins: ['https://a.example.com'] }, reauth: {} } });
+    expect((await put()).statusCode).toBe(200);
+    db.prepare('UPDATE sessions SET created_at = ?').run(Date.now() - 16 * 60_000);
+    const late = await put();
+    expect(late.statusCode).toBe(403);
+    expect(late.json().reauth).toBe('login');
+    expect((await app.inject({ method: 'GET', url: '/api/v3/me', cookies })).json().reauthUntil).toBeNull();
   });
 });
 

@@ -8,7 +8,7 @@ import { colorFor } from '../presence.js';
 import { toast, confirmModal } from '../ui.js';
 import { securityCard } from '../local-auth.js';
 import { preferencesCard } from '../notifications.js';
-import { markNewsSeen } from '../news.js';
+import { markNewsSeen, notifyNewsChange } from '../news.js';
 import * as A from '../actions.js';
 import { ROLE_LABELS } from './access.js';
 import { card, copyable, kv, loadingEl, pill, toggle } from './ui.js';
@@ -183,20 +183,32 @@ export async function renderAbout(el) {
   const about = await A.attempt(() => api.get('/about'));
   if (!about) return;
   const update = session.can('admin') ? await A.attempt(() => api.get('/admin/update-check')) : null;
+  if (update) { session.update = update; notifyNewsChange(); } // l'alerte de la barre latérale suit ce que l'écran affiche
   markNewsSeen(about.version);
   document.querySelectorAll('.set-nav-item .news-dot').forEach((d) => d.remove()); // la pastille du menu des réglages
 
+  const DOCS = `${REPO_URL}/blob/main/docs/MISE-A-JOUR.md`;
   const updateCard = update && card('Mise à jour', null, !update.enabled
-    ? h('p', { class: 'hint' }, 'La vérification de mise à jour est désactivée. Pour l’activer : UPDATE_CHECK=true dans l’environnement du serveur. Elle contacte api.github.com : l’adresse IP du serveur et le numéro de version sont alors visibles de GitHub, aucune donnée de l’instance n’est envoyée.')
+    ? h('div', { class: 'stack' },
+      h('p', null, 'La vérification de mise à jour est désactivée : cette instance ne sait pas si une nouvelle version existe.'),
+      h('p', { class: 'hint' }, 'Pour l’activer : UPDATE_CHECK=true dans l’environnement du serveur, puis redémarrage. Elle contacte api.github.com au plus toutes les 12 heures, quand un administrateur ouvre l’application : l’adresse IP du serveur et le numéro de version sont alors visibles de GitHub, aucune donnée de l’instance n’est envoyée.'),
+      h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'Guide de mise à jour ↗'))
     : update.error ? h('p', { class: 'hint' }, update.error)
       : update.updateAvailable
-        ? h('div', { class: 'notice info' }, `La version ${update.latest.version} est disponible (vous utilisez la ${update.current}). `,
-          update.latest.url.startsWith('https://github.com/') && h('a', { href: update.latest.url, target: '_blank', rel: 'noopener' }, 'Notes de version ↗'))
+        ? h('div', { class: 'stack' },
+          h('div', { class: 'notice info' }, h('strong', null, `La version ${update.latest.version} est disponible`), ` (vous utilisez la ${update.current}). Lisez ses nouveautés ci-dessous, surtout « Attention à la mise à jour », avant de l’installer.`),
+          h('p', { class: 'muted' }, 'Mise à jour : sauvegardez la base, puis, dans le dossier du déploiement :'),
+          h('pre', { class: 'code-sample', tabindex: '0' }, 'docker compose pull\ndocker compose up -d'),
+          h('p', { class: 'hint' }, 'Si votre fichier compose épingle la version de l’image (NOTABENE_IMAGE), changez d’abord le numéro. ',
+            h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'Guide de mise à jour ↗'), ' ',
+            update.latest.url.startsWith('https://github.com/') && h('a', { href: update.latest.url, target: '_blank', rel: 'noopener' }, 'Notes sur GitHub ↗')))
         : h('p', null, pill('À jour', 'ok'), ' Vous utilisez la dernière version publiée.'));
 
+  // Notes de la version à installer, lues dans sa release GitHub : on les lit avant de mettre à jour.
+  const upcoming = update?.updateAvailable ? update.latest.notes : null;
   const release = (r) => h('section', { class: 'set-card release' },
     h('header', { class: 'set-card-head' },
-      h('h3', null, `Version ${r.version} `, h('small', { class: 'muted' }, `· ${r.date}`), r.version === about.version ? ' ' : '', r.version === about.version ? pill('Installée', 'accent') : null),
+      h('h3', null, `Version ${r.version} `, h('small', { class: 'muted' }, `· ${r.date}`), ' ', r.version === about.version ? pill('Installée', 'accent') : r.version === upcoming?.version ? pill('Disponible', 'warn') : null),
       r.summary && h('p', { class: 'muted' }, r.summary)),
     r.sections.map((s) => h('div', null, h('h4', null, s.title), h('ul', { class: 'plain-list' }, s.items.map((it) => h('li', null, it))))));
 
@@ -204,5 +216,6 @@ export async function renderAbout(el) {
     card('Notabene', null, kv([['Version', h('code', null, about.version)], ['Commit de l’image', about.commit ? h('code', null, about.commit) : null]])),
     updateCard,
     h('h3', { class: 'set-subtitle' }, 'Nouveautés'),
+    ...(upcoming ? [release(upcoming)] : []),
     ...(about.releases.length ? about.releases.map(release) : [card(null, null, h('p', { class: 'muted' }, 'Aucune note de version disponible.'))]));
 }

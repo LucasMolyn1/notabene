@@ -30,15 +30,15 @@ export default async function authRoutes(app: FastifyInstance) {
 
   app.get('/auth/login', {
     config: authRateLimit,
-    schema: { hide: true, querystring: z.object({ returnTo: z.string().max(512).optional() }) },
+    schema: { hide: true, querystring: z.object({ returnTo: z.string().max(512).optional(), reauth: z.enum(['1']).optional() }) },
   }, async (req, reply) => {
-    const { returnTo } = req.query as { returnTo?: string };
+    const { returnTo, reauth } = req.query as { returnTo?: string; reauth?: '1' };
     if (!oidc.enabled) {
       if (config.DEV_LOGIN) return reply.redirect(`/?dev_login=1&returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`);
       throw new HttpError(503, 'Fournisseur d’identité non configuré');
     }
     const binding = newBinding();
-    const url = await oidc.authorizationUrl(safeReturnTo(returnTo), binding.hash);
+    const url = await oidc.authorizationUrl(safeReturnTo(returnTo), binding.hash, reauth === '1');
     reply.setCookie(bindingName, binding.token, { ...cookieOptions, maxAge: BINDING_TTL_SECONDS });
     return reply.redirect(url.href);
   });

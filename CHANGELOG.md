@@ -4,9 +4,19 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
-## [Non publié]
+## [3.3.0] - 2026-10-30
+
+Les instances savent qu'une version existe et y mènent les administrateurs ; confirmation d'identité plus claire pour les comptes SSO.
+
+### Attention à la mise à jour
+- **Pour recevoir l'alerte de mise à jour, `UPDATE_CHECK=true` reste nécessaire** (désactivé par défaut : la vérification contacte api.github.com). Les versions 3.0.0 à 3.2.0 n'avaient pas de release GitHub : une instance qui les vérifiait ne pouvait rien détecter. À partir de la 3.3.0, chaque tag crée sa release.
+- Une release GitHub n'est publiée automatiquement qu'avec ce workflow : pour la 3.2.0 déjà taguée, voir [docs/MISE-A-JOUR.md](docs/MISE-A-JOUR.md) (commande `gh release create`).
 
 ### Ajouté
+- **Alerte de mise à jour** (administrateurs, avec `UPDATE_CHECK=true`) : « Version X disponible » dans la barre latérale et pastille sur Paramètres ; elle mène à Paramètres, À propos, qui affiche les nouveautés de la nouvelle version (notes lues dans sa release GitHub, « Attention à la mise à jour » en tête) et les commandes de mise à jour.
+- **Release GitHub automatique** : le workflow de release la crée, avec les notes de la section du CHANGELOG, après la publication de l'image (`scripts/release-notes.sh`).
+- **Guide de mise à jour** : [docs/MISE-A-JOUR.md](docs/MISE-A-JOUR.md) (être prévenu, sauvegarder, mettre à jour, vérifier, revenir en arrière, dépannage).
+- **Comptes SSO** : les réglages sensibles affichent jusqu'à quand la session est confirmée, ou invitent à la confirmer ; le bouton « Confirmer auprès de mon fournisseur » renvoie à l'IdP en exigeant une réauthentification réelle (`prompt=login`, OIDC) puis ramène sur la page.
 - **Audit d'accessibilité automatisé** (axe-core, WCAG 2.1 AA) dans la CI, en clair et en sombre, sur la connexion, les pages et toutes les sections des paramètres ; [docs/ACCESSIBILITE.md](docs/ACCESSIBILITE.md) décrit le test au lecteur d'écran à faire à la main.
 
 ### Modifié

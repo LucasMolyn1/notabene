@@ -3,10 +3,10 @@
 // visibles de GitHub. Aucune donnée de l'instance n'est envoyée. Déclenchée seulement quand un administrateur consulte l'écran
 // (pas de tâche de fond), résultat gardé en mémoire 12 heures, requête protégée par la garde réseau (net-guard).
 import { z } from 'zod';
-import { compareVersions } from './changelog.js';
+import { compareVersions, parseChangelog, type Release } from './changelog.js';
 import { safeFetch } from './net-guard.js';
 
-export interface LatestRelease { version: string; url: string; publishedAt: string | null }
+export interface LatestRelease { version: string; url: string; publishedAt: string | null; /** Notes de version (même format que le CHANGELOG), si la release en publie. */ notes: Release | null }
 export interface UpdateStatus {
   enabled: boolean;
   current: string;
@@ -18,7 +18,7 @@ export interface UpdateStatus {
 
 export type Fetcher = (repo: string, current: string) => Promise<unknown>;
 
-const payload = z.object({ tag_name: z.string().max(40), html_url: z.string().max(300), published_at: z.string().max(40).nullish(), draft: z.boolean().optional(), prerelease: z.boolean().optional() });
+const payload = z.object({ tag_name: z.string().max(40), html_url: z.string().max(300), published_at: z.string().max(40).nullish(), draft: z.boolean().optional(), prerelease: z.boolean().optional(), body: z.string().max(100_000).nullish() });
 const OK_TTL = 12 * 3_600_000;
 const ERROR_TTL = 15 * 60_000;
 
@@ -56,7 +56,7 @@ export class UpdateChecker {
         const parsed = raw === null ? null : payload.parse(raw);
         const version = parsed?.tag_name.replace(/^v/, '') ?? '';
         const valid = !!parsed && !parsed.draft && !parsed.prerelease && /^\d+\.\d+\.\d+$/.test(version) && parsed.html_url.startsWith('https://github.com/');
-        this.#cached = { at: now, ttl: OK_TTL, latest: valid ? { version, url: parsed!.html_url, publishedAt: parsed!.published_at ?? null } : null, error: null };
+        this.#cached = { at: now, ttl: OK_TTL, latest: valid ? { version, url: parsed!.html_url, publishedAt: parsed!.published_at ?? null, notes: parseChangelog(parsed!.body ?? '').find((r) => r.version === version) ?? null } : null, error: null };
       } catch {
         this.#cached = { at: now, ttl: ERROR_TTL, latest: null, error: 'Vérification impossible (GitHub injoignable ou réponse inattendue).' };
       }

@@ -55,3 +55,31 @@ jobs:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+  # Publie la release GitHub avec les notes du CHANGELOG : c'est elle que lit la vérification de mise à jour
+  # des instances (api.github.com/repos/…/releases/latest). Après l'image, pour ne rien annoncer qui ne soit téléchargeable.
+  release:
+    name: release
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Release GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "Étiquette inattendue : $TAG" >&2; exit 1 ;; esac
+          version="${TAG#v}"
+          scripts/release-notes.sh "$version" > notes.md
+          test -s notes.md
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "La release $TAG existe déjà."
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "Notabene $version" --notes-file notes.md --verify-tag
+          fi

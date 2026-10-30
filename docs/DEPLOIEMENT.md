@@ -67,7 +67,7 @@ Pour un répartiteur (HAProxy, etc.), utilisez `GET /healthz` (`{"ok":true}`, 50
 
 ## Mettre à jour
 
-**Savoir qu'une mise à jour existe** : Paramètres, À propos montre la version installée et les nouveautés. Avec `UPDATE_CHECK=true`, un administrateur y voit aussi si une version plus récente est publiée (requête vers api.github.com, désactivée par défaut). Sans cela, surveillez les [releases du dépôt](https://github.com/LucasMolyn1/notabene/releases).
+**Guide complet : [MISE-A-JOUR.md](MISE-A-JOUR.md)** (alerte dans l'application avec `UPDATE_CHECK=true`, sauvegarde, commandes, vérifications, retour arrière).
 
 
 1. Lire le [CHANGELOG](../CHANGELOG.md) (section « Attention à la mise à jour »).

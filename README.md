@@ -192,7 +192,7 @@ Pour publier une version `X.Y.Z` :
 
 1. Sur une branche : mettre à jour `version` (`npm version X.Y.Z --no-git-tag-version`) et ajouter la section `## [X.Y.Z] - AAAA-MM-JJ` en tête de `CHANGELOG.md`. Un test vérifie que les deux concordent.
 2. Fusionner la PR (CI verte).
-3. Poser le tag sur le commit fusionné : `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`. Le workflow `release.yml` construit alors l'image (amd64 et arm64) et la publie sur `ghcr.io` avec attestation de provenance : **c'est une publication publique**, à ne faire qu'en connaissance de cause.
+3. Poser le tag sur le commit fusionné : `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`. Le workflow `release.yml` construit alors l'image (amd64 et arm64) et la publie sur `ghcr.io` avec attestation de provenance : **c'est une publication publique**, à ne faire qu'en connaissance de cause. Un second job crée ensuite la **release GitHub** avec les notes de la section du CHANGELOG : c'est elle que lisent les instances pour annoncer la mise à jour (voir [docs/MISE-A-JOUR.md](docs/MISE-A-JOUR.md)).
 
 Déployer en production avec l'image publiée : voir [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md). Pour reconstruire l'image sur place en y inscrivant le commit :
 

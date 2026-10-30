@@ -60,7 +60,8 @@ export class OidcClient {
     return this.#config;
   }
 
-  async authorizationUrl(returnTo: string, bindingHash: string) {
+  // `reauth` : demande au fournisseur de réauthentifier la personne (pas de connexion silencieuse), pour confirmer une action sensible.
+  async authorizationUrl(returnTo: string, bindingHash: string, reauth = false) {
     const config = await this.#discover();
     const codeVerifier = oidc.randomPKCECodeVerifier();
     const state = oidc.randomState();
@@ -74,6 +75,7 @@ export class OidcClient {
       code_challenge_method: 'S256',
       state,
       nonce,
+      ...(reauth ? { prompt: 'login' } : {}),
     });
   }
 
