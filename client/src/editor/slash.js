@@ -4,7 +4,7 @@ import { icon } from '../icons.js';
 import { session } from '../session.js';
 import { openModal, toast } from '../ui.js';
 import { allowedHosts, embedUrl } from './embed.js';
-import { DEFAULT_MERMAID, DEFAULT_PLANTUML, openDrawio, openExcalidraw } from '../diagrams.js';
+import { DEFAULT_MATH, DEFAULT_MERMAID, DEFAULT_PLANTUML, openDrawio, openExcalidraw } from '../diagrams.js';
 
 // ---- Images ---------------------------------------------------------------
 
@@ -62,10 +62,17 @@ const SLASH_ITEMS = [
   { group: 'Blocs', title: 'Callout succès', desc: 'Encadré positif', glyph: '✓', keys: 'callout success tip astuce', run: chainCmd((c) => c.setCallout({ type: 'success' })) },
   { group: 'Blocs', title: 'Callout danger', desc: 'Encadré critique', glyph: '✗', keys: 'callout danger erreur', run: chainCmd((c) => c.setCallout({ type: 'danger' })) },
   { group: 'Blocs', title: 'Tableau', desc: 'Tableau 3 × 3 avec en-tête', glyph: '▦', keys: 'table grille', run: chainCmd((c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true })) },
+  { group: 'Blocs', title: 'Bloc dépliable', desc: 'Un titre qui masque ou montre son contenu', glyph: '▸', keys: 'details toggle depliable accordeon', run: chainCmd((c) => c.setDetails()) },
+  { group: 'Blocs', title: 'Deux colonnes', desc: 'Contenu côte à côte', glyph: '▥', keys: 'colonnes columns deux 2', run: chainCmd((c) => c.setColumns(2)) },
+  { group: 'Blocs', title: 'Trois colonnes', desc: 'Contenu en trois colonnes', glyph: '▦', keys: 'colonnes columns trois 3', run: chainCmd((c) => c.setColumns(3)) },
   { group: 'Blocs', title: 'Séparateur', desc: 'Ligne horizontale', glyph: '—', keys: 'hr divider ligne', run: chainCmd((c) => c.setHorizontalRule()) },
   {
     group: 'Diagrammes', title: 'Mermaid', desc: 'Schéma décrit en texte (flux, séquence…)', ico: 'diamond', keys: 'mermaid diagramme flowchart sequence schema',
     run: chainCmd((c) => c.insertContent({ type: 'mermaid', attrs: { code: DEFAULT_MERMAID } })),
+  },
+  {
+    group: 'Diagrammes', title: 'Formule', desc: 'Formule mathématique (LaTeX)', glyph: 'Σ', keys: 'formule math latex katex equation maths',
+    run: chainCmd((c) => c.insertContent({ type: 'math', attrs: { code: DEFAULT_MATH } })),
   },
   {
     group: 'Diagrammes', title: 'PlantUML', desc: 'Diagrammes UML décrits en texte (classes, séquence…)', ico: 'code', keys: 'plantuml uml diagramme classe sequence',

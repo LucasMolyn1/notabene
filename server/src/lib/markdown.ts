@@ -43,6 +43,12 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
       case 'plantuml': return `\`\`\`plantuml\n${a.code ?? ''}\n\`\`\``;
       case 'embed': return `[${String(a.url).replace(/([\\*_`~[\]])/g, '\\$1')}](${String(a.url).replace(/[()\s]/g, encodeURIComponent)})`;
       case 'mermaid': return `\`\`\`mermaid\n${a.code ?? ''}\n\`\`\``;
+      case 'math': return `$$\n${String(a.code ?? '').replace(/\$\$/g, '$ $')}\n$$`;
+      case 'details': {
+        const [summary, body] = node.content ?? [];
+        return `<details>\n<summary>${inline(summary?.content).replace(/[<>]/g, '')}</summary>\n\n${blocks(body?.content)}\n\n</details>`;
+      }
+      case 'columns': return blocks((node.content ?? []).flatMap((c) => c.content ?? []));
       case 'excalidraw': return '_[Dessin Excalidraw]_';
       case 'drawio': return '_[Diagramme Draw.io]_';
       case 'horizontalRule': return '---';

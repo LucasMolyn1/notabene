@@ -128,6 +128,59 @@ for (const scheme of ['light', 'dark'] as const) {
       expect(found).toEqual([]);
     });
 
+    test('historique : différences entre versions', async ({ page, browser }) => {
+      const admin = await adminContext(browser);
+      await createLocalUser(admin.request, 'a11y.auteur@e2e.test', 'Auteur a11y', 'editor');
+      const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+      const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+      const created = await (await api(admin.request, 'POST', '/pages', {
+        spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: `A11y historique ${scheme}`,
+        content: { type: 'doc', content: [p('Un paragraphe stable'), p('Le chat dort'), p('Supprimé')] },
+      })).json();
+      const author = await sessionContext(browser, 'a11y.auteur@e2e.test', PASSWORD);
+      const read = await api(author.request, 'GET', `/pages/${created.id}`);
+      const me = await (await author.request.get('/api/v3/me')).json();
+      await author.request.fetch(`/api/v3/pages/${created.id}`, { method: 'PATCH', headers: { 'x-csrf-token': me.csrf, 'if-match': read.headers().etag }, data: { content: { type: 'doc', content: [p('Un paragraphe stable'), p('Le chien dort'), p('Ajouté')] } } });
+      await Promise.all([admin.close(), author.close()]);
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.goto(`/p/${created.id}`);
+      await page.getByRole('button', { name: 'Historique des versions' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Historique de la page' });
+      await dialog.locator('.hist-item').nth(1).click();
+      await dialog.getByRole('button', { name: 'Différences avec la version actuelle' }).click();
+      await dialog.locator('.diff').waitFor();
+      expect(await violations(page, 'historique (différences)')).toEqual([]);
+    });
+
+    test('blocs : dépliable, colonnes, formule, couleurs et palette', async ({ page, browser }) => {
+      const t = (text: string, marks?: object[]) => ({ type: 'text', text, ...(marks ? { marks } : {}) });
+      const colored = ['gray', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink'].flatMap((c) => [
+        t(`texte ${c} `, [{ type: 'textColor', attrs: { color: c } }]), t(`fond ${c} `, [{ type: 'highlight', attrs: { color: c } }]),
+      ]);
+      const admin = await adminContext(browser);
+      const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+      const created = await (await api(admin.request, 'POST', '/pages', {
+        spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: `A11y blocs ${scheme}`,
+        content: { type: 'doc', content: [
+          { type: 'paragraph', attrs: { align: 'center' }, content: colored },
+          { type: 'details', content: [{ type: 'detailsSummary', content: [t('Un titre')] }, { type: 'detailsContent', content: [{ type: 'paragraph', content: [t('Un contenu')] }] }] },
+          { type: 'columns', content: [[t('Colonne un')], [t('Colonne deux')]].map((c) => ({ type: 'column', content: [{ type: 'paragraph', content: c }] })) },
+          { type: 'math', attrs: { code: 'E = mc^2' } },
+        ] },
+      })).json();
+      await admin.close();
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.goto(`/p/${created.id}`);
+      await page.locator('.katex').waitFor();
+      await page.getByRole('button', { name: 'Déplier le bloc' }).click();
+      const found = await violations(page, 'blocs');
+      await page.locator('.prose p').first().selectText();
+      await page.getByRole('button', { name: 'Couleurs et alignement' }).click();
+      await page.getByRole('button', { name: 'Texte rouge' }).waitFor();
+      found.push(...await violations(page, 'palette de couleurs'));
+      expect(found).toEqual([]);
+    });
+
     test('paramètres : toutes les sections', async ({ page }) => {
       await loginUi(page, ADMIN.email, ADMIN.password);
       const found: string[] = [];

@@ -48,6 +48,7 @@ function pageMenu(anchor, page) {
     { label: 'Exporter en PDF', icon: 'pdf', onClick: () => A.exportPDF(page.id) },
     others.length && { sep: true },
     ...others.map((s) => ({ label: `Déplacer vers ${s.name}`, icon: 'folder', onClick: () => A.moveToSpace(page.id, s.id) })),
+    ...others.map((s) => ({ label: `Copier vers ${s.name}`, icon: 'copy', onClick: () => A.copyToSpace(page.id, s.id) })),
     { sep: true },
     { label: 'Mettre à la corbeille', icon: 'trash', danger: true, onClick: () => A.trash(page.id) },
   ]);

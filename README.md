@@ -8,7 +8,7 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | --- | --- |
 | **Authentification** | OIDC (Authentik ou tout fournisseur conforme) : Authorization Code + PKCE, state et nonce à usage unique, rôles dérivés des groupes, déconnexion côté fournisseur |
 | **Rôles** | `admin` (espaces, réglages, audit, suppression définitive), `editor` (écriture), `reader` (lecture) ; espaces **publics** lisibles sans connexion |
-| **Éditeur** | TipTap 3 : menu `/`, raccourcis Markdown, callouts, tableaux, tâches, images et diagrammes redimensionnables, liens vers d'autres pages, sommaire automatique, blocs de code colorés (CodeMirror 6, co-édition comprise), vraie liste d'emojis en français |
+| **Éditeur** | TipTap 3 : menu `/`, raccourcis Markdown, callouts, tableaux, tâches, images et diagrammes redimensionnables, blocs dépliables, colonnes, formules (KaTeX), couleurs et alignement, liens vers d'autres pages, sommaire automatique, blocs de code colorés (CodeMirror 6, co-édition comprise), vraie liste d'emojis en français |
 | **Diagrammes** | **Mermaid** (texte, rendu en direct), **Excalidraw** (dessin), **Draw.io** (instance auto-hébergée) |
 | **Recherche** | Plein texte SQLite FTS5 insensible aux accents (`⌘K`) |
 | **IA** | Onglet « Demander à l’IA » dans `⌘K` : réponses sourcées à partir des pages lisibles par l’utilisateur ; **Claude** ou tout endpoint **compatible OpenAI** (OpenAI, Mistral, Ollama, LM Studio…) |

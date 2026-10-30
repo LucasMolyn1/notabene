@@ -11,6 +11,7 @@ import { iconPicker } from './emoji-picker.js';
 import { openPalette } from './palette.js';
 import { jsonToHTML } from './editor.js';
 import { openTemplatePicker, saveAsTemplate } from './templates.js';
+import { renderDiff } from './diff.js';
 
 // Exécute une action réseau et affiche l'erreur éventuelle.
 export async function attempt(fn) {
@@ -85,6 +86,16 @@ export async function trash(id) {
 export async function duplicate(id) {
   const copy = await attempt(() => store.duplicatePage(id));
   if (copy) go(`/p/${copy}`);
+}
+
+// Copie la page et ses sous-pages lisibles vers un autre espace ; l'original reste en place.
+export async function copyToSpace(id, spaceId) {
+  const space = store.space(spaceId);
+  const result = await attempt(() => request('POST', `/api/v3/pages/${id}/copy`, { spaceId }));
+  if (!result) return;
+  toast(`Copiée vers ${space?.name ?? 'l’autre espace'} (${result.count} page${result.count > 1 ? 's' : ''}${result.skipped ? `, ${result.skipped} réservée${result.skipped > 1 ? 's' : ''} non copiée${result.skipped > 1 ? 's' : ''}` : ''}).`, {
+    action: { label: 'Ouvrir', onClick: () => go(`/p/${result.page.id}`) },
+  });
 }
 
 export async function moveToSpace(id, spaceId) {
@@ -188,6 +199,8 @@ export async function openHistory(id) {
   if (!versions) return;
   if (!versions.length) { toast('Aucune version enregistrée pour le moment.'); return; }
   let selected = 0;
+  let mode = 'preview'; // 'preview' : la version telle quelle ; 'diff' : ce qui a changé depuis, par rapport à la version actuelle
+  let current = null;
   const list = h('div', { class: 'hist-list' });
   const preview = h('div', { class: 'hist-preview' });
   const canWrite = session.can('write');
@@ -203,7 +216,7 @@ export async function openHistory(id) {
     preview.replaceChildren(h('p', { class: 'muted' }, 'Chargement…'));
     const v = await attempt(() => store.version(id, versions[selected].id));
     if (!v) return;
-    preview.replaceChildren(
+    preview.replaceChildren(...[
       h('div', { class: 'hist-bar' },
         h('span', { class: 'muted' }, `${fullDate(v.createdAt)}${v.author ? ` · ${v.author}` : ''}`),
         canWrite && h('button', {
@@ -213,7 +226,23 @@ export async function openHistory(id) {
             if (await attempt(() => store.restoreVersion(id, v.id))) { modal.close(); toast('Version restaurée'); }
           },
         }, icon('restore'), 'Restaurer')),
-      h('div', { class: 'prose readonly' }, h('h1', null, v.title || 'Sans titre'), h('div', { html: jsonToHTML(v.content) })));
+      selected !== 0 && h('div', { class: 'hist-modes', role: 'group', 'aria-label': 'Affichage' },
+        ...[['preview', 'Aperçu'], ['diff', 'Différences avec la version actuelle']].map(([key, label]) => h('button', {
+          class: `chip${mode === key ? ' active' : ''}`, type: 'button', 'aria-pressed': String(mode === key),
+          onClick: () => { mode = key; render(); },
+        }, label))),
+      mode === 'diff' && selected !== 0
+        ? await diffView(v)
+        : h('div', { class: 'prose readonly' }, h('h1', null, v.title || 'Sans titre'), h('div', { html: jsonToHTML(v.content) })),
+    ].filter(Boolean));
+  }
+
+  async function diffView(v) {
+    current ||= await attempt(() => store.version(id, versions[0].id));
+    if (!current) return h('p', { class: 'muted' }, 'Impossible de charger la version actuelle.');
+    return h('div', { class: 'prose readonly' },
+      v.title !== current.title && h('p', { class: 'muted' }, `Titre : « ${v.title || 'Sans titre'} » devenu « ${current.title || 'Sans titre'} ».`),
+      renderDiff(v.content, current.content));
   }
 
   const modal = openModal({ title: 'Historique de la page', body: h('div', { class: 'hist' }, list, preview), size: 'wide' });
