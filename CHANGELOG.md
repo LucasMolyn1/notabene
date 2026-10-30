@@ -4,7 +4,12 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
-## [Non publié]
+## [3.1.0] - 2026-10-30
+
+Écran « À propos » avec les nouveautés, vérification de mise à jour optionnelle et réglage fin de la confiance envers les reverse proxys.
+
+### Attention à la mise à jour
+- **`TRUST_PROXY=1` change de sens :** il signifiait « tous les sauts », il signifie désormais « un seul proxy devant l'application ». Derrière Cloudflare puis HAProxy, réglez `TRUST_PROXY=2` ; `true` reste accepté mais déconseillé (voir [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md)).
 
 ### Ajouté
 - **À propos et nouveautés** : Paramètres, À propos affiche la version, le commit de l'image et les notes de version (lues dans `CHANGELOG.md`, embarqué dans l'image). Une pastille signale les nouveautés quand la version change.
