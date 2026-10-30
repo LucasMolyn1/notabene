@@ -77,6 +77,13 @@ for (const scheme of ['light', 'dark'] as const) {
       expect(found).toEqual([]);
     });
 
+    test('modèles : liste de choix', async ({ page }) => {
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.getByRole('button', { name: 'Depuis un modèle' }).click();
+      await page.getByRole('dialog', { name: 'Nouvelle page depuis un modèle' }).getByRole('button', { name: /Procédure/ }).waitFor();
+      expect(await violations(page, 'modèles')).toEqual([]);
+    });
+
     test('paramètres : toutes les sections', async ({ page }) => {
       await loginUi(page, ADMIN.email, ADMIN.password);
       const found: string[] = [];

@@ -242,10 +242,10 @@ describe('migration v11', () => {
     seedDemo(fresh);
     const pages = fresh.prepare('SELECT count(*) AS n FROM pages').get();
     fresh.pragma('user_version = 10');
-    fresh.exec('DROP TABLE page_labels');
+    fresh.exec('DROP TABLE page_labels; DROP TABLE page_templates');
     fresh.close();
     const upgraded = openDb(file);
-    expect(upgraded.pragma('user_version', { simple: true })).toBe(11);
+    expect(upgraded.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(11);
     expect(upgraded.prepare('SELECT count(*) AS n FROM pages').get()).toEqual(pages);
     expect(upgraded.prepare("SELECT name FROM sqlite_master WHERE name = 'page_labels'").get()).toBeTruthy();
     upgraded.close();
