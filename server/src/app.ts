@@ -41,6 +41,7 @@ import ssoRoutes from './routes/sso.js';
 import tokenRoutes from './routes/tokens.js';
 import versionRoutes from './routes/versions.js';
 import webhookRoutes from './routes/webhooks.js';
+import { VERSION } from './version.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -204,7 +205,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
 
   await app.register(swagger, {
     openapi: {
-      info: { title: 'Notabene API', version: '1.0.0', description: 'API REST du wiki Notabene. Authentification par jeton personnel : `Authorization: Bearer nb_…`.' },
+      info: { title: 'Notabene API', version: VERSION, description: 'API REST du wiki Notabene. Authentification par jeton personnel : `Authorization: Bearer nb_…`.' },
       components: {
         securitySchemes: {
           bearerAuth: { type: 'http', scheme: 'bearer', description: 'Jeton personnel créé dans Notabene (menu utilisateur → Jetons d’API).' },

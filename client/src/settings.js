@@ -568,7 +568,7 @@ async function renderInstance(el) {
       stat(s.spaces, 'espaces'), stat(s.publicSpaces, 'publics'), stat(s.pages, 'pages'), stat(s.versions, 'versions'),
       stat(s.users, 'utilisateurs'), stat(s.activeSessions, 'sessions'), stat(s.activeTokens, 'jetons actifs'), stat(s.trashed, 'à la corbeille'))),
     card('Instance', null, kv([
-      ['Version', h('code', null, info.version)],
+      ['Version', h('code', null, info.commit ? `${info.version} (${info.commit})` : info.version)],
       ['URL publique', copyable(info.publicUrl)],
       ['Environnement', info.environment === 'production' ? pill('production', 'ok') : pill(info.environment, 'warn')],
       ['Reverse proxy', info.integrations.trustProxy ? 'Oui (TRUST_PROXY)' : 'Non'],

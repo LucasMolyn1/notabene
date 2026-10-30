@@ -1,6 +1,6 @@
 // Page Paramètres : vue d'ensemble de l'instance, utilisateurs, journal d'audit (admin)
 // et sessions de l'utilisateur courant.
-import { createReadStream, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createReadStream, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -11,10 +11,7 @@ import { audit } from '../lib/audit.js';
 import { HttpError, idParams } from '../lib/http.js';
 import { eraseUser, exportUserData } from '../lib/personal-data.js';
 import { reauthInput, requireReauth } from '../lib/reauth.js';
-
-const VERSION = (() => {
-  try { return (JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as { version: string }).version; } catch { return 'inconnue'; }
-})();
+import { COMMIT, VERSION } from '../version.js';
 
 const count = (db: FastifyInstance['db'], sql: string, ...args: unknown[]) => (db.prepare(sql).get(...args) as { n: number }).n;
 
@@ -27,6 +24,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     const now = Date.now();
     return {
       version: VERSION,
+      commit: COMMIT,
       publicUrl: config.PUBLIC_URL,
       environment: config.NODE_ENV,
       auth: {
