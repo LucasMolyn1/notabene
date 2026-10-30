@@ -73,6 +73,8 @@ const NODES: Record<string, AttrRules> = {
   tableCell: cell,
   callout: { type: oneOf('info', 'warning', 'success', 'danger') },
   pageLink: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined) },
+  // Mention d'une personne : seul l'identifiant est enregistré. Le nom n'entre jamais dans la page (il vient de la table des utilisateurs).
+  mention: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined) },
   mermaid: { code: str(50_000), width: nullable(int(120, 4000)) },
   plantuml: { code: str(50_000), width: nullable(int(120, 4000)) },
   excalidraw: { scene: str(MAX_DIAGRAM), svg: isSvgDataUrl, width: nullable(int(120, 4000)) },
@@ -87,6 +89,8 @@ const MARKS: Record<string, AttrRules> = {
   code: {},
   highlight: {},
   link: { href: (v) => (isSafeHref(v) ? v : undefined) },
+  // Texte commenté : `id` est celui du fil de commentaires (lu seulement s'il existe sur la même page).
+  commentAnchor: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined) },
 };
 
 function cleanAttrs(rules: AttrRules, attrs: unknown): Record<string, unknown> | undefined {
@@ -124,6 +128,7 @@ export function sanitizeDoc(input: unknown): DocNode {
           const mark = m as DocNode;
           const attrs = cleanAttrs(MARKS[mark.type], mark.attrs);
           if (mark.type === 'link' && !attrs?.href) return [];
+          if (mark.type === 'commentAnchor' && !attrs?.id) return [];
           return [attrs ? { type: mark.type, attrs } : { type: mark.type }];
         });
         if (marks.length) out.marks = marks;
@@ -135,6 +140,7 @@ export function sanitizeDoc(input: unknown): DocNode {
     if (attrs) out.attrs = attrs;
     if (type === 'image' && !attrs?.src) return null;
     if (type === 'pageLink' && !attrs?.id) return null;
+    if (type === 'mention' && !attrs?.id) return null;
     if (Array.isArray(node.content)) {
       out.content = node.content.map((c) => walk(c, depth + 1)).filter((c): c is DocNode => c !== null);
     }
@@ -145,6 +151,18 @@ export function sanitizeDoc(input: unknown): DocNode {
   if (!doc || doc.type !== 'doc') throw new HttpError(400, 'Le contenu doit être un document (type « doc »)');
   if (!doc.content?.length) doc.content = [{ type: 'paragraph' }];
   return doc;
+}
+
+/** Identifiants des personnes mentionnées dans un document (sans doublon, dans l'ordre d'apparition). */
+export function mentionIds(doc: DocNode | undefined): string[] {
+  const ids = new Set<string>();
+  const walk = (n: DocNode | undefined) => {
+    if (!n) return;
+    if (n.type === 'mention' && typeof n.attrs?.id === 'string') ids.add(n.attrs.id);
+    for (const c of n.content ?? []) walk(c);
+  };
+  walk(doc);
+  return [...ids];
 }
 
 export const emptyDoc = (): DocNode => ({ type: 'doc', content: [{ type: 'paragraph' }] });

@@ -7,10 +7,13 @@ const WRAP: Record<string, [string, string]> = {
 const ALERT: Record<string, string> = { info: 'NOTE', warning: 'WARNING', success: 'TIP', danger: 'CAUTION' };
 
 type TitleOf = (id: string) => string | null;
+/** Nom d'une personne mentionnée, ou null si la personne n'a pas à être nommée (« @utilisateur »). */
+export type MentionName = (id: string) => string | null;
 
-export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: TitleOf): string {
+export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: TitleOf, mentionName: MentionName = () => null): string {
   const inline = (nodes: DocNode[] = []): string => nodes.map((n) => {
     if (n.type === 'hardBreak') return '  \n';
+    if (n.type === 'mention') return `@${(mentionName(String(n.attrs?.id)) ?? 'utilisateur').replace(/[\r\n]+/g, ' ').replace(/([\\*_`~[\]])/g, '\\$1')}`;
     if (n.type === 'pageLink') return `[${titleOf(String(n.attrs?.id)) ?? 'Sans titre'}](/p/${n.attrs?.id})`;
     if (n.type !== 'text') return '';
     const marks = n.marks ?? [];

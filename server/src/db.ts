@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 
 export type DB = Database.Database;
 
-const MIGRATIONS: string[] = [
+export const MIGRATIONS: string[] = [
   `
   CREATE TABLE users (
     id            TEXT PRIMARY KEY,
@@ -270,6 +270,43 @@ const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   CREATE INDEX page_templates_space ON page_templates(space_id);
+  `,
+  // v13 : commentaires ancrés sur un texte, mentions (@personne) dans les commentaires et les pages.
+  // La contrainte de `notifications.type` ne se modifie pas en place : la table est recréée avec le type « mention ».
+  `
+  ALTER TABLE page_comments ADD COLUMN anchor_text TEXT;
+
+  CREATE TABLE comment_mentions (
+    comment_id TEXT NOT NULL REFERENCES page_comments(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (comment_id, user_id)
+  );
+  CREATE INDEX comment_mentions_user ON comment_mentions(user_id);
+
+  -- Personnes déjà notifiées d'une mention dans le contenu d'une page : une seule notification par page et par personne.
+  CREATE TABLE page_mentions (
+    page_id     TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    notified_at INTEGER NOT NULL,
+    PRIMARY KEY (page_id, user_id)
+  );
+  CREATE INDEX page_mentions_user ON page_mentions(user_id);
+
+  CREATE TABLE notifications_v13 (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type       TEXT NOT NULL CHECK (type IN ('comment', 'reply', 'page.updated', 'mention')),
+    page_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    actor_id   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    count      INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    read_at    INTEGER
+  );
+  INSERT INTO notifications_v13 (id, user_id, type, page_id, actor_id, count, created_at, read_at)
+    SELECT id, user_id, type, page_id, actor_id, count, created_at, read_at FROM notifications;
+  DROP TABLE notifications;
+  ALTER TABLE notifications_v13 RENAME TO notifications;
+  CREATE INDEX notifications_user ON notifications(user_id, created_at DESC);
   `,
 ];
 

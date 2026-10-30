@@ -9,19 +9,26 @@ import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
 import { getPrefs, watch } from '../lib/notifications.js';
 import { entriesOf, filterReadable, governingPage, pageLevel } from '../lib/page-acl.js';
+import { mentionIds } from '../lib/content.js';
+import { MAX_MENTIONS, mentionableUsers, readersAmong, validMentions } from '../lib/mentions.js';
 
 interface CommentRow {
   id: string; page_id: string; parent_id: string | null; author_id: string | null; author_name: string | null; body: string;
-  created_at: number; updated_at: number; resolved_at: number | null; deleted_at: number | null; seq: number;
+  created_at: number; updated_at: number; resolved_at: number | null; deleted_at: number | null; seq: number; anchor_text: string | null;
 }
 
-const toComment = (r: CommentRow) => ({
+type Mentions = Map<string, { id: string; name: string }[]>;
+
+const toComment = (r: CommentRow, mentions: Mentions = new Map()) => ({
   id: r.id,
   pageId: r.page_id,
   parentId: r.parent_id,
   author: r.deleted_at ? null : r.author_id ? { id: r.author_id, name: r.author_name } : null,
   body: r.deleted_at ? null : r.body,
   deleted: !!r.deleted_at,
+  anchored: r.anchor_text !== null,
+  anchorText: r.deleted_at ? null : r.anchor_text,
+  mentions: r.deleted_at ? [] : mentions.get(r.id) ?? [],
   resolved: !!r.resolved_at,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -36,6 +43,16 @@ export default async function v3Routes(app: FastifyInstance) {
 
   // ---- Commentaires ----------------------------------------------------------------------
   const byPage = (pageId: string, cid: string) => db.prepare(`${SELECT} WHERE c.id = ? AND c.page_id = ?`).get(cid, pageId) as CommentRow | undefined;
+  // Personnes mentionnées par un lot de commentaires (une seule requête).
+  const mentionsOf = (ids: string[]): Mentions => {
+    const out: Mentions = new Map();
+    if (!ids.length) return out;
+    for (const r of db.prepare(
+      `SELECT m.comment_id AS cid, u.id, u.name FROM comment_mentions m JOIN users u ON u.id = m.user_id
+       WHERE m.comment_id IN (SELECT value FROM json_each(?)) ORDER BY u.name`,
+    ).all(JSON.stringify(ids)) as { cid: string; id: string; name: string }[]) out.set(r.cid, [...(out.get(r.cid) ?? []), { id: r.id, name: r.name }]);
+    return out;
+  };
   const announce = (type: 'comment.created' | 'comment.updated' | 'comment.deleted', spaceId: string, pageId: string, req: { auth: { user: { id: string; name: string } } | null }, data: unknown) =>
     bus.publish({ type, spaceId, pageId, by: req.auth ? { id: req.auth.user.id, name: req.auth.user.name } : undefined, data });
 
@@ -55,25 +72,38 @@ export default async function v3Routes(app: FastifyInstance) {
     const kept = q.resolved === undefined ? rows : rows.filter((r) => resolvedRoots.has(rootOf.get(r.id)!) === (q.resolved === 'true'));
     const items = kept.slice(0, q.limit);
     const last = items.at(-1);
-    return { items: items.map(toComment), nextCursor: kept.length > q.limit && last ? encodeCursor({ s: last.seq }) : null };
+    const mentions = mentionsOf(items.map((r) => r.id));
+    return { items: items.map((r) => toComment(r, mentions)), nextCursor: kept.length > q.limit && last ? encodeCursor({ s: last.seq }) : null };
   });
 
   app.post('/pages/:id/comments', {
     preHandler: guard('write'),
-    schema: { tags: ['comments'], summary: 'Commenter une page (ou répondre à un commentaire)', params: idParams, body: z.object({ body: text, parentId: idSchema.nullable().optional() }) },
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+    schema: { tags: ['comments'], summary: 'Commenter une page (ou répondre à un commentaire)', params: idParams, body: z.object({
+      body: text,
+      parentId: idSchema.nullable().optional(),
+      anchorText: z.string().trim().min(1).max(200).optional(),
+      mentions: z.array(idSchema).max(MAX_MENTIONS).optional(),
+    }) },
   }, async (req, reply) => {
     const auth = requireAuth(req);
     const page = loadWritablePage(db, req, (req.params as { id: string }).id);
-    const b = req.body as { body: string; parentId?: string | null };
+    const b = req.body as { body: string; parentId?: string | null; anchorText?: string; mentions?: string[] };
+    if (b.anchorText !== undefined && b.parentId) throw new HttpError(400, 'Seul un commentaire de premier niveau peut être ancré sur un texte');
     if (b.parentId) {
       const parent = byPage(page.id, b.parentId);
       if (!parent || parent.deleted_at || parent.parent_id) throw new HttpError(400, 'Réponse possible uniquement à un commentaire de premier niveau existant');
     }
     const id = newId();
     const now = Date.now();
-    db.prepare('INSERT INTO page_comments (id, page_id, parent_id, author_id, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(id, page.id, b.parentId ?? null, auth.user.id, b.body, now, now);
-    const row = toComment(byPage(page.id, id)!);
+    // Les personnes mentionnées sans accès à la page sont ignorées en silence (rien ne révèle qui existe).
+    const mentioned = validMentions(db, page.id, b.mentions ?? []);
+    db.transaction(() => {
+      db.prepare('INSERT INTO page_comments (id, page_id, parent_id, author_id, body, created_at, updated_at, anchor_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, page.id, b.parentId ?? null, auth.user.id, b.body, now, now, b.anchorText ?? null);
+      for (const m of mentioned) db.prepare('INSERT INTO comment_mentions (comment_id, user_id) VALUES (?, ?)').run(id, m.id);
+    })();
+    const row = toComment(byPage(page.id, id)!, mentionsOf([id]));
     announce('comment.created', page.space_id, page.id, req, { commentId: id });
     return reply.status(201).send(row);
   });
@@ -94,7 +124,7 @@ export default async function v3Routes(app: FastifyInstance) {
     if (b.body !== undefined) db.prepare('UPDATE page_comments SET body = ?, updated_at = ? WHERE id = ?').run(b.body, now, cid);
     if (b.resolved !== undefined) db.prepare('UPDATE page_comments SET resolved_at = ?, resolved_by = ?, updated_at = ? WHERE id = ?').run(b.resolved ? now : null, b.resolved ? auth.user.id : null, now, cid);
     announce('comment.updated', page.space_id, page.id, req, { commentId: cid });
-    return toComment(byPage(page.id, cid)!);
+    return toComment(byPage(page.id, cid)!, mentionsOf([cid]));
   });
 
   app.delete('/pages/:id/comments/:cid', {
@@ -108,10 +138,29 @@ export default async function v3Routes(app: FastifyInstance) {
     if (!row || row.deleted_at) throw new HttpError(404, 'Commentaire introuvable');
     if (row.author_id !== auth.user.id && auth.user.role !== 'admin') throw new HttpError(403, 'Seul l’auteur ou un administrateur peut supprimer ce commentaire');
     // Suppression logique : le texte est effacé, le fil (réponses) reste cohérent.
-    db.prepare("UPDATE page_comments SET deleted_at = ?, body = '', updated_at = ? WHERE id = ?").run(Date.now(), Date.now(), cid);
+    db.prepare("UPDATE page_comments SET deleted_at = ?, body = '', anchor_text = NULL, updated_at = ? WHERE id = ?").run(Date.now(), Date.now(), cid);
+    db.prepare('DELETE FROM comment_mentions WHERE comment_id = ?').run(cid);
     if (row.author_id !== auth.user.id) audit(db, req, 'comment.delete', cid, { pageId: page.id });
     announce('comment.deleted', page.space_id, page.id, req, { commentId: cid });
     return reply.status(204).send();
+  });
+
+  // ---- Mentions --------------------------------------------------------------------------
+  // Personnes qu'on peut mentionner sur cette page : actives, avec accès en lecture. Réservé à qui peut écrire.
+  app.get('/pages/:id/mentionable', {
+    preHandler: guard('write'),
+    config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+    schema: { tags: ['comments'], summary: 'Personnes mentionnables sur une page (nom commençant par q)', params: idParams, querystring: z.object({ q: z.string().trim().max(40).default('') }) },
+  }, async (req) => {
+    const page = loadWritablePage(db, req, (req.params as { id: string }).id);
+    return { items: mentionableUsers(db, page.id, (req.query as { q: string }).q) };
+  });
+
+  // Noms des personnes mentionnées dans le contenu de la page (le nom enregistré dans la page n'est qu'un repli).
+  // Réservé aux personnes connectées ; ne nomme que les personnes actives qui peuvent lire la page.
+  app.get('/pages/:id/mentioned', { preHandler: guard('read'), schema: { tags: ['comments'], summary: 'Noms des personnes mentionnées dans la page', params: idParams } }, async (req) => {
+    const page = loadReadablePage(db, req, (req.params as { id: string }).id);
+    return { items: readersAmong(db, page.id, mentionIds(JSON.parse(page.content)), 200) };
   });
 
   // ---- Permissions par page --------------------------------------------------------------

@@ -29,6 +29,7 @@ export async function refreshUnread() {
 const TEXT = {
   comment: (n) => `${n.actor?.name || 'Quelqu’un'} a commenté`,
   reply: (n) => `${n.actor?.name || 'Quelqu’un'} a répondu à votre commentaire sur`,
+  mention: (n) => `${n.actor?.name || 'Quelqu’un'} vous a mentionné dans`,
   'page.updated': (n) => `${n.actor?.name || 'Quelqu’un'} a modifié${n.count > 1 ? ` (${n.count} fois)` : ''}`,
 };
 

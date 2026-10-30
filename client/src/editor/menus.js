@@ -5,7 +5,7 @@ import { icon } from '../icons.js';
 
 // ---- Barre de mise en forme flottante ------------------------------------
 
-export function createBubbleMenu(editor) {
+export function createBubbleMenu(editor, ctx = {}) {
   const el = h('div', { class: 'bubble', hidden: true });
   document.body.append(el);
   let linkMode = false;
@@ -32,6 +32,14 @@ export function createBubbleMenu(editor) {
       btn('❝', 'Citation', () => editor.isActive('blockquote'), () => c().toggleBlockquote().run()),
       h('span', { class: 'bubble-sep' }),
       btn('↗', 'Lien', () => editor.isActive('link'), () => { linkMode = true; renderLink(); }),
+      ...(ctx.onComment ? [
+        h('span', { class: 'bubble-sep' }),
+        btn(icon('comment', 15), 'Commenter la sélection', () => false, () => {
+          const { from, to } = editor.state.selection;
+          const text = editor.state.doc.textBetween(from, to, ' ').trim().slice(0, 200);
+          if (text) ctx.onComment({ from, to, text });
+        }),
+      ] : []),
     );
   }
 
