@@ -4,8 +4,7 @@ import { z } from 'zod';
 import { can, requireAuth } from '../auth/context.js';
 import { isAiReady } from '../ai/settings.js';
 import { readableSpaceIds } from '../lib/access.js';
-import { canReadPage } from '../lib/page-acl.js';
-import { getPageRow } from '../lib/pages.js';
+import { canReadPage, hasAnyAcl } from '../lib/page-acl.js';
 import type { AppEvent } from '../lib/events.js';
 import { idSchema } from '../lib/http.js';
 
@@ -40,6 +39,7 @@ export default async function coreRoutes(app: FastifyInstance) {
   });
 
   // Flux ouverts : sans les terminer à l'arrêt, le serveur attendrait indéfiniment leur fermeture (docker stop).
+  const pageExists = db.prepare('SELECT 1 FROM pages WHERE id = ?');
   const streams = new Set<import('node:http').ServerResponse>();
   app.addHook('preClose', async () => { for (const res of streams) res.end(); });
 
@@ -64,7 +64,7 @@ export default async function coreRoutes(app: FastifyInstance) {
       if (event.type === 'notification' && (event.data as { userId?: string } | undefined)?.userId !== req.auth?.user.id) return;
       if (event.spaceId && !spaces.has(event.spaceId)) return;
       // Page restreinte : l'événement n'est diffusé qu'à ceux qui y ont accès (page détruite : plus de restriction à appliquer).
-      if (event.pageId && getPageRow(db, event.pageId) && !canReadPage(db, req.auth, event.pageId)) return;
+      if (event.pageId && hasAnyAcl(db) && pageExists.get(event.pageId) && !canReadPage(db, req.auth, event.pageId)) return;
       res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
     };
     res.write('retry: 5000\n\n');

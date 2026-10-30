@@ -62,8 +62,11 @@ const favoritesOf = (db: DB, userId: string | null) =>
   new Set(userId ? (db.prepare('SELECT page_id FROM favorites WHERE user_id = ?').all(userId) as { page_id: string }[]).map((r) => r.page_id) : []);
 
 export function listPages(db: DB, spaceIds: string[], userId: string | null, { trashed = false } = {}) {
+  // Métadonnées seulement : ni le contenu JSON ni le texte complet ne sont lus (200 caractères d'extrait suffisent).
   const rows = db.prepare(
-    `SELECT p.*, u.name AS updated_by_name FROM pages p LEFT JOIN users u ON u.id = p.updated_by
+    `SELECT p.seq, p.id, p.space_id, p.parent_id, p.position, p.title, p.icon, '' AS content, substr(p.text, 1, 200) AS text,
+            p.full_width, p.version, p.created_at, p.created_by, p.updated_at, p.updated_by, p.deleted_at, p.trash_root,
+            u.name AS updated_by_name FROM pages p LEFT JOIN users u ON u.id = p.updated_by
      WHERE p.space_id IN (SELECT value FROM json_each(?)) AND ${trashed ? 'p.deleted_at IS NOT NULL AND p.trash_root = p.id' : 'p.deleted_at IS NULL'}
      ORDER BY p.space_id, p.parent_id, p.position, p.created_at`,
   ).all(JSON.stringify(spaceIds)) as PageRow[];
