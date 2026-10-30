@@ -62,6 +62,14 @@ async function renderProfile(el) {
       h('ul', { class: 'perm-list' }, perms.map(([key, label]) => h('li', { class: session.can(key) ? 'ok' : 'off' }, icon(session.can(key) ? 'check' : 'x', 14), ' ', label)))),
     security,
     notifPrefs,
+    card('Mes données personnelles', 'Téléchargez une copie de vos données (profil, pages créées, commentaires, jetons, sessions, journal de vos actions). Aucun secret n’y figure.',
+      h('button', {
+        class: 'btn btn-ghost',
+        onClick: async () => {
+          const data = await A.attempt(() => api.get('/me/export'));
+          if (data) download('mes-donnees-notabene.json', JSON.stringify(data, null, 2), 'application/json');
+        },
+      }, icon('download', 15), 'Télécharger mes données')),
     card('Sessions actives', 'Chaque navigateur connecté ouvre une session distincte, valable au maximum la durée configurée.', sessionsBox),
     card('Déconnexion', null, h('button', { class: 'btn btn-ghost', onClick: () => session.logout() }, icon('move', 15), 'Se déconnecter'))].filter(Boolean));
 
@@ -451,18 +459,41 @@ async function renderUsers(el) {
     setTimeout(() => pwd.focus(), 30);
   };
 
-  const row = (u) => h('div', { class: 'table-row' },
+  // Droit d'accès : copie des données d'un compte, à remettre à la personne qui en fait la demande.
+  const exportUser = async (u) => {
+    const data = await A.attempt(() => api.get(`/admin/users/${u.id}/export`));
+    if (data) download(`donnees-${u.id}.json`, JSON.stringify(data, null, 2), 'application/json');
+  };
+  // Droit à l'effacement : anonymisation (le contenu reste, sans auteur), après confirmation et mot de passe.
+  const eraseUser = async (u) => {
+    const sso = !u.local;
+    const ok = await confirmModal({
+      title: `Supprimer le compte de ${u.name} ?`,
+      message: `Le compte, ses jetons, sessions, favoris, suivis et notifications seront supprimés. Ses pages, versions et commentaires restent, sans nom d’auteur. Ses adresses IP sont effacées du journal. Cette action est irréversible.${sso ? ' Compte fédéré : il sera recréé à sa prochaine connexion s’il reste autorisé par le fournisseur d’identité ; retirez-le d’abord des groupes.' : ''}`,
+      confirm: 'Supprimer',
+      danger: true,
+    });
+    if (!ok) return;
+    const reauth = await askReauth('supprimer définitivement un compte');
+    if (!reauth) return;
+    if (await A.attempt(() => api.post(`/admin/users/${u.id}/erase`, { reauth }))) { toast('Compte supprimé'); refresh(); }
+  };
+
+  const row = (u) => h('div', { class: 'table-row wrap' },
     h('span', { class: 'avatar static', style: { '--c': colorFor(u.id) } }, initials(u.name)),
     h('span', { class: 'grow' }, h('strong', null, u.name), h('small', null, `${u.email || 'sans e-mail'} · ${u.lastLoginAt ? `connecté ${timeAgo(u.lastLoginAt)}` : 'jamais connecté'}${u.tokens ? ` · ${u.tokens} jeton(s)` : ''}`)),
-    u.local && u.mfa && pill('MFA', 'ok'),
-    u.disabled && pill('Désactivé', 'off'),
-    u.local && u.id !== session.user.id
+    h('span', { class: 'row-actions' },
+      u.local && u.mfa && pill('MFA', 'ok'),
+      u.disabled && pill('Désactivé', 'off'),
+      u.local && u.id !== session.user.id
       ? h('select', { class: 'input input-sm', 'aria-label': 'Rôle', onChange: (e) => patch(u, { role: e.target.value }, 'Rôle modifié') },
         Object.entries(ROLE_LABELS).map(([value, label]) => h('option', { value, selected: value === u.role }, label)))
       : pill(ROLE_LABELS[u.role] || u.role, u.role === 'admin' ? 'accent' : ''),
-    u.local && u.id !== session.user.id && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => patch(u, { disabled: !u.disabled }, u.disabled ? 'Compte réactivé' : 'Compte désactivé') }, u.disabled ? 'Réactiver' : 'Désactiver'),
-    u.local && u.mfa && h('button', { class: 'btn btn-ghost btn-sm', onClick: async () => { if (await confirmModal({ title: 'Réinitialiser la double authentification ?', message: u.name, confirm: 'Réinitialiser', danger: true })) patch(u, { resetMfa: true }, 'MFA réinitialisée'); } }, 'Réinit. MFA'),
-    u.local && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => resetPassword(u) }, 'Mot de passe'));
+      u.local && u.id !== session.user.id && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => patch(u, { disabled: !u.disabled }, u.disabled ? 'Compte réactivé' : 'Compte désactivé') }, u.disabled ? 'Réactiver' : 'Désactiver'),
+      u.local && u.mfa && h('button', { class: 'btn btn-ghost btn-sm', onClick: async () => { if (await confirmModal({ title: 'Réinitialiser la double authentification ?', message: u.name, confirm: 'Réinitialiser', danger: true })) patch(u, { resetMfa: true }, 'MFA réinitialisée'); } }, 'Réinit. MFA'),
+      u.local && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => resetPassword(u) }, 'Mot de passe'),
+      u.id !== session.user.id && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => exportUser(u) }, 'Données'),
+      u.id !== session.user.id && h('button', { class: 'btn btn-ghost btn-sm danger-text', onClick: () => eraseUser(u) }, 'Supprimer')));
 
   const mail = h('input', { class: 'input', type: 'email', placeholder: 'E-mail', maxlength: '200', autocomplete: 'off' });
   const name = h('input', { class: 'input', placeholder: 'Nom', maxlength: '120', autocomplete: 'off' });

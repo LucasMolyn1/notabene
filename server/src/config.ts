@@ -49,6 +49,11 @@ const schema = z
     // Connexions et opérations sensibles d'authentification : tentatives par minute et par adresse IP (défaut 10).
     AUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(10),
     // Une session sans aucune requête pendant cette durée est fermée (en plus de la durée absolue ci-dessus).
+    // Conservation (jours ; 0 = jamais purgé) : corbeille, notifications lues, adresses IP et entrées du journal d'audit.
+    TRASH_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(30),
+    NOTIFICATION_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(90),
+    AUDIT_IP_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(90),
+    AUDIT_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(365),
     SESSION_IDLE_MINUTES: z.coerce.number().min(5).max(24 * 60).default(120),
     // Documentation interactive de l'API : auth (connectés seulement, défaut), public, off.
     API_DOCS: z.enum(['auth', 'public', 'off']).default('auth'),

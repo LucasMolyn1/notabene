@@ -3,12 +3,14 @@
 import { createReadStream, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { guard, requireAuth } from '../auth/context.js';
 import { assertBackupAllowed, backupName, backupTo, encryptFile } from '../backup.js';
 import { audit } from '../lib/audit.js';
-import { HttpError } from '../lib/http.js';
+import { HttpError, idParams } from '../lib/http.js';
+import { eraseUser, exportUserData } from '../lib/personal-data.js';
+import { reauthInput, requireReauth } from '../lib/reauth.js';
 
 const VERSION = (() => {
   try { return (JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as { version: string }).version; } catch { return 'inconnue'; }
@@ -120,5 +122,47 @@ export default async function adminRoutes(app: FastifyInstance) {
     app.collab?.recheckAll();
     audit(db, req, 'auth.sessions.revoke', auth.user.id, { count: changes });
     return { closed: changes };
+  });
+
+  // ---- Données personnelles (RGPD) -----------------------------------------------------------
+  const sendExport = (reply: FastifyReply, data: unknown, name: string) =>
+    reply.header('content-type', 'application/json; charset=utf-8').header('content-disposition', `attachment; filename="${name}.json"`).send(JSON.stringify(data, null, 2));
+
+  // Droit d'accès et de portabilité : l'utilisateur télécharge ses propres données.
+  app.get('/me/export', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } }, schema: { hide: true } }, async (req, reply) => {
+    const auth = requireSession(req);
+    audit(db, req, 'user.export', auth.user.id);
+    return sendExport(reply, exportUserData(db, auth.user.id), 'mes-donnees-notabene');
+  });
+
+  // Un administrateur peut répondre à une demande d'accès pour un compte.
+  app.get('/admin/users/:id/export', { preHandler: guard('admin'), config: { rateLimit: { max: 20, timeWindow: '1 hour' } }, schema: { hide: true, params: idParams } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const data = exportUserData(db, id);
+    if (!data) throw new HttpError(404, 'Utilisateur introuvable');
+    audit(db, req, 'user.export', id);
+    return sendExport(reply, data, 'donnees-utilisateur');
+  });
+
+  // Droit à l'effacement : anonymisation (voir lib/personal-data.ts). Un compte fédéré encore autorisé par l'annuaire
+  // serait recréé à sa prochaine connexion : retirez-le d'abord des groupes ou désactivez la connexion.
+  app.post('/admin/users/:id/erase', {
+    preHandler: guard('admin'),
+    config: { rateLimit: { max: 10, timeWindow: '1 hour' } },
+    schema: { hide: true, params: idParams, body: z.object({ reauth: reauthInput }) },
+  }, async (req) => {
+    const auth = requireSession(req);
+    const { id } = req.params as { id: string };
+    await requireReauth(app, req, (req.body as { reauth: z.output<typeof reauthInput> }).reauth);
+    if (id === auth.user.id) throw new HttpError(400, 'Vous ne pouvez pas supprimer votre propre compte ici');
+    const target = db.prepare('SELECT role, disabled FROM users WHERE id = ?').get(id) as { role: string; disabled: number } | undefined;
+    if (!target) throw new HttpError(404, 'Utilisateur introuvable');
+    if (target.role === 'admin' && !target.disabled && count(db, "SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND disabled = 0 AND id != ?", id) === 0) {
+      throw new HttpError(409, 'Impossible de supprimer le dernier administrateur actif');
+    }
+    eraseUser(db, id);
+    app.collab?.recheckAll();
+    audit(db, req, 'user.erase', null, { role: target.role });
+    return { ok: true };
   });
 }
