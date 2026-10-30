@@ -1,0 +1,12 @@
+[Unit]
+Description=Mise à jour de Notabene demandée depuis l'interface
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/notabene-updater.sh
+# Docker exige root ; le reste est restreint.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
