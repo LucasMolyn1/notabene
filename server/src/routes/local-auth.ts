@@ -79,8 +79,11 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     if (!user?.password_hash) throw new HttpError(400, 'Ce compte est géré par le fournisseur d’identité');
     return { auth, user };
   };
-  const closeOtherSessions = (userId: string, keepHash?: string) =>
-    db.prepare('DELETE FROM sessions WHERE user_id = ? AND id_hash != ?').run(userId, keepHash ?? '');
+  const closeOtherSessions = (userId: string, keepHash?: string) => {
+    const result = db.prepare('DELETE FROM sessions WHERE user_id = ? AND id_hash != ?').run(userId, keepHash ?? '');
+    app.collab?.recheckAll(); // les connexions de co-édition des sessions fermées sont coupées tout de suite
+    return result;
+  };
 
   // Valide un code TOTP ou un code de secours ; consomme/mémorise l'usage. Renvoie true si accepté.
   const checkSecondFactor = (user: UserRow, code: string): boolean => {
@@ -312,6 +315,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
       if (b.disabled !== undefined) db.prepare('UPDATE users SET disabled = ? WHERE id = ?').run(b.disabled ? 1 : 0, id);
       if (b.resetMfa) db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_last_step = NULL, recovery_codes = NULL WHERE id = ?').run(id);
       if (b.password || b.disabled) closeOtherSessions(id);
+      else if (b.role) app.collab?.recheckAll();
       audit(db, req, 'user.update', id, { role: b.role, disabled: b.disabled, password: !!b.password, resetMfa: !!b.resetMfa });
       return { ok: true };
     });

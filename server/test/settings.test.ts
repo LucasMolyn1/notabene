@@ -142,6 +142,22 @@ describe('réglages modifiables à chaud', () => {
     expect(ldapBinds.some((b) => b.includes('evil'))).toBe(false);
   });
 
+  it('désactiver une section efface ses secrets : pas de contournement de la ressaisie', async () => {
+    await addUser('a@example.com', 'admin');
+    const s = await login('a@example.com');
+    const body = { config: ldapConfig, secrets: { bindPassword: 'service-pass' }, reauth };
+    const t = (await api(s, 'POST', '/admin/settings/ldap/test', body)).json();
+    await api(s, 'PUT', '/admin/settings/ldap', { ...body, testId: t.testId });
+    const off = { config: { enabled: false }, reauth };
+    const offTest = (await api(s, 'POST', '/admin/settings/ldap/test', off)).json();
+    expect((await api(s, 'PUT', '/admin/settings/ldap', { ...off, testId: offTest.testId })).statusCode).toBe(200);
+    const stored = JSON.parse((db.prepare("SELECT value FROM settings WHERE key = 'cfg:ldap'").get() as { value: string }).value);
+    expect(stored.secrets).toEqual({});
+    ldapBinds.length = 0;
+    await api(s, 'POST', '/admin/settings/ldap/test', { config: { ...ldapConfig, url: 'ldaps://evil.example.net' }, reauth });
+    expect(ldapBinds.some((b) => b.includes('service-pass'))).toBe(false);
+  });
+
   it('applique les règles de production (ldap:// en clair refusé)', async () => {
     await app.close(); db.close();
     await boot({ NODE_ENV: 'production', PUBLIC_URL: 'https://wiki.example.com' });

@@ -4,6 +4,7 @@
 // Le niveau ACL ne fait que RESTREINDRE : il ne dépasse jamais le rôle ni la portée du jeton.
 import type { Auth } from '../auth/context.js';
 import type { DB } from '../db.js';
+import { HttpError } from './http.js';
 
 export type Level = 'none' | 'read' | 'write';
 export type AclEntry = { userId: string; level: 'read' | 'write' };
@@ -58,4 +59,16 @@ export function filterReadable<T extends { id: string }>(db: DB, auth: Auth | nu
     return true;
   };
   return items.filter((i) => { if (!memo.has(i.id)) memo.set(i.id, readable(i.id)); return memo.get(i.id)!; });
+}
+
+// Un déplacement ne doit ni lever ni changer la restriction qui protège une page : sinon un rédacteur
+// (non administrateur) rendrait lisible par d'autres une page cachée. Une page qui porte ses propres entrées
+// garde sa restriction où qu'elle aille ; sinon seul un administrateur peut la sortir de sa zone restreinte.
+export function assertMoveKeepsRestriction(db: DB, auth: Auth | null, pageId: string, newParentId: string | null): void {
+  if (auth?.user.role === 'admin') return;
+  if (entriesOf(db, pageId).length) return;
+  const cur = db.prepare('SELECT parent_id FROM pages WHERE id = ?').get(pageId) as { parent_id: string | null } | undefined;
+  const before = cur?.parent_id ? governingPage(db, cur.parent_id) : null;
+  const after = newParentId ? governingPage(db, newParentId) : null;
+  if (before && before !== after) throw new HttpError(403, 'Sortir cette page de sa zone restreinte est réservé aux administrateurs');
 }

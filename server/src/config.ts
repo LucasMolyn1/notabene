@@ -25,6 +25,8 @@ const schema = z
     TRUST_PROXY: bool('false'),
     ALLOW_INSECURE_HTTP: bool('false'),
     WEBHOOK_ALLOW_PRIVATE: bool('false'),
+    // Autorise le fournisseur IA à viser un réseau privé (Ollama, LM Studio…). Variable d'environnement seulement : jamais modifiable depuis l'interface.
+    AI_ALLOW_PRIVATE: bool('false'),
     // Fige la configuration des fournisseurs et de l'intégration : seules les variables d'environnement comptent,
     // les réglages saisis dans l'interface sont ignorés (et non modifiables).
     CONFIG_LOCKED: bool('false'),

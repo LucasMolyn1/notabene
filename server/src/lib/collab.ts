@@ -25,11 +25,14 @@ const IDLE_CLOSE = 15_000;
 const MAX_CONNS_PER_ROOM = 50;
 
 // Codes 4400-4499 : y-websocket ne se reconnecte pas (décision délibérée du serveur).
-export const CLOSE = { RELOAD: 4409, GONE: 4404, FULL: 4429 } as const;
+export const CLOSE = { RELOAD: 4409, GONE: 4404, FULL: 4429, DENIED: 4403 } as const;
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 
-interface Conn { userId: string; name: string; awarenessIds: Set<number> }
+interface Conn { userId: string; name: string; sessionHash: string | null; awarenessIds: Set<number> }
+
+// Décide si une connexion déjà ouverte garde le droit d'écrire sur la page (session valide, compte actif, permissions).
+export type Authorize = (conn: { userId: string; sessionHash: string | null }, pageId: string) => boolean;
 
 class Room {
   readonly doc = new Y.Doc();
@@ -49,8 +52,9 @@ class Room {
 export class CollabHub {
   readonly #rooms = new Map<string, Room>();
   readonly #unsubscribe: () => void;
+  readonly #unsubscribeMoves: () => void;
 
-  constructor(private readonly db: DB, private readonly bus: EventBus) {
+  constructor(private readonly db: DB, private readonly bus: EventBus, private readonly authorize: Authorize = () => true) {
     // Une modification de contenu venue d'ailleurs (API, restauration d'une version…) invalide la salle.
     this.#unsubscribe = bus.subscribe((e) => {
       if (!e.pageId) return;
@@ -59,9 +63,18 @@ export class CollabHub {
       if (e.type === 'page.trashed' || e.type === 'page.deleted') this.#close(room, CLOSE.GONE, true);
       else if (e.type === 'page.updated' || e.type === 'page.restored') this.#onPageEvent(room);
     });
+    // Page déplacée sous un parent restreint : ses sous-pages aussi changent de zone, on revérifie toutes les salles.
+    this.#unsubscribeMoves = bus.subscribe((e) => { if (e.type === 'page.moved') this.recheckAll(); });
   }
 
   get roomCount() { return this.#rooms.size; }
+
+  // Referme les connexions qui n'ont plus le droit d'écrire (compte désactivé, session fermée, page déplacée…).
+  recheckAll() {
+    for (const room of this.#rooms.values()) {
+      for (const [ws, conn] of [...room.conns]) if (!this.authorize(conn, room.pageId)) ws.close(CLOSE.DENIED);
+    }
+  }
 
   #onPageEvent(room: Room) {
     const row = getPageRow(this.db, room.pageId);
@@ -162,12 +175,12 @@ export class CollabHub {
   }
 
   // Branche une WebSocket déjà authentifiée et autorisée (écriture) sur la salle de la page.
-  connect(ws: WebSocket, pageId: string, user: { id: string; name: string }): boolean {
+  connect(ws: WebSocket, pageId: string, user: { id: string; name: string; sessionHash?: string | null }): boolean {
     const room = this.#rooms.get(pageId) ?? this.#load(pageId);
     if (!room) { ws.close(CLOSE.GONE); return false; }
     if (room.conns.size >= MAX_CONNS_PER_ROOM) { ws.close(CLOSE.FULL); return false; }
     if (room.idleTimer) { clearTimeout(room.idleTimer); room.idleTimer = null; }
-    const conn: Conn = { userId: user.id, name: user.name, awarenessIds: new Set() };
+    const conn: Conn = { userId: user.id, name: user.name, sessionHash: user.sessionHash ?? null, awarenessIds: new Set() };
     room.conns.set(ws, conn);
 
     const hello = encoding.createEncoder();
@@ -191,6 +204,8 @@ export class CollabHub {
     ws.on('pong', () => { alive = true; });
     const ping = setInterval(() => {
       if (!alive) { ws.terminate(); return; }
+      // Les droits ne sont pas figés à la connexion : session expirée ou fermée, compte désactivé, page restreinte ou déplacée.
+      if (!this.authorize(conn, pageId)) { ws.close(CLOSE.DENIED); return; }
       alive = false;
       ws.ping();
     }, 30_000);
@@ -238,6 +253,7 @@ export class CollabHub {
 
   shutdown() {
     this.#unsubscribe();
+    this.#unsubscribeMoves();
     for (const room of [...this.#rooms.values()]) this.#close(room, 1001, false);
   }
 }

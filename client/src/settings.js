@@ -9,7 +9,7 @@ import { colorFor } from './presence.js';
 import { toast, confirmModal, openModal } from './ui.js';
 import { qrSvg } from './qr.js';
 import { securityCard } from './local-auth.js';
-import { embedOriginsCard, providerCard } from './provider-settings.js';
+import { askReauth, embedOriginsCard, providerCard } from './provider-settings.js';
 import { preferencesCard } from './notifications.js';
 import { openDrawio, openExcalidraw } from './diagrams.js';
 import { beginView, setView, topbar } from './views.js';
@@ -240,22 +240,45 @@ async function renderAi(el) {
   const removeKey = h('input', { type: 'checkbox' });
   const result = h('span', { class: 'hint' });
   const baseField = h('label', { class: 'field' }, h('span', null, 'URL de base'), baseUrl,
-    h('small', { class: 'hint' }, 'Ollama : http://ollama:11434/v1 · LM Studio : http://hote:1234/v1'));
+    h('small', { class: 'hint' }, 'Ollama : http://ollama:11434/v1 · LM Studio : http://hote:1234/v1. Une adresse du réseau interne ou en http exige AI_ALLOW_PRIVATE=true dans l’environnement du serveur.'));
 
+  // Modèles réellement proposés par le fournisseur (chargés à la demande) ; suggestions par défaut sinon.
+  let fetched = [];
   const paint = () => {
     baseField.hidden = provider.value !== 'openai';
-    models.replaceChildren(...MODEL_SUGGESTIONS[provider.value].map((m) => h('option', { value: m })));
+    models.replaceChildren(...(fetched.length ? fetched : MODEL_SUGGESTIONS[provider.value]).map((m) => h('option', { value: m })));
   };
   provider.addEventListener('change', () => {
+    fetched = [];
+    modelsHint.textContent = '';
     paint();
     if (!MODEL_SUGGESTIONS[provider.value].includes(model.value)) model.value = MODEL_SUGGESTIONS[provider.value][0];
   });
+  const modelsHint = h('small', { class: 'hint' });
+  const loadModels = async ({ quiet = false } = {}) => {
+    const body = { provider: provider.value };
+    if (provider.value === 'openai' && baseUrl.value.trim()) body.baseUrl = baseUrl.value.trim();
+    if (apiKey.value.trim()) body.apiKey = apiKey.value.trim();
+    modelsHint.textContent = 'Chargement des modèles…';
+    try {
+      const r = await api.post('/admin/ai/models', body);
+      fetched = r.models;
+      modelsHint.textContent = fetched.length ? `${fetched.length} modèle${fetched.length > 1 ? 's' : ''} disponible${fetched.length > 1 ? 's' : ''} : cliquez dans le champ pour choisir.` : 'Le fournisseur ne propose aucun modèle.';
+    } catch (err) {
+      fetched = [];
+      modelsHint.textContent = quiet ? 'Liste non chargée : saisissez le nom du modèle, ou utilisez « Charger les modèles ».' : err.message;
+    }
+    paint();
+  };
   paint();
 
   const save = async () => {
     const payload = { enabled: enabled.checked, provider: provider.value, baseUrl: provider.value === 'openai' ? baseUrl.value.trim() : '', model: model.value.trim() };
     if (removeKey.checked) payload.apiKey = '';
     else if (apiKey.value.trim()) payload.apiKey = apiKey.value.trim();
+    const reauth = await askReauth('modifier le fournisseur IA (la clé d’API est un secret)');
+    if (!reauth) return false;
+    payload.reauth = reauth;
     const saved = await A.attempt(() => api.put('/admin/ai', payload));
     if (!saved) return false;
     await session.load();
@@ -269,7 +292,7 @@ async function renderAi(el) {
       h('label', { class: 'check' }, enabled, h('span', null, h('strong', null, 'Activer la recherche IA'), h('small', null, 'Les utilisateurs pourront interroger la documentation qu’ils ont le droit de lire.'))),
       h('label', { class: 'field' }, h('span', null, 'Fournisseur'), provider),
       baseField,
-      h('label', { class: 'field' }, h('span', null, 'Modèle'), model, models),
+      h('label', { class: 'field' }, h('span', null, 'Modèle'), h('div', { class: 'row' }, model, h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: (e) => { e.preventDefault(); loadModels(); } }, 'Charger les modèles')), models, modelsHint),
       h('label', { class: 'field' }, h('span', null, 'Clé d’API'), apiKey,
         h('small', { class: 'hint' }, 'Chiffrée (AES-256-GCM) côté serveur et jamais renvoyée au navigateur. Optionnelle pour un modèle local.')),
       current.hasKey && h('label', { class: 'check' }, removeKey, h('span', null, 'Supprimer la clé enregistrée')),
@@ -287,6 +310,8 @@ async function renderAi(el) {
         result))),
     card('Confidentialité', null, h('div', { class: 'notice info' }, 'Pour chaque question, seuls des extraits des pages pertinentes et lisibles par l’utilisateur sont envoyés au fournisseur, jamais tout le wiki. Avec un modèle local (Ollama), aucune donnée ne quitte votre infrastructure.')),
     usage);
+  // Si un fournisseur est déjà configuré, on propose directement ses modèles.
+  if (current.hasKey || (current.provider === 'openai' && current.baseUrl)) loadModels({ quiet: true });
 }
 
 // ---- Diagrammes ------------------------------------------------------------------------

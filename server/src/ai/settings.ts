@@ -3,6 +3,8 @@
 import { z } from 'zod';
 import type { DB } from '../db.js';
 import type { SecretBox } from '../lib/crypto.js';
+import { HttpError } from '../lib/http.js';
+import { reauthInput } from '../lib/reauth.js';
 
 const KEY = 'ai';
 const AAD = 'notabene:ai-api-key';
@@ -16,7 +18,12 @@ export const aiSettingsInput = z.object({
   model: z.string().trim().min(1).max(120).regex(/^[\w.:/@-]+$/, 'nom de modèle invalide'),
   // undefined : clé inchangée ; chaîne vide : clé supprimée.
   apiKey: z.string().max(500).optional(),
+  // Preuve d'identité récente (voir lib/reauth.ts) : exigée pour toute modification.
+  reauth: reauthInput,
 });
+
+// Destination de la clé d'API : fournisseur + adresse. Si elle change, la clé enregistrée ne doit pas la suivre sans être ressaisie.
+export const aiDestination = (provider: string, baseUrl: string) => `${provider}|${baseUrl.trim().replace(/\/+$/, '')}`;
 
 interface Stored {
   enabled: boolean;
@@ -28,6 +35,8 @@ interface Stored {
 }
 
 export interface AiSettings {
+  /** Réseaux privés autorisés (AI_ALLOW_PRIVATE) : décidé par l'environnement, pas par la base. */
+  allowPrivate: boolean;
   enabled: boolean;
   provider: 'anthropic' | 'openai';
   baseUrl: string;
@@ -46,9 +55,10 @@ export function publicAiSettings(db: DB) {
   return { enabled: s.enabled, provider: s.provider, baseUrl: s.baseUrl, model: s.model, hasKey: !!s.apiKeySealed, keyHint: s.keyHint };
 }
 
-export function loadAiSettings(db: DB, box: SecretBox): AiSettings {
+export function loadAiSettings(db: DB, box: SecretBox, allowPrivate: boolean): AiSettings {
   const s = read(db);
   return {
+    allowPrivate,
     enabled: s.enabled,
     provider: s.provider,
     baseUrl: s.baseUrl,
@@ -59,6 +69,9 @@ export function loadAiSettings(db: DB, box: SecretBox): AiSettings {
 
 export function saveAiSettings(db: DB, box: SecretBox, input: z.output<typeof aiSettingsInput>, userId: string) {
   const prev = read(db);
+  if (prev.apiKeySealed && input.apiKey === undefined && aiDestination(prev.provider, prev.baseUrl) !== aiDestination(input.provider, input.baseUrl || '')) {
+    throw new HttpError(400, 'L’adresse du fournisseur change : ressaisissez la clé d’API.');
+  }
   const next: Stored = {
     enabled: input.enabled,
     provider: input.provider,
@@ -77,6 +90,11 @@ export function saveAiSettings(db: DB, box: SecretBox, input: z.output<typeof ai
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
   ).run(KEY, JSON.stringify(next), Date.now(), userId);
   return publicAiSettings(db);
+}
+
+export function storedDestination(db: DB) {
+  const s = read(db);
+  return aiDestination(s.provider, s.baseUrl);
 }
 
 export function isAiReady(db: DB) {

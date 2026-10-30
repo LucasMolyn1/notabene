@@ -110,6 +110,7 @@ export default async function adminRoutes(app: FastifyInstance) {
   app.delete('/sessions/others', { schema: { tags: ['session'], summary: 'Fermer mes autres sessions', hide: true } }, async (req) => {
     const auth = requireSession(req);
     const { changes } = db.prepare('DELETE FROM sessions WHERE user_id = ? AND id_hash != ?').run(auth.user.id, auth.sessionHash);
+    app.collab?.recheckAll();
     audit(db, req, 'auth.sessions.revoke', auth.user.id, { count: changes });
     return { closed: changes };
   });

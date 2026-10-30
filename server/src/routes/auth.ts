@@ -1,4 +1,5 @@
 // Connexion OIDC, déconnexion (locale + fournisseur) et connexion de développement.
+import { BINDING_TTL_SECONDS, bindingCookieName, newBinding } from '../auth/login-binding.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { hasMfaClaim, roleFromGroups, safeReturnTo, upsertUser } from '../auth/oidc.js';
@@ -20,6 +21,7 @@ export default async function authRoutes(app: FastifyInstance) {
   const { db, config, oidc } = app;
   const cookieName = sessionCookieName(config.secureCookies);
   const cookieOptions = { path: '/', httpOnly: true, secure: config.secureCookies, sameSite: 'lax' as const };
+  const bindingName = bindingCookieName(config.secureCookies);
 
   const startSession = (reply: import('fastify').FastifyReply, userId: string, idToken: string | null) => {
     const session = createSession(db, userId, idToken, config.SESSION_TTL_HOURS);
@@ -35,7 +37,9 @@ export default async function authRoutes(app: FastifyInstance) {
       if (config.DEV_LOGIN) return reply.redirect(`/?dev_login=1&returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`);
       throw new HttpError(503, 'Fournisseur d’identité non configuré');
     }
-    const url = await oidc.authorizationUrl(safeReturnTo(returnTo));
+    const binding = newBinding();
+    const url = await oidc.authorizationUrl(safeReturnTo(returnTo), binding.hash);
+    reply.setCookie(bindingName, binding.token, { ...cookieOptions, maxAge: BINDING_TTL_SECONDS });
     return reply.redirect(url.href);
   });
 
@@ -45,7 +49,8 @@ export default async function authRoutes(app: FastifyInstance) {
     const idpError = url.searchParams.get('error');
     if (idpError) return reply.redirect(`/?auth_error=${encodeURIComponent(idpError.replace(/[^a-z_]/gi, '').slice(0, 40))}`);
     try {
-      const { profile, idToken, returnTo } = await oidc.handleCallback(url);
+      const { profile, idToken, returnTo } = await oidc.handleCallback(url, req.cookies[bindingName]);
+      reply.clearCookie(bindingName, cookieOptions);
       const live = app.rt.get();
       if (live.OIDC_REQUIRE_MFA && !hasMfaClaim(profile)) {
         audit(db, req, 'auth.denied', String(profile.sub), { reason: 'mfa' });
@@ -80,6 +85,7 @@ export default async function authRoutes(app: FastifyInstance) {
     if (token) {
       if (req.auth) audit(db, req, 'auth.logout', req.auth.user.id);
       const idToken = destroySession(db, token);
+      app.collab?.recheckAll(); // coupe les connexions de co-édition de cette session
       if (oidc.enabled) redirect = (await oidc.logoutUrl(idToken)) ?? '/';
     }
     reply.clearCookie(cookieName, cookieOptions);

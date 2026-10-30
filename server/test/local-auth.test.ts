@@ -155,6 +155,10 @@ describe('MFA imposée', () => {
     const blocked = await strict.inject({ method: 'GET', url: '/api/v3/spaces', cookies });
     expect(blocked.statusCode).toBe(403);
     expect(blocked.json().mfaSetupRequired).toBe(true);
+    // Le routeur décode l'URL : la même route ne doit pas s'ouvrir par un chemin encodé.
+    const encoded = await strict.inject({ method: 'GET', url: '/%61pi/v3/spaces', cookies });
+    expect(encoded.statusCode).toBe(403);
+    expect((await strict.inject({ method: 'GET', url: '/api/v3/%73paces', cookies })).statusCode).toBe(403);
 
     const h = { 'x-csrf-token': me.csrf };
     const setup = (await strict.inject({ method: 'POST', url: '/auth/mfa/setup', cookies, headers: h, payload: {} })).json();

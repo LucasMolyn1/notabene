@@ -155,7 +155,8 @@ Principales routes : `GET/POST /spaces`, `GET/POST /pages`, `GET/PATCH/DELETE /p
 Un administrateur l’active dans **menu utilisateur → Recherche IA** :
 
 - **Anthropic Claude** : collez une clé d’API (modèle par défaut `claude-opus-5-5`).
-- **Compatible OpenAI** : renseignez l’URL de base (`http://ollama:11434/v1` pour un Ollama local) et le modèle.
+- **Compatible OpenAI** : renseignez l’URL de base (`http://ollama:11434/v1` pour un Ollama local) et le modèle. Une adresse du réseau interne ou en `http` exige `AI_ALLOW_PRIVATE=true` dans l’environnement du serveur.
+- Le bouton **Charger les modèles** interroge le fournisseur (`/models`) et propose tous ses modèles dans la liste. La clé enregistrée n’est utilisée que pour l’adresse enregistrée ; pour une autre adresse, saisissez la clé. Modifier le fournisseur demande la ressaisie du mot de passe.
 
 La clé est chiffrée en base (AES-256-GCM) et n’est jamais renvoyée au navigateur. Pour chaque question, seuls des extraits des pages pertinentes **que l’utilisateur a le droit de lire** sont envoyés au modèle.
 

@@ -3,7 +3,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard, requireAuth } from '../auth/context.js';
-import { loadReadablePage } from '../lib/access.js';
+import { loadReadablePage, loadWritablePage } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
 import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
@@ -63,7 +63,7 @@ export default async function v3Routes(app: FastifyInstance) {
     schema: { tags: ['comments'], summary: 'Commenter une page (ou répondre à un commentaire)', params: idParams, body: z.object({ body: text, parentId: idSchema.nullable().optional() }) },
   }, async (req, reply) => {
     const auth = requireAuth(req);
-    const page = loadReadablePage(db, req, (req.params as { id: string }).id);
+    const page = loadWritablePage(db, req, (req.params as { id: string }).id);
     const b = req.body as { body: string; parentId?: string | null };
     if (b.parentId) {
       const parent = byPage(page.id, b.parentId);
@@ -84,7 +84,7 @@ export default async function v3Routes(app: FastifyInstance) {
   }, async (req) => {
     const auth = requireAuth(req);
     const { id, cid } = req.params as { id: string; cid: string };
-    const page = loadReadablePage(db, req, id);
+    const page = loadWritablePage(db, req, id);
     const row = byPage(page.id, cid);
     if (!row || row.deleted_at) throw new HttpError(404, 'Commentaire introuvable');
     const b = req.body as { body?: string; resolved?: boolean };

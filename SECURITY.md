@@ -12,17 +12,24 @@ Merci de ne pas ouvrir d’issue publique : utilisez les *GitHub Security Adviso
 - Seul le **hash SHA-256** de l’identifiant de session est stocké. La durée de vie est absolue (12 h par défaut), et une nouvelle session est créée à chaque connexion, ce qui empêche la fixation de session.
 - Redirections après connexion limitées aux chemins locaux, sans redirection ouverte.
 - Accès refusé par défaut aux utilisateurs hors des groupes autorisés (`OIDC_DEFAULT_ROLE=none`).
+- Une tentative de connexion SSO est **liée au navigateur** qui la lance (cookie court `__Host-nb_login`, dont seule l'empreinte est stockée) : un lien de retour transmis à une autre personne est refusé. SAML exige HTTPS pour cette liaison (cookie `SameSite=None; Secure`, car le retour est un POST du fournisseur d'identité).
+- La MFA obligatoire est appliquée d'après la **route réellement appariée**, pas d'après le texte de l'URL (`/%61pi/…` ne la contourne pas), et couvre aussi la co-édition.
+- Une connexion de **co-édition** ouverte est revérifiée toutes les 30 secondes (session, compte actif, rôle, permissions de la page) et coupée aussitôt à la déconnexion, à la désactivation du compte, à un changement de permissions ou au déplacement de la page.
 
 ### Autorisation
 - Rôle global (admin / éditeur / lecteur) croisé avec les **portées** du jeton d’API.
 - Une page inaccessible renvoie **404** (et non 403) pour ne pas révéler son existence.
 - Les jetons d’API ne peuvent être créés que depuis une session navigateur, jamais avec un autre jeton, et uniquement avec des portées autorisées par le rôle.
 - Suppression définitive, gestion des espaces et des réglages : administrateurs uniquement.
+- Une **permission fine en lecture seule** n'autorise aucune écriture, commentaires compris.
+- Déplacer une sous-page hors d'une zone restreinte est **réservé aux administrateurs** ; dupliquer une page restreinte conserve ses permissions ; une sous-page ne remonte pas à la racine à la restauration si son parent restreint est encore à la corbeille.
 
 ### Protection des requêtes
 - **CSRF** : en-tête `X-CSRF-Token` lié à la session, comparé en temps constant, et contrôle de l’en-tête `Origin` sur toute écriture authentifiée par cookie.
 - **Limitation de débit** globale, renforcée sur l’authentification et l’IA.
 - **Validation Zod** de toutes les entrées, taille des requêtes bornée.
+- Les secrets des fournisseurs (LDAP, SMTP, OIDC, clé d'IA) ne suivent **jamais** un changement d'adresse sans être ressaisis ; désactiver une section efface ses secrets ; la clé d'IA exige la ressaisie du mot de passe.
+- Les requêtes sortantes vers le fournisseur d'IA passent par la garde réseau (adresses internes refusées, adresse vérifiée à la connexion). Pour un LLM local (Ollama, LM Studio), `AI_ALLOW_PRIVATE=true` est une variable d'environnement, jamais modifiable depuis l'interface.
 
 ### Contenu
 - Documents validés par **liste blanche** de nœuds, marques et attributs. Seuls les liens `http(s)`, `mailto`, relatifs et ancres sont acceptés, et les images doivent être en `data:image/*` ou `https`.

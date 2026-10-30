@@ -210,14 +210,19 @@ export function movePage(db: DB, id: string, input: { parentId: string | null; i
 export function duplicatePage(db: DB, id: string, userId: string | null) {
   const src = getPageRow(db, id);
   if (!src || src.deleted_at) throw new HttpError(404, 'Page introuvable');
-  return createPage(db, {
-    spaceId: src.space_id,
-    parentId: src.parent_id,
-    title: `${src.title || 'Sans titre'} (copie)`,
-    icon: src.icon,
-    content: JSON.parse(src.content),
-    afterId: id,
-  }, userId);
+  return db.transaction(() => {
+    const copy = createPage(db, {
+      spaceId: src.space_id,
+      parentId: src.parent_id,
+      title: `${src.title || 'Sans titre'} (copie)`,
+      icon: src.icon,
+      content: JSON.parse(src.content),
+      afterId: id,
+    }, userId);
+    // La copie reste aussi restreinte que la source : sinon dupliquer une page cachée la rendrait visible à tout le parent.
+    db.prepare('INSERT INTO page_acl (page_id, user_id, level) SELECT ?, user_id, level FROM page_acl WHERE page_id = ?').run(copy.id, id);
+    return copy;
+  })();
 }
 
 export function trashPage(db: DB, id: string) {
