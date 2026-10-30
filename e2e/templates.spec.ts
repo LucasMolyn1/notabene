@@ -18,7 +18,7 @@ test('créer une page depuis un modèle fourni, enregistrer un modèle puis le r
   await loginUi(page, ADMIN.email, ADMIN.password);
 
   // Modèle fourni.
-  await page.getByRole('button', { name: 'Depuis un modèle' }).click();
+  await page.getByRole('complementary', { name: 'Navigation' }).getByRole('button', { name: 'Depuis un modèle' }).click();
   const dialog = page.getByRole('dialog', { name: 'Nouvelle page depuis un modèle' });
   await expect(dialog.getByRole('button', { name: /Compte rendu de réunion/ })).toBeVisible();
   await expect(dialog).not.toContainText('false');
@@ -42,13 +42,13 @@ test('créer une page depuis un modèle fourni, enregistrer un modèle puis le r
   await page.keyboard.press('Escape');
 
   // Réutilisation.
-  await page.getByRole('button', { name: 'Depuis un modèle' }).click();
+  await page.getByRole('complementary', { name: 'Navigation' }).getByRole('button', { name: 'Depuis un modèle' }).click();
   await dialog.getByRole('button', { name: /^Fiche projet \(modèle e2e\)/ }).click();
   await expect(page.getByText('Objectif du projet e2e').first()).toBeVisible();
   await expect(page).not.toHaveURL(new RegExp(source.id));
 
   // Suppression avec confirmation.
-  await page.getByRole('button', { name: 'Depuis un modèle' }).click();
+  await page.getByRole('complementary', { name: 'Navigation' }).getByRole('button', { name: 'Depuis un modèle' }).click();
   await dialog.getByRole('button', { name: 'Supprimer le modèle Fiche projet (modèle e2e)' }).click();
   await page.getByRole('dialog', { name: 'Supprimer le modèle' }).getByRole('button', { name: 'Supprimer' }).click();
   await expect(dialog.getByRole('button', { name: /^Fiche projet \(modèle e2e\)/ })).toHaveCount(0);

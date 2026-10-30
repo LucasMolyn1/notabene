@@ -8,7 +8,7 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | --- | --- |
 | **Authentification** | OIDC (Authentik ou tout fournisseur conforme) : Authorization Code + PKCE, state et nonce à usage unique, rôles dérivés des groupes, déconnexion côté fournisseur |
 | **Rôles** | `admin` (espaces, réglages, audit, suppression définitive), `editor` (écriture), `reader` (lecture) ; espaces **publics** lisibles sans connexion |
-| **Éditeur** | TipTap 3 : menu `/`, raccourcis Markdown, callouts, tableaux, tâches, images, mentions de pages, sommaire automatique |
+| **Éditeur** | TipTap 3 : menu `/`, raccourcis Markdown, callouts, tableaux, tâches, images et diagrammes redimensionnables, liens vers d'autres pages, sommaire automatique, blocs de code colorés (CodeMirror 6, co-édition comprise), vraie liste d'emojis en français |
 | **Diagrammes** | **Mermaid** (texte, rendu en direct), **Excalidraw** (dessin), **Draw.io** (instance auto-hébergée) |
 | **Recherche** | Plein texte SQLite FTS5 insensible aux accents (`⌘K`) |
 | **IA** | Onglet « Demander à l’IA » dans `⌘K` : réponses sourcées à partir des pages lisibles par l’utilisateur ; **Claude** ou tout endpoint **compatible OpenAI** (OpenAI, Mistral, Ollama, LM Studio…) |
@@ -16,7 +16,25 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | **Collaboration** | Mise à jour en temps réel (SSE), présence des lecteurs, détection des modifications concurrentes, historique des versions |
 | **Commentaires et notifications** | Commentaires par page (fils, réponses, résolution, texte commenté surligné), mentions `@personne`, suivi de pages, cloche en temps réel, e-mails facultatifs sans contenu de page |
 | **Permissions par page** | Un administrateur réserve une page et ses sous-pages à des personnes, en lecture ou en écriture ; appliqué partout (liste, recherche, export, IA, flux, co-édition) |
-| **Organisation** | Glisser-déposer, favoris, libellés, modèles de pages, corbeille, export Markdown / HTML, intégration iframe pour un portfolio |
+| **Organisation** | Glisser-déposer, favoris, libellés, modèles de pages, corbeille, export Markdown / HTML, import Markdown et HTML (Wiki.js), intégration iframe pour un portfolio |
+| **Adresses et référencement** | Adresses lisibles `/p/titre-de-la-page-<id>` ; pour les espaces publics, contenu rendu en HTML, `sitemap.xml` et `robots.txt` (désactivable : `SEO_INDEX=false`). Voir [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) |
+| **Profil** | Photo de profil (recadrage dans le navigateur, validée côté serveur), double authentification TOTP facultative, export de ses données |
+| **Téléphone et application** | Interface adaptée au tactile (barre de mise en forme au-dessus du clavier), installable comme une application (Chrome, Edge, Safari). Voir [docs/ACCESSIBILITE.md](docs/ACCESSIBILITE.md) |
+| **Mises à jour** | Alerte de nouvelle version (facultative, expliquée dans l'interface), notes de version, bouton « Mettre à jour » via un petit service sur l'hôte. Voir [docs/MISE-A-JOUR.md](docs/MISE-A-JOUR.md) |
+
+## Documentation
+
+| Guide | Pour |
+| --- | --- |
+| [docs/ESSAI.md](docs/ESSAI.md) | Essayer en 10 minutes avec Docker seul |
+| [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) | Installer pour de vrai : image, reverse proxy, adresses, premier démarrage |
+| [docs/AUTHENTIK.md](docs/AUTHENTIK.md) | Connexion unique avec Authentik |
+| [docs/MISE-A-JOUR.md](docs/MISE-A-JOUR.md) | Savoir qu'une version existe, la lire, l'installer, revenir en arrière |
+| [docs/BACKUP.md](docs/BACKUP.md) | Sauvegardes chiffrées et restauration |
+| [docs/RGPD.md](docs/RGPD.md) | Données personnelles, durées de conservation, droits |
+| [docs/ACCESSIBILITE.md](docs/ACCESSIBILITE.md) | Accessibilité et usage sur téléphone |
+| [docs/API-VERSIONING.md](docs/API-VERSIONING.md) | Versions de l'API |
+| [SECURITY.md](SECURITY.md) | Mesures de sécurité, signaler une faille |
 
 ## Essayer en 10 minutes
 
@@ -180,15 +198,17 @@ La clé est chiffrée en base (AES-256-GCM) et n’est jamais renvoyée au navig
 ## Architecture
 
 ```
-client/             Interface (JavaScript, Vite) : éditeur TipTap, diagrammes, palette ⌘K
+client/             Interface (JavaScript, Vite, adresses par l'API History) : éditeur TipTap, blocs de code CodeMirror, diagrammes, palette ⌘K, réglages
 server/src/
   app.ts            Fastify : en-têtes de sécurité, CSRF, rate limiting, OpenAPI
   config.ts         Configuration validée (refus des configurations dangereuses)
-  auth/             OIDC, sessions, jetons d'API, modèle de permissions
-  routes/           API REST v1, SSE, IA
-  lib/              Pages, validation du contenu, chiffrement, audit, export Markdown
+  auth/             OIDC, LDAP, SAML, comptes locaux, sessions, jetons d'API, permissions
+  routes/           API REST v3, SSE, IA, MCP, photos de profil, référencement (seo.ts), mises à jour
+  lib/              Pages, validation du contenu, rendu HTML des pages publiques, chiffrement, audit, imports, export Markdown
   ai/               RAG, fournisseurs LLM (SDK Anthropic, compatible OpenAI)
-server/test/        Tests de sécurité (CSRF, portées, XSS, conflits…)
+scripts/updater/    Service de mise à jour sur l'hôte (systemd) : voir docs/MISE-A-JOUR.md
+server/test/        Tests de sécurité et d'intégration (CSRF, portées, XSS, photos, pages publiques…)
+e2e/                Parcours dans un vrai navigateur (Playwright), accessibilité (axe), téléphone
 ```
 
 Sécurité : voir [SECURITY.md](SECURITY.md). Données personnelles (RGPD) : voir [docs/RGPD.md](docs/RGPD.md).
@@ -216,7 +236,7 @@ L'interface vise le niveau **WCAG 2.1 AA** : contrastes vérifiés (texte second
 
 Clavier dans l'arborescence des pages : **flèches** pour se déplacer, **droite/gauche** pour déplier ou replier, **Entrée** pour ouvrir, **F2** pour renommer, **Maj+F10** (ou la touche Menu) pour le menu de la page, **Alt+Haut/Bas** pour réordonner (équivalent du glisser-déposer). **⌘K / Ctrl K** ouvre la recherche.
 
-Un audit complet avec lecteur d'écran (VoiceOver, NVDA) reste à faire : n'hésitez pas à signaler ce qui bloque.
+Un audit automatisé (axe, clair et sombre) tourne dans la CI. Un audit avec lecteur d'écran (VoiceOver, NVDA) reste à faire : n'hésitez pas à signaler ce qui bloque. Usage sur téléphone : voir [docs/ACCESSIBILITE.md](docs/ACCESSIBILITE.md).
 
 ## Licence
 
