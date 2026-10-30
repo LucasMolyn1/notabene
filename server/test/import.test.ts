@@ -129,3 +129,12 @@ describe('import tolérant (HTML, diagrammes sans balise, gros fichiers)', () =>
     expect(result.skipped).toEqual([{ path: 'a/gros.md', reason: expect.stringContaining('découpez') }]);
   });
 });
+
+describe('titres HTML', () => {
+  it('retire les balises imbriquées d’un titre sans en recomposer', () => {
+    const doc = markdownToDoc('<h2>A <b>gras</b> <<script>script>x</h2><p>fin</p>', { ...stats(), notes: new Set<string>() });
+    const title = String(doc.content![0]!.content![0]!.text);
+    expect(title).not.toContain('<');
+    expect(title).toContain('A gras');
+  });
+});

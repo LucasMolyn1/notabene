@@ -8,6 +8,21 @@ const decode = (s: string) => s.replace(/&(lt|gt|quot|apos|#39|nbsp|amp);/g, (_m
 const SKIPPED = new Set(['script', 'style', 'head', 'title', 'svg', 'noscript']);
 const BLOCK_BREAKS = new Set(['p', 'div', 'section', 'article', 'header', 'footer', 'main', 'nav', 'blockquote', 'br', 'hr', 'table', 'thead', 'tbody', 'figure', 'figcaption']);
 
+/** Texte d'un fragment : chaque balise est retirée d'un seul passage, un « < » sans « > » est supprimé. */
+function stripTags(fragment: string): string {
+  let out = '';
+  let i = 0;
+  while (i < fragment.length) {
+    const lt = fragment.indexOf('<', i);
+    if (lt === -1) { out += fragment.slice(i); break; }
+    out += fragment.slice(i, lt);
+    const gt = fragment.indexOf('>', lt);
+    if (gt === -1) break;
+    i = gt + 1;
+  }
+  return out;
+}
+
 const para = (t: string): DocNode => ({ type: 'paragraph', content: [{ type: 'text', text: t }] });
 
 /** Langue d'un bloc de code d'après ses classes (« language-mermaid », « mermaid », « lang-bash »). */
@@ -92,7 +107,7 @@ export function htmlToBlocks(html: string): DocNode[] {
       flush();
       if (closing) continue;
       const close = html.toLowerCase().indexOf(`</${name}`, i);
-      const inner = html.slice(i, close === -1 ? html.length : close).replace(/<[^>]*>/g, '');
+      const inner = stripTags(html.slice(i, close === -1 ? html.length : close));
       const t = decode(inner).replace(/\s+/g, ' ').trim();
       if (t) out.push({ type: 'heading', attrs: { level: Math.min(3, Number(name[1])) }, content: [{ type: 'text', text: t }] });
       const end = close === -1 ? -1 : html.indexOf('>', close);
