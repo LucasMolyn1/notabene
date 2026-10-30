@@ -46,12 +46,16 @@ for (const scheme of ['light', 'dark'] as const) {
     test('paramètres : toutes les sections', async ({ page }) => {
       await loginUi(page, ADMIN.email, ADMIN.password);
       const found: string[] = [];
+      // Filet de sécurité : une section qui plante (import manquant, erreur au rendu) est signalée même sans violation d'accessibilité.
+      const crashes: string[] = [];
+      page.on('pageerror', (err) => crashes.push(err.message));
       for (const id of SECTIONS) {
         await page.goto(`/#/settings/${id}`);
         await page.locator('.set-card, .set-card-head, h1').first().waitFor();
         await page.waitForTimeout(250);
         found.push(...await violations(page, `paramètres/${id}`));
       }
+      expect(crashes).toEqual([]);
       expect(found).toEqual([]);
     });
   });

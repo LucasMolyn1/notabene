@@ -9,6 +9,9 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 ### Ajouté
 - **Audit d'accessibilité automatisé** (axe-core, WCAG 2.1 AA) dans la CI, en clair et en sombre, sur la connexion, les pages et toutes les sections des paramètres ; [docs/ACCESSIBILITE.md](docs/ACCESSIBILITE.md) décrit le test au lecteur d'écran à faire à la main.
 
+### Modifié
+- Code du client découpé sans changement de comportement : `settings.js` (828 lignes) en un routeur et six modules dans `client/src/settings/`, `editor.js` (625 lignes) en assemblage et quatre modules dans `client/src/editor/`. Le test d'accessibilité signale désormais une section des paramètres qui plante.
+
 ### Corrigé
 - Contrastes (couleurs des avatars, chemin de la palette en thème sombre), noms manquants (éditeur, sélecteur de rôle, zones de code) et blocs de code défilables au clavier.
 
