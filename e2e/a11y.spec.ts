@@ -4,7 +4,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { ADMIN } from './accounts';
-import { adminContext, api, loginUi } from './helpers';
+import { adminContext, api, createLocalUser, loginUi, PASSWORD, sessionContext } from './helpers';
 
 // Sans animation : axe mesure les contrastes d'un menu ou d'une palette en pleine transition, d'où de fausses alertes.
 test.use({ reducedMotion: 'reduce' });
@@ -107,6 +107,30 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.getByRole('option', { name: /Admin E2E/ }).waitFor();
       found.push(...await violations(page, 'commentaires et liste de mentions'));
       expect(found).toEqual([]);
+    });
+
+    test('historique : différences entre versions', async ({ page, browser }) => {
+      const admin = await adminContext(browser);
+      await createLocalUser(admin.request, 'a11y.auteur@e2e.test', 'Auteur a11y', 'editor');
+      const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+      const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+      const created = await (await api(admin.request, 'POST', '/pages', {
+        spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: `A11y historique ${scheme}`,
+        content: { type: 'doc', content: [p('Un paragraphe stable'), p('Le chat dort'), p('Supprimé')] },
+      })).json();
+      const author = await sessionContext(browser, 'a11y.auteur@e2e.test', PASSWORD);
+      const read = await api(author.request, 'GET', `/pages/${created.id}`);
+      const me = await (await author.request.get('/api/v3/me')).json();
+      await author.request.fetch(`/api/v3/pages/${created.id}`, { method: 'PATCH', headers: { 'x-csrf-token': me.csrf, 'if-match': read.headers().etag }, data: { content: { type: 'doc', content: [p('Un paragraphe stable'), p('Le chien dort'), p('Ajouté')] } } });
+      await Promise.all([admin.close(), author.close()]);
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.goto(`/p/${created.id}`);
+      await page.getByRole('button', { name: 'Historique des versions' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Historique de la page' });
+      await dialog.locator('.hist-item').nth(1).click();
+      await dialog.getByRole('button', { name: 'Différences avec la version actuelle' }).click();
+      await dialog.locator('.diff').waitFor();
+      expect(await violations(page, 'historique (différences)')).toEqual([]);
     });
 
     test('blocs : dépliable, colonnes, formule, couleurs et palette', async ({ page, browser }) => {

@@ -32,10 +32,12 @@ test('la cloche signale un commentaire sur une page suivie', async ({ browser })
   await page.goto('/');
   await expect(page.getByText('Bienvenue sur Notabene').first()).toBeVisible();
 
+  // D'autres tests de la série peuvent avoir laissé des notifications non lues : on compte à partir de l'état de départ.
+  const before = Number(await page.locator('.bell-badge').textContent()) || 0;
   const posted = await api(other.request, 'POST', `/pages/${target.id}/comments`, { body: 'Un commentaire <i>de test</i>' });
   expect(posted.status()).toBe(201);
-  // Mise à jour en direct : le compteur passe à 1 sans recharger.
-  await expect(page.locator('.bell-badge')).toHaveText('1', { timeout: 10_000 });
+  // Mise à jour en direct : le compteur augmente de 1 sans recharger.
+  await expect(page.locator('.bell-badge')).toHaveText(String(before + 1), { timeout: 10_000 });
   await page.getByRole('button', { name: 'Notifications' }).click();
   await expect(page.getByText('Sonneur a commenté')).toBeVisible();
   await Promise.all([admin.close(), other.close()]);

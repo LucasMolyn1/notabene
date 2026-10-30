@@ -196,6 +196,13 @@ export function mentionIds(doc: DocNode | undefined): string[] {
   return [...ids];
 }
 
+/** Le document contient-il un lien vers la page `pageId` ? */
+export function hasPageLink(doc: DocNode | undefined, pageId: string): boolean {
+  if (!doc) return false;
+  if (doc.type === 'pageLink' && doc.attrs?.id === pageId) return true;
+  return (doc.content ?? []).some((c) => hasPageLink(c, pageId));
+}
+
 export const emptyDoc = (): DocNode => ({ type: 'doc', content: [{ type: 'paragraph' }] });
 
 const TEXT_BLOCKS = new Set(['paragraph', 'heading', 'codeBlock']);

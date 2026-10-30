@@ -332,6 +332,19 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
   border-bottom: 1px solid var(--border); color: var(--text-3); font-size: 12.5px;
 }
 
+/* Historique : différences ; rétroliens */
+.hist-modes { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.hist-modes .chip.active { background: var(--accent-soft); color: var(--text); border-color: var(--accent); }
+.diff { display: grid; gap: 6px; }
+.diff-legend { margin: 0 0 6px; font-size: 13px; }
+.diff-block { padding: 3px 8px; border-radius: 6px; border-left: 3px solid transparent; overflow-wrap: anywhere; white-space: pre-wrap; }
+.diff-k-h { font-weight: 700; }
+.diff-k-code { font-family: var(--mono, ui-monospace, monospace); font-size: 13px; }
+.diff-del { background: color-mix(in srgb, #e5484d 16%, transparent); border-left-color: #e5484d; text-decoration: line-through; text-decoration-color: color-mix(in srgb, #e5484d 70%, transparent); }
+.diff-add { background: color-mix(in srgb, #30a46c 18%, transparent); border-left-color: #30a46c; }
+.diff-chg { border-left-color: var(--border-strong); }
+.diff-w-del { background: color-mix(in srgb, #e5484d 26%, transparent); text-decoration: line-through; }
+.diff-w-add { background: color-mix(in srgb, #30a46c 28%, transparent); text-decoration: none; }
 /* Blocs : dépliable, colonnes, formule ; couleurs ; alignement */
 .details { display: grid; grid-template-columns: 28px 1fr; align-items: start; margin: 8px 0; padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px; }
 .details-toggle { display: grid; place-items: center; width: 28px; height: 28px; margin-top: 1px; border-radius: 6px; color: var(--text-2); }
@@ -674,6 +687,7 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
 .hist-item { display: grid; gap: 1px; padding: 8px 10px; border-radius: 7px; text-align: left; }
 .hist-item:hover { background: var(--hover); }
 .hist-item.active { background: var(--accent-soft); }
+.hist-item.active small { color: var(--text-2); }
 .hist-item small { color: var(--text-3); font-size: 12px; }
 .hist-preview { overflow-y: auto; padding-right: 8px; }
 .hist-bar { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 0 12px; background: var(--elevated); z-index: 1; }
