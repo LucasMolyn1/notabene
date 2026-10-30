@@ -20,6 +20,7 @@ import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
 import pageQueryRoutes from './routes/pages-query.js';
 import seoRoutes from './routes/seo.js';
+import avatarRoutes from './routes/avatars.js';
 import v3Routes from './routes/v3.js';
 import { sessionAuth as sessionAuthWithIdle, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
@@ -261,6 +262,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(importRoutes);
     await scope.register(v3Routes);
     await scope.register(aboutRoutes);
+    await scope.register(avatarRoutes);
   }, { prefix: '/api/v3' });
   await app.register(mcpRoutes);
   await app.register(versionRoutes);

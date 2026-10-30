@@ -136,6 +136,7 @@ async function boot() {
   // Ancien format d'adresse (#/p/…) ouvert pendant que l'application tourne.
   window.addEventListener('hashchange', route);
   document.addEventListener('click', onLinkClick);
+  window.addEventListener('avatars-changed', scheduleSidebar);
   document.addEventListener('keydown', onKey);
   // Le lien d'évitement déplace le focus au lieu de changer l'adresse.
   document.getElementById('skip-link').addEventListener('click', (e) => { e.preventDefault(); document.getElementById('main').focus(); });

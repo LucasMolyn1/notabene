@@ -1,5 +1,5 @@
 // Vues principales : page (éditeur), accueil d'espace, connexion, page introuvable.
-import { h, initials, timeAgo, fullDate, wordCount, debounce, modKey } from './util.js';
+import { h, timeAgo, fullDate, wordCount, debounce, modKey } from './util.js';
 import { pagePath, spacePath } from './urls.js';
 import { icon } from './icons.js';
 import { store } from './store.js';
@@ -8,6 +8,7 @@ import { prefs, savePrefs, app } from './prefs.js';
 import { createEditor } from './editor.js';
 import { connectCollab } from './collab.js';
 import { presence, colorFor } from './presence.js';
+import { avatarEl } from './avatar.js';
 import { openMenu, openModal, toast, pageIcon } from './ui.js';
 import { openPalette } from './palette.js';
 import { forgotPasswordForm, ldapLoginForm, localLoginForm } from './local-auth.js';
@@ -319,11 +320,10 @@ function mountPage(page) {
     if (!others.length || !session.user) { presenceEl.replaceChildren(); presenceEl.hidden = true; return; }
     presenceEl.hidden = false;
     const now = Date.now();
-    const avatar = (p, self) => h('span', {
-      class: `avatar${!self && now - p.editingAt < 5000 ? ' typing' : ''}`,
-      style: { '--c': colorFor(p.userId) },
+    const avatar = (p, self) => avatarEl({ id: p.userId, name: p.name }, {
+      cls: !self && now - p.editingAt < 5000 ? 'typing' : '',
       title: `${p.name}${self ? ' (vous)' : ''}${!self && now - p.editingAt < 5000 ? ' · écrit…' : ''}`,
-    }, initials(p.name));
+    });
     presenceEl.replaceChildren(...others.map((p) => avatar(p, false)), avatar({ name: session.user.name, userId: session.user.id }, true));
   }
 

@@ -935,3 +935,12 @@ select.input { height: 36px; }
 .tok-operator, .tok-punctuation { color: var(--tok-op); }
 .tok-heading, .tok-strong { font-weight: 700; }
 .tok-emphasis { font-style: italic; }
+
+/* Photo de profil : l'image recouvre les initiales, qui restent en secours. */
+.avatar { position: relative; overflow: hidden; }
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.profile-photo-actions { margin-top: 10px; }
+.crop { display: grid; gap: 12px; justify-items: center; }
+.crop-canvas { width: 240px; height: 240px; max-width: 100%; border-radius: 50%; background: var(--sunken, var(--border)); cursor: grab; touch-action: none; outline-offset: 3px; }
+.crop-canvas:active { cursor: grabbing; }
+.crop-zoom-row { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; width: min(280px, 100%); font-size: 13px; color: var(--text-2); }

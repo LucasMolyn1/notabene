@@ -18,6 +18,15 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | **Permissions par page** | Un administrateur réserve une page et ses sous-pages à des personnes, en lecture ou en écriture ; appliqué partout (liste, recherche, export, IA, flux, co-édition) |
 | **Organisation** | Glisser-déposer, favoris, corbeille, export Markdown / HTML, intégration iframe pour un portfolio |
 
+## Essayer en 10 minutes
+
+Docker suffit : un seul fichier, sans configuration, avec le compte administrateur créé dans le navigateur. Voir [docs/ESSAI.md](docs/ESSAI.md) (les outils sont volontairement limités : pas de Draw.io, de connexion unique, d'IA ni d'e-mail).
+
+```bash
+curl -O https://raw.githubusercontent.com/LucasMolyn1/notabene/main/docker-compose.essai.yml
+docker compose -f docker-compose.essai.yml up -d    # puis http://localhost:3000
+```
+
 ## Démarrage rapide (Docker)
 
 ```bash
