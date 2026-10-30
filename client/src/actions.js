@@ -4,7 +4,8 @@ import { icon } from './icons.js';
 import { request } from './api.js';
 import { store } from './store.js';
 import { session } from './session.js';
-import { prefs, savePrefs, setTheme, currentTheme } from './prefs.js';
+import { prefs, savePrefs, setTheme, currentTheme, app } from './prefs.js';
+import { canonicalPath, pagePathById, parseRoute } from './urls.js';
 import { toast, openModal, confirmModal, pageIcon } from './ui.js';
 import { iconPicker } from './emoji-picker.js';
 import { openPalette } from './palette.js';
@@ -22,12 +23,14 @@ export async function attempt(fn) {
 
 // ---- Navigation -----------------------------------------------------------
 
+// Le routeur lit l'adresse (history API) : go() la change puis le prévient ; les clics sur les liens passent par ici (main.js).
 export function go(path) {
-  if (location.hash.slice(1) === path) window.dispatchEvent(new HashChangeEvent('hashchange'));
-  else location.hash = path;
+  const target = canonicalPath(path) + (app.embed ? '?embed' : '');
+  if (location.pathname + location.search !== target) history.pushState(null, '', target);
+  window.dispatchEvent(new Event('navigate'));
 }
 
-export const currentPageId = () => location.hash.match(/^#\/p\/([^/?#]+)/)?.[1] || null;
+export const currentPageId = () => { const r = parseRoute(location.pathname); return r.kind === 'page' ? r.id : null; };
 
 export const search = () => openPalette({ onOpen: (p) => go(`/p/${p.id}`) });
 
@@ -85,7 +88,7 @@ export function pickIcon(anchor, id) {
   iconPicker(anchor, (name) => attempt(() => store.updatePage(id, { icon: name })));
 }
 
-export const pageUrl = (id, { embed = false } = {}) => `${location.origin}/${embed ? '?embed' : ''}#/p/${id}`;
+export const pageUrl = (id, { embed = false } = {}) => `${location.origin}${pagePathById(id)}${embed ? '?embed' : ''}`;
 
 export async function copyLink(id) {
   try {

@@ -43,12 +43,12 @@ export function showSettings(sectionId) {
   const nav = h('nav', { class: 'set-nav', 'aria-label': 'Sections des paramètres' });
   for (const s of sections) {
     if (s.group !== group) { group = s.group; nav.append(h('div', { class: 'set-nav-group' }, group)); }
-    nav.append(h('a', { class: `set-nav-item${s.id === section.id ? ' active' : ''}`, href: `#/settings/${s.id}` }, h('span', null, icon(s.ico, 16)), s.label, s.id === 'about' && newsPending(session.version) ? h('span', { class: 'news-dot', role: 'img', 'aria-label': 'Nouveautés' }) : null));
+    nav.append(h('a', { class: `set-nav-item${s.id === section.id ? ' active' : ''}`, href: `/settings/${s.id}` }, h('span', null, icon(s.ico, 16)), s.label, s.id === 'about' && newsPending(session.version) ? h('span', { class: 'news-dot', role: 'img', 'aria-label': 'Nouveautés' }) : null));
   }
   const content = h('div', { class: 'set-content' });
   document.getElementById('main').replaceChildren(
     topbar(h('nav', { class: 'crumbs' },
-      h('a', { class: 'crumb', href: '#/settings' }, h('span', { class: 'crumb-ico' }, icon('settings', 14)), 'Paramètres'),
+      h('a', { class: 'crumb', href: '/settings' }, h('span', { class: 'crumb-ico' }, icon('settings', 14)), 'Paramètres'),
       h('span', { class: 'crumb-sep' }, '/'),
       h('span', { class: 'crumb current' }, section.label))),
     h('div', { class: 'scroller' }, h('div', { class: 'settings' },

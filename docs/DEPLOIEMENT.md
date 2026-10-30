@@ -51,6 +51,16 @@ Dans un conteneur LXC non privilégié, le chown se fait dans le conteneur LXC (
 - **Adresse IP des clients (`TRUST_PROXY`)** : indiquez le **nombre de proxys** entre Internet et l'application. Une seule étape (Traefik, Nginx, Caddy) : `TRUST_PROXY=1`. Cloudflare puis HAProxy : `TRUST_PROXY=2` (chaque proxy doit ajouter l'adresse de son interlocuteur à `X-Forwarded-For`, par exemple `option forwardfor` sur HAProxy). Vous pouvez aussi lister vos proxys : `TRUST_PROXY=10.0.0.5,192.168.1.0/24`. L'adresse du client est lue **en partant de la droite** : ce qu'un client ajoute lui-même à gauche est ignoré. `TRUST_PROXY=true` fait confiance à tous les sauts et laisse un client falsifier son adresse (journal d'audit, limitation de débit) : déconseillé. Pour vérifier, Paramètres, Instance affiche la valeur retenue ; une connexion de test apparaît dans le journal d'audit avec votre vraie adresse.
 - **Santé** : `GET /healthz` renvoie `{"ok":true}` (HTTP 200) quand la base répond, 5xx sinon. N'utilisez pas `OPTIONS` pour la sonde.
 
+## Adresses des pages et moteurs de recherche
+
+Une page s'ouvre à une adresse lisible : `https://wiki.example.com/p/deploiement-d-un-wiki-1t3o0UknH-6J`. Seuls les 12 derniers caractères (l'identifiant) comptent : le titre est un décor, si bien qu'une page renommée reste joignable par ses anciennes adresses (elles redirigent vers la nouvelle). Les anciens liens `#/p/<identifiant>` continuent de fonctionner.
+
+Pour les pages d'un **espace public** (lisibles sans compte), le serveur renvoie aussi le contenu en HTML (titre, description, adresse canonique) : c'est ce que lisent les moteurs de recherche. `/sitemap.xml` liste ces pages et `/robots.txt` le désigne. Ne sont jamais rendues : les pages d'espaces privés, les pages à permissions restreintes, celles de la corbeille. Tout le reste de l'application est servi avec `X-Robots-Tag: noindex`.
+
+- Le reverse proxy doit transmettre **toutes** les adresses à Notabene (`/p/…`, `/s/…`, `/settings/…`, `/sitemap.xml`, `/robots.txt`), pas seulement `/`.
+- `SEO_INDEX=false` coupe tout cela : `robots.txt` interdit l'exploration, le sitemap est vide et les pages publiques portent `noindex`. À utiliser pour un espace « public » destiné à un intranet.
+- Un espace public est lisible par n'importe qui sur Internet avec ou sans moteur de recherche : l'indexation ne change pas qui peut le lire, seulement qui le trouve.
+
 ## Premier démarrage
 
 ```bash

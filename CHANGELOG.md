@@ -6,7 +6,15 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## Non publié
 
+### Modifié
+- **Adresses lisibles** : `/p/titre-de-la-page-<identifiant>` et `/s/nom-de-l-espace-<identifiant>` à la place de `/#/p/<identifiant>`. Seul l'identifiant compte : renommer une page ne casse aucun lien (le titre périmé redirige, la barre d'adresse suit le titre). Les anciens liens `#/p/…` sont convertis à l'ouverture ; les liens des e-mails, de l'export Markdown et du serveur MCP utilisent la nouvelle forme. Le reverse proxy doit transmettre toutes les adresses à Notabene (docs/DEPLOIEMENT.md).
+- Plafond général de requêtes réglable (`RATE_LIMIT_PER_MINUTE`, 600 par défaut) ; la lecture de l'état des mises à jour passe de 60 à 600 par heure (chaque chargement de page d'un administrateur l'appelle, la limite basse faisait disparaître l'alerte).
+
+### Corrigé
+- Paramètres, À propos : si l'état des mises à jour ne pouvait pas être lu, le mot « undefined » s'affichait à la place de la carte.
+
 ### Ajouté
+- **Référencement des pages publiques** : pour les espaces publics, le serveur rend le contenu de chaque page en HTML (titre, description, adresse canonique, balises Open Graph) et publie `/sitemap.xml` et `/robots.txt`. Les pages privées ou à permissions restreintes ne sont jamais rendues ; le reste de l'application est en `noindex`. `SEO_INDEX=false` coupe tout.
 - **Bouton « Vérifier maintenant » (Paramètres, À propos)** : relance la vérification de version sans attendre les 12 h du cache, et indique l'heure de la dernière vérification. Au plus un appel à GitHub toutes les 30 secondes, réservé aux administrateurs.
 
 ## [3.6.0] - 2026-10-30

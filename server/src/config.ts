@@ -56,6 +56,8 @@ const schema = z
     WEBHOOK_ALLOW_PRIVATE: bool('false'),
     // Vérification de mise à jour (désactivée par défaut) : contacte api.github.com, voir lib/update-check.ts.
     UPDATE_CHECK: bool('false'),
+    // Pages d'espaces publics ouvertes aux moteurs de recherche (sitemap.xml, HTML rendu côté serveur). false : robots.txt interdit tout et les pages portent noindex.
+    SEO_INDEX: bool('true'),
     // Dossier d'échange avec le service de mise à jour de l'hôte (voir docs/MISE-A-JOUR.md). Absent : pas de bouton « Mettre à jour ».
     UPDATER_DIR: z.string().regex(/^\/[\w./-]{1,200}$/, 'chemin absolu attendu').optional(),
     UPDATE_CHECK_REPO: z.string().regex(/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/, 'attendu : propriétaire/dépôt').default('LucasMolyn1/notabene'),
@@ -81,6 +83,8 @@ const schema = z
     OIDC_DEFAULT_ROLE: z.enum(['reader', 'none']).default('none'),
     SESSION_TTL_HOURS: z.coerce.number().min(1).max(24 * 30).default(12),
     // Connexions et opérations sensibles d'authentification : tentatives par minute et par adresse IP (défaut 10).
+    // Plafond général par utilisateur (ou par adresse pour un visiteur anonyme), fichiers statiques compris.
+    RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(60).max(100_000).default(600),
     AUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(10),
     // Une session sans aucune requête pendant cette durée est fermée (en plus de la durée absolue ci-dessus).
     // Conservation (jours ; 0 = jamais purgé) : corbeille, notifications lues, adresses IP et entrées du journal d'audit.

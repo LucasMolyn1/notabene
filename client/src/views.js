@@ -1,5 +1,6 @@
 // Vues principales : page (éditeur), accueil d'espace, connexion, page introuvable.
 import { h, initials, timeAgo, fullDate, wordCount, debounce, modKey } from './util.js';
+import { pagePath, spacePath } from './urls.js';
 import { icon } from './icons.js';
 import { store } from './store.js';
 import { session } from './session.js';
@@ -45,13 +46,18 @@ export function topbar(left, right = []) {
 function crumbsFor(page) {
   const space = store.space(page.spaceId);
   const parts = [
-    space && h('a', { class: 'crumb', href: `#/s/${space.id}` }, h('span', { class: 'crumb-ico' }, pageIcon(space.icon || 'folder', 14)), space.name),
-    ...store.ancestors(page.id).map((a) => h('a', { class: 'crumb', href: `#/p/${a.id}` }, a.icon && h('span', { class: 'crumb-ico' }, pageIcon(a.icon, 14)), a.title || 'Sans titre')),
+    space && h('a', { class: 'crumb', href: spacePath(space) }, h('span', { class: 'crumb-ico' }, pageIcon(space.icon || 'folder', 14)), space.name),
+    ...store.ancestors(page.id).map((a) => h('a', { class: 'crumb', href: pagePath(a) }, a.icon && h('span', { class: 'crumb-ico' }, pageIcon(a.icon, 14)), a.title || 'Sans titre')),
     h('span', { class: 'crumb current' }, page.icon && h('span', { class: 'crumb-ico' }, pageIcon(page.icon, 14)), page.title || 'Sans titre'),
   ].filter(Boolean);
   return parts.flatMap((p, i) => (i ? [h('span', { class: 'crumb-sep' }, '/'), p] : [p]));
 }
 
+
+// Remplace l'adresse affichée par sa forme lisible, sans nouvelle entrée d'historique.
+function tidyAddress(path) {
+  if (location.pathname !== path) history.replaceState(null, '', path + (app.embed ? '?embed' : ''));
+}
 
 function loading() {
   main().replaceChildren(topbar(h('nav', { class: 'crumbs' })), h('div', { class: 'scroller' }, h('div', { class: 'page-wrap' }, h('div', { class: 'skeleton' },
@@ -305,6 +311,7 @@ function mountPage(page) {
       modeBtn.title = prefs.readOnly ? 'Passer en mode édition' : 'Passer en mode lecture';
     }
     document.title = `${p.title || 'Sans titre'} · Notabene`;
+    tidyAddress(pagePath(p)); // le titre a pu changer (renommage) : l'adresse le suit
   }
 
   function paintPresence() {
@@ -402,6 +409,7 @@ export function showSpace(spaceId) {
   savePrefs();
   presence.setPage(null);
   document.title = `${space.name} · Notabene`;
+  tidyAddress(spacePath(space));
   const canWrite = session.can('write');
 
   const scroller = h('div', { class: 'scroller' });
@@ -432,7 +440,7 @@ export function showSpace(spaceId) {
           h('h2', { class: 'section-title' }, 'Modifiées récemment'),
           h('div', { class: 'cards' }, recent.map((p) => {
             const parent = p.parentId && store.page(p.parentId);
-            return h('a', { class: 'card', href: `#/p/${p.id}` },
+            return h('a', { class: 'card', href: pagePath(p) },
               h('div', { class: 'card-icon' }, pageIcon(p.icon)),
               h('strong', { class: 'card-title' }, p.title || 'Sans titre'),
               h('p', { class: 'card-snippet' }, p.excerpt ? p.excerpt.slice(0, 120) + (p.excerpt.length > 120 ? '…' : '') : 'Page vide'),
@@ -471,7 +479,7 @@ export function showLogin() {
     error && h('div', { class: 'notice warning' }, AUTH_ERRORS[error] || 'Connexion impossible.'),
     // Le fournisseur d'identité d'abord (un clic), puis les formulaires à mot de passe ; l'installation initiale passe avant tout.
     !setupRequired && oidc && h('a', { class: 'btn btn-primary btn-lg', href: session.loginUrl() }, icon('users', 16), 'Se connecter avec Authentik'),
-    !setupRequired && saml && h('a', { class: oidc ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: `/auth/saml/login?returnTo=${encodeURIComponent(`/${location.hash}`)}` }, icon('key', 16), 'Se connecter avec le SSO (SAML)'),
+    !setupRequired && saml && h('a', { class: oidc ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: `/auth/saml/login?returnTo=${encodeURIComponent(location.pathname)}` }, icon('key', 16), 'Se connecter avec le SSO (SAML)'),
     !setupRequired && (oidc || saml) && (local || ldap) && h('p', { class: 'or' }, h('span', null, 'ou avec un mot de passe')),
     local && localLoginForm(setupRequired),
     local && !setupRequired && session.config.auth.mail && forgotPasswordForm(),
@@ -500,7 +508,7 @@ export function showMissing(id, status = 404) {
         : status === 404 ? 'Elle a peut-être été supprimée ou déplacée dans la corbeille.' : 'Impossible de charger la page.'),
       h('div', { class: 'row center' },
         anonymous && (session.config.auth.oidc || session.config.auth.devLogin || session.config.auth.local || session.config.auth.ldap || session.config.auth.saml) && h('a', { class: 'btn btn-primary', href: session.config.auth.oidc ? session.loginUrl() : '/?login' }, 'Se connecter'),
-        h('a', { class: 'btn btn-ghost', href: '#/' }, 'Retour à l’accueil')))));
+        h('a', { class: 'btn btn-ghost', href: '/' }, 'Retour à l’accueil')))));
   view = { kind: 'missing', id };
 }
 

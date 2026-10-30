@@ -57,7 +57,7 @@ describe('notifications', () => {
     // E-mail : titre, auteur et lien, jamais le contenu.
     expect(mailer.sent).toHaveLength(1);
     expect(mailer.sent[0]).toMatchObject({ to: 'ed2@example.com' });
-    expect(mailer.sent[0]!.text).toContain(`/#/p/${pageId()}`);
+    expect(mailer.sent[0]!.text).toContain(`/p/${pageId()}`);
     expect(mailer.sent[0]!.text).not.toContain('secret');
     expect((await call(ed2, 'GET', '/api/v3/notifications/unread-count')).json()).toEqual({ unread: 1 });
     // Marquer comme lu ; les notifications des autres restent inaccessibles.

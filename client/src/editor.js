@@ -103,9 +103,9 @@ export function createEditor({ element, content, editable = true, onChange, cont
     const a = e.target.closest('a[href]');
     if (!a) return;
     const href = a.getAttribute('href');
-    if (href.startsWith('#/')) {
+    if (/^\/(?:p|s)\//.test(href)) {
       e.preventDefault();
-      context.navigate ? context.navigate(href.slice(1)) : (location.hash = href);
+      context.navigate ? context.navigate(href) : window.location.assign(href);
     } else if (!editor.isEditable || e.metaKey || e.ctrlKey) {
       e.preventDefault();
       window.open(href, '_blank', 'noopener');

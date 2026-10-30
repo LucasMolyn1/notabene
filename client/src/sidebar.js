@@ -1,6 +1,7 @@
 // Barre latérale : sélecteur d'espace, favoris, arborescence (glisser-déposer), compte.
 import { newsPending, onNewsChange } from './news.js';
 import { h, initials, modKey } from './util.js';
+import { pagePath, spacePath } from './urls.js';
 import { icon } from './icons.js';
 import { store } from './store.js';
 import { session } from './session.js';
@@ -250,7 +251,7 @@ export function renderSidebar() {
   const space = store.space(prefs.space) || store.spaces[0];
   const dark = currentTheme() === 'dark';
   const brand = h('div', { class: 'sb-brand' },
-    h('a', { class: 'brand', href: '#/' }, h('span', { class: 'brand-logo' }), 'Notabene'),
+    h('a', { class: 'brand', href: '/' }, h('span', { class: 'brand-logo' }), 'Notabene'),
     h('button', { class: 'icon-btn', title: dark ? 'Thème clair' : 'Thème sombre', onClick: () => { A.toggleTheme(); renderSidebar(); } }, icon(dark ? 'sun' : 'moon')),
     h('button', { class: 'icon-btn', title: `Masquer la barre latérale (${modKey}\\)`, onClick: A.toggleSidebar }, icon('panel')));
 
@@ -261,7 +262,7 @@ export function renderSidebar() {
 
   const canWrite = session.can('write');
   const activeId = A.currentPageId();
-  const onSpaceHome = location.hash === `#/s/${space.id}`;
+  const onSpaceHome = location.pathname === spacePath(space);
   const roots = store.children(space.id, null);
   const favorites = store.favorites();
 
@@ -294,7 +295,7 @@ export function renderSidebar() {
         h('ul', { class: 'tree' }, favorites.map((p) => h('li', null, h('a', {
           class: `tree-row${p.id === activeId ? ' active' : ''}`,
           style: { paddingLeft: '10px' },
-          href: `#/p/${p.id}`,
+          href: pagePath(p),
           'aria-current': p.id === activeId ? 'page' : null,
         }, h('span', { class: 'tree-icon' }, pageIcon(p.icon, 15)), h('span', { class: 'tree-title' }, p.title || 'Sans titre')))))),
       h('section', { class: 'sb-section' },
@@ -309,10 +310,10 @@ export function renderSidebar() {
         rootDrop)),
     h('div', { class: 'sb-foot' },
       // Administrateur : une nouvelle version existe. Le lien mène aux nouveautés (et aux consignes de mise à jour).
-      session.updateAvailable && h('a', { class: 'update-banner', href: '#/settings/about' }, icon('sparkle', 16),
+      session.updateAvailable && h('a', { class: 'update-banner', href: '/settings/about' }, icon('sparkle', 16),
         h('span', null, h('strong', null, `Version ${session.update.latest.version} disponible`), h('small', null, 'Voir les nouveautés'))),
       canWrite && navBtn('trash', 'Corbeille', A.openTrash),
-      session.user && navBtn('settings', 'Paramètres', () => A.go('/settings'), { active: location.hash.startsWith('#/settings'), badge: newsPending(session.version) || session.updateAvailable || undefined }),
+      session.user && navBtn('settings', 'Paramètres', () => A.go('/settings'), { active: location.pathname.startsWith('/settings'), badge: newsPending(session.version) || session.updateAvailable || undefined }),
       accountBox()));
 
   el.querySelector('.sb-scroll').scrollTop = scrollTop;

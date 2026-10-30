@@ -40,12 +40,12 @@ export const session = {
     return !!this.permissions[permission];
   },
 
-  loginUrl(returnTo = `/${location.hash}`) {
+  loginUrl(returnTo = location.pathname) {
     return `/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
   },
 
   async devLogin(role) {
-    const { redirect } = await request('POST', '/auth/dev-login', { role, returnTo: `/${location.hash}` });
+    const { redirect } = await request('POST', '/auth/dev-login', { role, returnTo: location.pathname });
     location.href = redirect;
   },
 

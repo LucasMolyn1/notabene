@@ -1,6 +1,6 @@
 // Assemblage de l'application Fastify : en-têtes de sécurité, limitation de débit,
 // résolution de l'identité (session ou jeton), CSRF, validation Zod, OpenAPI.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
@@ -19,6 +19,7 @@ import { startWebhooks } from './lib/webhooks.js';
 import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
 import pageQueryRoutes from './routes/pages-query.js';
+import seoRoutes from './routes/seo.js';
 import v3Routes from './routes/v3.js';
 import { sessionAuth as sessionAuthWithIdle, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
@@ -168,7 +169,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
 
   await app.register(rateLimit, {
     global: true,
-    max: 600,
+    max: config.RATE_LIMIT_PER_MINUTE,
     timeWindow: '1 minute',
     hook: 'preHandler',
     keyGenerator: (req) => req.auth?.user.id ?? req.ip,
@@ -286,6 +287,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
       },
     });
   }
+  await app.register(seoRoutes, { indexHtml: hasClient ? readFileSync(resolve(dir, 'index.html'), 'utf8') : null });
   app.setNotFoundHandler((req, reply) => {
     // Sondes HTTP (HAProxy, répartiteurs) : HEAD et OPTIONS sur la racine répondent sans corps.
     if (req.url === '/' && (req.method === 'HEAD' || req.method === 'OPTIONS')) {
@@ -293,7 +295,8 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     }
     const isApi = req.url.startsWith('/api/') || req.url.startsWith('/auth/');
     if (hasClient && req.method === 'GET' && !isApi) {
-      return reply.header('cache-control', 'no-cache').sendFile('index.html');
+      // L'application seule : jamais de contenu ici, donc rien à indexer (les pages publiques passent par routes/seo.ts).
+      return reply.header('cache-control', 'no-cache').header('x-robots-tag', 'noindex, nofollow').sendFile('index.html');
     }
     return fail(req, reply, 404, { error: 'not_found', message: 'Ressource introuvable' });
   });
