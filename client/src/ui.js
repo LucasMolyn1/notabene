@@ -4,6 +4,7 @@ import { icon } from './icons.js';
 
 // ---- Toasts ---------------------------------------------------------------
 
+/** @param {string} message @param {{ action?: { label: string, onClick: () => void }, timeout?: number, kind?: string }} [options] */
 export function toast(message, { action, timeout = 3800, kind = '' } = {}) {
   const host = document.querySelector('.toasts') || document.body.appendChild(h('div', { class: 'toasts', 'aria-live': 'polite' }));
   const dismiss = () => { el.classList.add('out'); setTimeout(() => el.remove(), 200); };

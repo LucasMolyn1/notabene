@@ -7,6 +7,7 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 ## [Non publié]
 
 ### Ajouté
+- **Vérification de types du client** (`checkJs`, `npm run typecheck`) : les 45 erreurs initiales sont corrigées (types des options par JSDoc, déclarations des modules CSS et des commandes TipTap). Mode non strict ; le passer en strict demanderait environ 700 annotations, à faire progressivement.
 - Mesure de la couverture de tests (`npm run coverage`) avec seuils dans la CI : 76 % des instructions, 80 % des lignes, 65 % des branches, 82 % des fonctions au départ ; les modules les moins couverts sont le client IA, la recherche IA (RAG), OIDC et les routes d'espaces et de webhooks.
 - **ESLint** dans la CI (`npm run lint`) : erreurs courantes, expressions régulières quadratiques (ReDoS), évaluation dynamique, processus enfants et HTML injecté côté client (chaque `innerHTML` est justifié). Installé dans `tools/lint` avec TypeScript 6, car `typescript-eslint` ne supporte pas encore TypeScript 7 ; le projet reste en TypeScript 7.
 

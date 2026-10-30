@@ -56,12 +56,15 @@ export function docText(node) {
 export const wordCount = (text) => (text.match(/[\p{L}\p{N}][\p{L}\p{N}’'-]*/gu) || []).length;
 
 const rtf = new Intl.RelativeTimeFormat('fr', { numeric: 'auto' });
+/** @type {[Intl.RelativeTimeFormatUnit, number][]} */
 const UNITS = [['minute', 60], ['hour', 3600], ['day', 86400], ['week', 604800], ['month', 2592000], ['year', 31536000]];
 
+/** @param {number} ts */
 export function timeAgo(ts) {
   const s = (ts - Date.now()) / 1000;
   const abs = Math.abs(s);
   if (abs < 45) return 'à l’instant';
+  /** @type {Intl.RelativeTimeFormatUnit} */
   let unit = 'minute';
   let value = s / 60;
   for (const [name, sec] of UNITS) if (abs >= sec) { unit = name; value = s / sec; }

@@ -514,6 +514,7 @@ function createTableMenu(editor) {
 // ---- Fabrique -------------------------------------------------------------
 
 // `collab` : { ydoc, provider, user } active la co-édition (le contenu vient alors de Yjs, pas de `content`).
+/** @param {{ element: HTMLElement, content?: object, editable?: boolean, onChange?: (editor: any) => void, context?: { navigate?: (path: string) => void, [key: string]: any }, collab?: any }} options */
 export function createEditor({ element, content, editable = true, onChange, context = {}, collab = null }) {
   let slash = null;
   const editor = new Editor({

@@ -127,7 +127,7 @@ function textDiagramNode({ name, label, defaultCode, renderer: renderDiagram }) 
             }
             return true;
           },
-          stopEvent: (e) => !!e.target.closest?.('textarea, button'),
+          stopEvent: (e) => !!/** @type {Element} */ (e.target).closest?.('textarea, button'),
           ignoreMutation: () => true,
           selectNode: () => dom.classList.add('selected'),
           deselectNode: () => dom.classList.remove('selected'),
@@ -152,6 +152,7 @@ function loadPlantuml() {
   plantumlEngine ||= new Promise((resolve, reject) => {
     const script = document.createElement('script');
     script.src = '/plantuml/viz-global.js';
+    // @ts-expect-error -- fichier servi tel quel depuis /plantuml (copié au build), absent des modules que TypeScript résout
     script.onload = () => import(/* @vite-ignore */ '/plantuml/plantuml.js').then(resolve, reject);
     script.onerror = () => reject(new Error('moteur PlantUML indisponible'));
     document.head.append(script);
@@ -228,6 +229,7 @@ function imageDiagramView({ label, emptyText, open }) {
   };
 }
 
+/** @param {string} title @param {Node} body @param {{ onSave?: () => unknown, onCancel?: () => void, saveLabel?: string }} [options] */
 function overlayShell(title, body, { onSave, onCancel, saveLabel = 'Enregistrer' } = {}) {
   const status = h('span', { class: 'overlay-status' });
   const overlay = h('div', { class: 'diagram-overlay', role: 'dialog', 'aria-label': title },

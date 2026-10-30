@@ -11,6 +11,7 @@ import * as A from './actions.js';
 
 let dragId = null;
 
+/** @param {string} ico @param {string} label @param {() => void} onClick @param {{ hint?: string, active?: boolean, badge?: boolean | string }} [options] */
 const navBtn = (ico, label, onClick, { hint, active, badge } = {}) => h('button', {
   class: `sb-btn${active ? ' active' : ''}`, onClick,
 }, icon(ico), h('span', { class: 'sb-btn-label' }, label),
@@ -106,7 +107,7 @@ function onTreeKey(e) {
   if (!(row instanceof HTMLElement) || !row.matches('.tree-row[role=treeitem]')) return;
   const page = store.page(row.dataset.id);
   if (!page) return;
-  const rows = [...row.closest('[role=tree]').querySelectorAll('.tree-row[role=treeitem]')];
+  const rows = /** @type {HTMLElement[]} */ ([...row.closest('[role=tree]').querySelectorAll('.tree-row[role=treeitem]')]);
   const i = rows.indexOf(row);
   const focusRow = (r) => { if (!r) return; rows.forEach((x) => { x.tabIndex = -1; }); r.tabIndex = 0; r.focus(); };
   const kids = store.children(page.spaceId, page.id);
@@ -245,7 +246,7 @@ export function renderSidebar() {
   const el = document.getElementById('sidebar');
   const scrollTop = el.querySelector('.sb-scroll')?.scrollTop || 0;
   // La barre est reconstruite à chaque changement (y compris ceux venus d'un autre onglet) : le focus clavier doit survivre.
-  const focusedRow = el.contains(document.activeElement) ? document.activeElement.closest?.('.tree-row[data-id]')?.dataset.id : null;
+  const focusedRow = el.contains(document.activeElement) ? /** @type {HTMLElement | null | undefined} */ (document.activeElement.closest?.('.tree-row[data-id]'))?.dataset.id : null;
   const space = store.space(prefs.space) || store.spaces[0];
   const dark = currentTheme() === 'dark';
   const brand = h('div', { class: 'sb-brand' },
@@ -317,9 +318,9 @@ export function renderSidebar() {
   if (tree && !tree.querySelector('.tree-row[tabindex="0"]')) tree.querySelector('.tree-row[role=treeitem]')?.setAttribute('tabindex', '0');
   const wanted = pendingFocus || focusedRow;
   if (wanted) {
-    const target = tree?.querySelector(`.tree-row[data-id="${wanted}"]`);
+    const target = /** @type {HTMLElement | null | undefined} */ (tree?.querySelector(`.tree-row[data-id="${wanted}"]`));
     pendingFocus = null;
-    if (target) { tree.querySelectorAll('.tree-row[tabindex="0"]').forEach((r) => { r.tabIndex = -1; }); target.tabIndex = 0; target.focus(); }
+    if (target) { tree.querySelectorAll('.tree-row[tabindex="0"]').forEach((r) => { /** @type {HTMLElement} */ (r).tabIndex = -1; }); target.tabIndex = 0; target.focus(); }
   }
 }
 
