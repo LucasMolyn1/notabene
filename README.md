@@ -182,6 +182,23 @@ server/test/        Tests de sécurité (CSRF, portées, XSS, conflits…)
 
 Sécurité : voir [SECURITY.md](SECURITY.md). Données personnelles (RGPD) : voir [docs/RGPD.md](docs/RGPD.md).
 
+## Versions et releases
+
+Notabene suit le [versionnage sémantique](https://semver.org/lang/fr/) : **MAJOR** (rupture), **MINOR** (nouvelle fonction compatible), **PATCH** (correctif). La version courante est le champ `version` de `package.json` ; elle s'affiche dans **Paramètres, Instance** avec le commit de l'image. L'historique est dans [CHANGELOG.md](CHANGELOG.md).
+
+Pour publier une version `X.Y.Z` :
+
+1. Sur une branche : mettre à jour `version` (`npm version X.Y.Z --no-git-tag-version`) et ajouter la section `## [X.Y.Z] - AAAA-MM-JJ` en tête de `CHANGELOG.md`. Un test vérifie que les deux concordent.
+2. Fusionner la PR (CI verte).
+3. Poser le tag sur le commit fusionné : `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`. Le workflow `release.yml` construit alors l'image (amd64 et arm64) et la publie sur `ghcr.io` avec attestation de provenance : **c'est une publication publique**, à ne faire qu'en connaissance de cause.
+
+Déployer en reconstruisant l'image sur place en y inscrivant le commit :
+
+```bash
+git fetch origin main && git checkout -f FETCH_HEAD
+GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
+```
+
 ## Accessibilité
 
 L'interface vise le niveau **WCAG 2.1 AA** : contrastes vérifiés (texte secondaire et bordures de champs), focus clavier visible, lien « Aller au contenu », animations réduites si le système le demande, boîtes de dialogue nommées.

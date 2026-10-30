@@ -17,6 +17,9 @@ ENV NODE_ENV=production \
     DATA_DIR=/data \
     PORT=3000 \
     HOST=0.0.0.0
+# Commit transmis à la construction (voir README, « Versions et releases ») : affiché dans Paramètres, Instance.
+ARG GIT_COMMIT=
+ENV GIT_COMMIT=$GIT_COMMIT
 WORKDIR /app
 COPY --from=build --chown=node:node /app/package.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
