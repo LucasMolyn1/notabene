@@ -1,11 +1,11 @@
 # Versionnement de l'API
 
-L'API REST est servie sous `/api/v1`. Les versions disponibles et leur état sont publiés sur `GET /api/versions`.
+L'API REST est servie sous `/api/v3`. Les versions et leur état sont publiés sur `GET /api/versions`.
 
 ## Règles
 
-- **v1 est figée** : seuls des ajouts compatibles (nouveaux champs, nouvelles routes) y sont faits. Aucun champ n'est supprimé ni renommé.
-- Une rupture de compatibilité crée une nouvelle version majeure (`/api/v2`, `/api/v3`) montée à côté de la précédente.
+- **La version courante est figée** : seuls des ajouts compatibles (nouveaux champs, nouvelles routes) y sont faits. Aucun champ n'est supprimé ni renommé.
+- Une rupture de compatibilité crée une nouvelle version majeure (`/api/v4`…) montée à côté de la précédente.
 - Quand une version est remplacée, elle passe en `deprecated` : les réponses portent les en-têtes `Deprecation` et `Sunset`, avec un préavis d'au moins 6 mois.
 - Les jetons d'API, les portées et le contrôle d'accès sont communs à toutes les versions : une version ne peut pas élargir les droits d'un jeton.
 - Le point d'accès MCP (`/mcp`) et l'authentification (`/auth/*`) ne sont pas versionnés par préfixe.
@@ -14,13 +14,13 @@ L'API REST est servie sous `/api/v1`. Les versions disponibles et leur état son
 
 | Version | État | Contenu |
 | --- | --- | --- |
-| v1 | **dépréciée et désactivée par défaut** (fin le 1er mai 2027) | Pages, espaces, recherche, jetons, IA, administration, webhooks. Réactivable par `API_LEGACY_VERSIONS=v1` ; les réponses portent `Deprecation`, `Sunset` et `Link`, et chaque appelant est journalisé. |
-| v2 | **dépréciée et désactivée par défaut** | Tout v1, avec : listes paginées par curseur, filtres, `ETag` / `If-Match`, erreurs RFC 9457, évènements de webhooks étendus. |
-| v3 | stable (version courante, seule servie par défaut) | Tout v2, plus commentaires de page et permissions fines par page. |
+| v1 | **retirée** | Première version (listes non paginées, `baseVersion`). |
+| v2 | **retirée** | Pagination par curseur, `ETag`/`If-Match`, erreurs RFC 9457. Reprise par la v3. |
+| v3 | stable (seule servie) | Tout v2, plus commentaires de page, permissions fines par page et notifications. |
 
-GraphQL (envisagé pour la v3) n'est pas fourni.
+v1 et v2 répondent 404. GraphQL (envisagé pour la v3) n'est pas fourni. Le client web et le serveur MCP utilisent la v3.
 
-### Changements de v2 (rupture avec v1)
+### Ce que la v3 a changé par rapport à l'ancienne v1
 
 - `GET /pages` et `GET /search` renvoient `{ "items": [...], "nextCursor": "..." | null }`. Paramètres : `limit` (1 à 200, défaut 50), `cursor` (opaque, à renvoyer tel quel). Filtres de `/pages` : `spaceId`, `parentId` (identifiant ou `root`), `q` (titre), `updatedAfter` (millisecondes). La recherche est limitée à 500 résultats. Un curseur invalide donne 400.
 - `GET /pages/:id` renvoie l'en-tête `ETag` (la version de la page, entre guillemets).

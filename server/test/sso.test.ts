@@ -13,7 +13,7 @@ import { LdapDirectory, type LdapLike, escapeFilter } from '../src/auth/ldap.js'
 import { loadConfig } from '../src/config.js';
 import { openDb } from '../src/db.js';
 
-const base = { NODE_ENV: 'test', API_LEGACY_VERSIONS: 'v1,v2', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), SEED_DEMO: 'false' };
+const base = { NODE_ENV: 'test',  PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), SEED_DEMO: 'false' };
 
 describe('groupes et rôles', () => {
   const cfg = { admin: ['cn=wiki-admins,ou=groups,dc=ex,dc=org', 'Staff'], editor: ['wiki-editors'], reader: [], defaultRole: 'none' as const };
@@ -75,7 +75,7 @@ describe('LDAP', () => {
     const ok = await app.inject({ method: 'POST', url: '/auth/ldap/login', payload: { username: 'alice', password: 'secret' } });
     expect(ok.statusCode).toBe(200);
     const cookies = { nb_session: ok.cookies.find((x) => x.name === 'nb_session')!.value };
-    expect((await app.inject({ method: 'GET', url: '/api/v1/me', cookies })).json().user).toMatchObject({ name: 'Alice', role: 'editor' });
+    expect((await app.inject({ method: 'GET', url: '/api/v3/me', cookies })).json().user).toMatchObject({ name: 'Alice', role: 'editor' });
     await app.close();
     db.close();
   });
@@ -147,7 +147,7 @@ describe('SAML', () => {
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('/');
     const cookies = { nb_session: res.cookies.find((c) => c.name === 'nb_session')!.value };
-    expect((await app.inject({ method: 'GET', url: '/api/v1/me', cookies })).json().user).toMatchObject({ name: 'Bob', role: 'admin' });
+    expect((await app.inject({ method: 'GET', url: '/api/v3/me', cookies })).json().user).toMatchObject({ name: 'Bob', role: 'admin' });
   });
 
   it('refuse une assertion non signée', async () => {

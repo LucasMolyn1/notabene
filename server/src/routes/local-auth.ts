@@ -259,8 +259,8 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     return auth;
   };
 
-  // Mêmes routes sous chaque version de l'API (ce plugin est enregistré à la racine, hors des préfixes de version).
-  for (const prefix of ['/api/v3', ...config.API_LEGACY_VERSIONS.map((v) => `/api/${v}`)]) {
+  // Ce plugin est enregistré à la racine, hors du préfixe de version : les routes portent leur préfixe.
+  for (const prefix of ['/api/v3']) {
     app.post(`${prefix}/admin/local-users`, {
       schema: { tags: ['admin'], summary: 'Créer un compte local (admin)', body: z.object({ email, name: z.string().trim().min(1).max(120), role, password: password.optional(), invite: z.boolean().default(false) }) },
     }, async (req, reply) => {
