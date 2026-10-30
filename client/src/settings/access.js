@@ -1,10 +1,10 @@
 // Administration des accès : espaces, authentification, e-mail, utilisateurs et journal d'audit.
-import { h, initials, timeAgo, fullDate, download } from '../util.js';
+import { h, timeAgo, fullDate, download } from '../util.js';
 import { icon } from '../icons.js';
 import { api } from '../api.js';
 import { store } from '../store.js';
 import { session } from '../session.js';
-import { colorFor } from '../presence.js';
+import { avatarEl } from '../avatar.js';
 import { toast, confirmModal, openModal } from '../ui.js';
 import { askReauth, providerCard } from '../provider-settings.js';
 import * as A from '../actions.js';
@@ -99,7 +99,7 @@ export async function renderUsers(el) {
   };
 
   const row = (u) => h('div', { class: 'table-row wrap' },
-    h('span', { class: 'avatar static', style: { '--c': colorFor(u.id) } }, initials(u.name)),
+    avatarEl(u, { cls: 'static' }),
     h('span', { class: 'grow' }, h('strong', null, u.name), h('small', null, `${u.email || 'sans e-mail'} · ${u.lastLoginAt ? `connecté ${timeAgo(u.lastLoginAt)}` : 'jamais connecté'}${u.tokens ? ` · ${u.tokens} jeton(s)` : ''}`)),
     h('span', { class: 'row-actions' },
       u.local && u.mfa && pill('MFA', 'ok'),

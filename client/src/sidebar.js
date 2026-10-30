@@ -1,11 +1,11 @@
 // Barre latérale : sélecteur d'espace, favoris, arborescence (glisser-déposer), compte.
 import { newsPending, onNewsChange } from './news.js';
-import { h, initials, modKey } from './util.js';
+import { h, modKey } from './util.js';
 import { icon } from './icons.js';
 import { store } from './store.js';
 import { session } from './session.js';
 import { prefs, savePrefs, currentTheme } from './prefs.js';
-import { colorFor } from './presence.js';
+import { avatarEl } from './avatar.js';
 import { openMenu, pageIcon } from './ui.js';
 import * as A from './actions.js';
 
@@ -237,7 +237,7 @@ function accountBox() {
   }
   const u = session.user;
   return h('button', { class: 'account', onClick: (e) => accountMenu(e.currentTarget) },
-    h('span', { class: 'avatar static', style: { '--c': colorFor(u.id) } }, initials(u.name)),
+    avatarEl(u, { cls: 'static' }),
     h('span', { class: 'account-meta' }, h('strong', null, u.name), h('small', null, ROLE_LABELS[u.role])),
     icon('more', 15));
 }
