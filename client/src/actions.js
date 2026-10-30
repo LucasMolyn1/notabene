@@ -5,7 +5,8 @@ import { request } from './api.js';
 import { store } from './store.js';
 import { session } from './session.js';
 import { prefs, savePrefs, setTheme, currentTheme } from './prefs.js';
-import { toast, openModal, confirmModal, iconPicker, pageIcon } from './ui.js';
+import { toast, openModal, confirmModal, pageIcon } from './ui.js';
+import { iconPicker } from './emoji-picker.js';
 import { openPalette } from './palette.js';
 import { jsonToHTML } from './editor.js';
 
@@ -256,7 +257,7 @@ export async function openTrash() {
 export function spaceForm(space = null) {
   let spaceIcon = space?.icon || 'folder';
   const iconBtn = h('button', { class: 'emoji-field', type: 'button' }, icon('folder', 20));
-  const paintBtn = () => { iconBtn.replaceChildren(icon(spaceIcon, 20)); };
+  const paintBtn = () => { iconBtn.replaceChildren(pageIcon(spaceIcon, 20)); };
   iconBtn.addEventListener('click', () => iconPicker(iconBtn, (name) => { spaceIcon = name || 'folder'; paintBtn(); }, { allowRemove: false }));
   if (space?.icon) paintBtn();
   const name = h('input', { class: 'input', 'aria-label': 'Nom de l’espace', placeholder: 'Ex. Produit, Équipe design…', maxlength: '80' });

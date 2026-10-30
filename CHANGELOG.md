@@ -4,6 +4,18 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [3.4.0] - 2026-10-30
+
+Blocs de code colorés et éditables comme dans un éditeur de code, et vrai sélecteur d'emojis.
+
+### Ajouté
+- **Blocs de code CodeMirror 6** : coloration syntaxique (JavaScript, TypeScript, HTML, CSS, JSON, Markdown, YAML, XML, Python, SQL, shell, PowerShell, Dockerfile, Nginx, TOML, Diff), indentation automatique, fermeture des parenthèses et guillemets, numéros de ligne, choix du langage en haut du bloc. Les grammaires se chargent à la demande. La co-édition fonctionne dans les blocs (test à deux personnes, y compris en écriture simultanée) ; l'annulation est celle de la page. Au clavier : Échap ou les flèches aux bords quittent le bloc, Tab indente. Les curseurs des autres personnes ne sont pas affichés à l'intérieur d'un bloc de code.
+- **Sélecteur d'emojis complet** pour les pages et les espaces : près de 1 900 emojis avec recherche en français (noms et mots-clés, sans accents), catégories, récents et navigation aux flèches. Les icônes de l'interface restent disponibles. L'emoji est affiché partout (arborescence, fil d'Ariane, recherche, liens de pages).
+- Tests d'accessibilité axe du bloc de code (clair et sombre) et du sélecteur d'emojis.
+
+### Modifié
+- Dépendances de développement ajoutées : `@codemirror/*` et `@lezer/highlight` (MIT), `emojibase-data` (MIT, données seulement), `@tiptap/extension-code-block` (déjà présent via TipTap, à la même version).
+
 ## [3.3.0] - 2026-10-30
 
 Les instances savent qu'une version existe et y mènent les administrateurs ; confirmation d'identité plus claire pour les comptes SSO.

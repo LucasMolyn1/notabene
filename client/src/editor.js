@@ -9,6 +9,7 @@ import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
 import { DrawIo, Excalidraw, Mermaid, PlantUml } from './diagrams.js';
+import { CodeBlockEditor } from './editor/code-block.js';
 import { ResizableImage } from './editor/image.js';
 import { createBubbleMenu, createTableMenu } from './editor/menus.js';
 import { Callout, PageLink } from './editor/nodes.js';
@@ -19,10 +20,11 @@ function baseExtensions({ collab = false } = {}) {
     StarterKit.configure({
       ...(collab ? { undoRedo: false } : {}),
       heading: { levels: [1, 2, 3] },
-      codeBlock: { HTMLAttributes: { spellcheck: 'false' } },
+      codeBlock: false, // remplacé par CodeBlockEditor (CodeMirror)
       dropcursor: { color: 'var(--accent)', width: 2 },
       link: { openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener noreferrer' } },
     }),
+    CodeBlockEditor,
     Highlight,
     TaskList,
     TaskItem.configure({ nested: true }),

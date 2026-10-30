@@ -2,6 +2,7 @@
    Notabene · thèmes
    ========================================================================== */
 :root {
+  --tok-keyword: #6f42c1; --tok-string: #0b6e4f; --tok-comment: #5b6470; --tok-number: #a8480a; --tok-name: #0b5cad; --tok-type: #8a3b00; --tok-op: #3b4350;
   --bg: #ffffff;
   --bg-soft: #f7f7f5;
   --sidebar: #f9f9f8;
@@ -38,6 +39,7 @@
 }
 
 [data-theme='dark'] {
+  --tok-keyword: #c4a7ff; --tok-string: #7ee0b0; --tok-comment: #9aa3af; --tok-number: #ffb27a; --tok-name: #8ec5ff; --tok-type: #ffcf8a; --tok-op: #c9ced6;
   --bg: #17171a;
   --bg-soft: #1e1e22;
   --sidebar: #1b1b1f;
@@ -481,7 +483,15 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
 .menu-sep { height: 1px; background: var(--border); margin: 5px 4px; }
 .menu-heading { padding: 6px 8px 4px; font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
 
-.emoji-picker { padding: 8px; width: 304px; }
+.emoji-picker { padding: 8px; width: 340px; }
+.emoji-search { width: 100%; margin-bottom: 6px; }
+.emoji-tabs { display: flex; justify-content: space-between; margin-bottom: 6px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.emoji-tab { width: 28px; height: 28px; border-radius: 6px; font-size: 16px; display: grid; place-items: center; }
+.emoji-tab:hover { background: var(--hover); }
+.emoji-body { max-height: 280px; overflow-y: auto; }
+.emoji-title { margin: 8px 4px 4px; font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
+.emoji-empty { padding: 12px 4px; }
+.emoji-glyph { font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; line-height: 1; display: inline-grid; place-items: center; }
 .emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
 .emoji-btn { height: 34px; border-radius: 6px; font-size: 19px; }
 .emoji-btn:hover { background: var(--hover); }
@@ -901,3 +911,27 @@ select.input { height: 36px; }
 .update-banner span { display: grid; min-width: 0; }
 .update-banner small { color: var(--text-2); font-size: 12px; }
 .update-banner:hover { background: var(--hover); }
+
+/* Bloc de code (CodeMirror) */
+.code-block { margin: 1.2em 0; border: 1px solid var(--border); border-radius: 10px; background: var(--code-bg); overflow: hidden; }
+.code-bar { display: flex; justify-content: flex-end; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.code-lang { font: 12px var(--sans, inherit); color: var(--text-2); background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; }
+.code-lang-label { font-size: 12px; color: var(--text-2); }
+.code-host .cm-editor { background: transparent; font: 13.5px/1.65 var(--mono); color: var(--text); }
+.code-host .cm-editor.cm-focused { outline: 2px solid var(--accent); outline-offset: -2px; }
+.code-host .cm-scroller { font-family: inherit; overflow: auto; }
+.code-host .cm-content { padding: 10px 0; caret-color: var(--text); }
+.code-host .cm-gutters { background: transparent; border: 0; color: var(--text-3); }
+.code-host .cm-activeLine { background: var(--hover); }
+.code-host .cm-activeLineGutter { background: transparent; color: var(--text); }
+.code-host .cm-selectionBackground, .code-host .cm-focused .cm-selectionBackground { background: var(--accent-soft); }
+.code-host .cm-matchingBracket { outline: 1px solid var(--accent); }
+.tok-keyword, .tok-operatorKeyword, .tok-controlKeyword, .tok-definitionKeyword, .tok-moduleKeyword { color: var(--tok-keyword); }
+.tok-string, .tok-string2, .tok-regexp, .tok-character { color: var(--tok-string); }
+.tok-comment, .tok-lineComment, .tok-blockComment, .tok-docComment { color: var(--tok-comment); font-style: italic; }
+.tok-number, .tok-bool, .tok-atom, .tok-null, .tok-integer, .tok-float { color: var(--tok-number); }
+.tok-propertyName, .tok-attributeName, .tok-variableName, .tok-labelName, .tok-link, .tok-url { color: var(--tok-name); }
+.tok-typeName, .tok-className, .tok-namespace, .tok-tagName, .tok-heading, .tok-meta { color: var(--tok-type); }
+.tok-operator, .tok-punctuation { color: var(--tok-op); }
+.tok-heading, .tok-strong { font-weight: 700; }
+.tok-emphasis { font-style: italic; }

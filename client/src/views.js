@@ -45,7 +45,7 @@ export function topbar(left, right = []) {
 function crumbsFor(page) {
   const space = store.space(page.spaceId);
   const parts = [
-    space && h('a', { class: 'crumb', href: `#/s/${space.id}` }, h('span', { class: 'crumb-ico' }, icon(space.icon || 'folder', 14)), space.name),
+    space && h('a', { class: 'crumb', href: `#/s/${space.id}` }, h('span', { class: 'crumb-ico' }, pageIcon(space.icon || 'folder', 14)), space.name),
     ...store.ancestors(page.id).map((a) => h('a', { class: 'crumb', href: `#/p/${a.id}` }, a.icon && h('span', { class: 'crumb-ico' }, pageIcon(a.icon, 14)), a.title || 'Sans titre')),
     h('span', { class: 'crumb current' }, page.icon && h('span', { class: 'crumb-ico' }, pageIcon(page.icon, 14)), page.title || 'Sans titre'),
   ].filter(Boolean);
@@ -412,7 +412,7 @@ export function showSpace(spaceId) {
     const recent = store.recent(spaceId, 9);
     const roots = store.children(spaceId, null);
     main().replaceChildren(
-      topbar(h('nav', { class: 'crumbs' }, h('span', { class: 'crumb current' }, h('span', { class: 'crumb-ico' }, icon(s.icon || 'folder', 14)), s.name)),
+      topbar(h('nav', { class: 'crumbs' }, h('span', { class: 'crumb current' }, h('span', { class: 'crumb-ico' }, pageIcon(s.icon || 'folder', 14)), s.name)),
         app.embed || !canWrite ? [] : [h('button', { class: 'btn btn-primary btn-sm', onClick: () => A.newPage(spaceId) }, icon('plus', 15), 'Nouvelle page')]),
       scroller);
     scroller.replaceChildren(h('div', { class: 'space-home' },
