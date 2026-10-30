@@ -36,6 +36,8 @@ Merci de ne pas ouvrir d’issue publique : utilisez les *GitHub Security Adviso
 - Documents validés par **liste blanche** de nœuds, marques et attributs. Seuls les liens `http(s)`, `mailto`, relatifs et ancres sont acceptés, et les images doivent être en `data:image/*` ou `https`.
 - Diagrammes Excalidraw et Draw.io stockés en SVG et affichés via `<img>`, ce qui empêche l’exécution de script. Mermaid est rendu en `securityLevel: strict`.
 - Recherche FTS : la saisie est transformée en termes entre guillemets, sans injection de syntaxe FTS. Toutes les requêtes SQL sont préparées.
+- **Photo de profil** : type vérifié sur les octets (PNG, JPEG, WebP ; jamais de SVG), 256 Ko, 32 à 1024 px (pas de bombe de décompression), stockée en base, servie avec `Content-Security-Policy: default-src 'none'; sandbox`, `nosniff` et `private, no-cache`, lisible des seules personnes connectées. Envoi depuis une session avec CSRF, limité à 20 par heure, journalisé.
+- **Pages publiques rendues pour les moteurs de recherche** : uniquement ce qu'un visiteur anonyme peut déjà lire par l'API (espace public, page non restreinte, hors corbeille) ; HTML construit en liste blanche, tout échappé, liens externes `nofollow ugc`, aucune image `data:`. Le reste de l'application répond `X-Robots-Tag: noindex`. `SEO_INDEX=false` coupe l'indexation.
 - Réponses de l’IA affichées après échappement HTML complet. Le prompt système demande au modèle de traiter le contenu des pages comme des données.
 
 ### En-têtes HTTP
@@ -51,6 +53,7 @@ Merci de ne pas ouvrir d’issue publique : utilisez les *GitHub Security Adviso
 - Configuration **validée au démarrage** : refus de `DEV_LOGIN` en production, HTTPS exigé, clé de chiffrement de 32 octets obligatoire.
 - Conteneur **non root**, système de fichiers en lecture seule, `cap_drop: ALL`, `no-new-privileges`, ports liés à `127.0.0.1`.
 - Image Draw.io épinglée, intégrations cloud désactivées.
+- **Mise à jour depuis l'interface** : Notabene n'a aucun accès à Docker. Il dépose une demande dans un dossier d'échange ; un service sur l'hôte la traite comme non fiable (seule une version `x.y.z` est lue, comparée à la dernière release qu'il interroge lui-même), sauvegarde, change l'image par digest, vérifie, et revient en arrière sinon. Mot de passe ressaisi à chaque fois. **Vérification de nouvelle version** : désactivée par défaut, ne révèle à GitHub que l'adresse IP du serveur et le numéro de version (expliqué dans l'interface).
 - **Journal d’audit** : connexions, refus, jetons, réglages, suppressions définitives.
 - CI : typecheck, tests de sécurité, `npm audit` et build Docker ; Dependabot hebdomadaire.
 
@@ -68,6 +71,8 @@ Merci de ne pas ouvrir d’issue publique : utilisez les *GitHub Security Adviso
   `gh attestation verify oci://ghcr.io/lucasmolyn1/notabene:<version> --owner LucasMolyn1`
 
 ## Limites connues
+- Application installable (manifeste) sans service worker : rien n'est mis en cache hors ligne, donc aucune page privée ne reste sur l'appareil.
+- Les pages publiques indexables sont lisibles de tous : l'indexation ne change pas qui peut les lire, seulement qui les trouve.
 - Instance unique : la présence et le bus d’événements sont en mémoire. Un déploiement multi-réplicas nécessiterait Redis ou un équivalent.
 - Excalidraw tente aussi de charger ses polices depuis un CDN de secours : la CSP bloque ces requêtes (messages dans la console, sans impact).
 - Les avis de faible gravité sur `katex`, dépendance de l’outil Mermaid→Excalidraw, ne concernent que le bundle front.

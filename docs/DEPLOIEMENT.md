@@ -61,6 +61,10 @@ Pour les pages d'un **espace public** (lisibles sans compte), le serveur renvoie
 - `SEO_INDEX=false` coupe tout cela : `robots.txt` interdit l'exploration, le sitemap est vide et les pages publiques portent `noindex`. À utiliser pour un espace « public » destiné à un intranet.
 - Un espace public est lisible par n'importe qui sur Internet avec ou sans moteur de recherche : l'indexation ne change pas qui peut le lire, seulement qui le trouve.
 
+## Draw.io : un second nom d'hôte
+
+`DRAWIO_URL` est ouverte **par le navigateur** (le diagramme s'affiche dans un cadre intégré), pas par le serveur Notabene. Derrière un reverse proxy, il faut donc un **second nom d'hôte public** qui mène au conteneur Draw.io (`DRAWIO_PORT`, 8081 par défaut), par exemple `https://drawio.example.com`. Sans lui, l'éditeur de diagrammes paraît cassé alors que le conteneur tourne, car il n'écoute qu'en `127.0.0.1`. Sans besoin de Draw.io, videz `DRAWIO_URL` et `COMPOSE_PROFILES` : Mermaid, PlantUML et Excalidraw fonctionnent sans service supplémentaire.
+
 ## Premier démarrage
 
 ```bash

@@ -8,6 +8,7 @@ Ce document aide la personne ou l'organisation qui **déploie** Notabene à resp
 |---|---|---|
 | Compte | nom, adresse e-mail, rôle, date de création et de dernière connexion ; pour un compte local : hash du mot de passe, secret TOTP chiffré | base SQLite |
 | Contenu | pages, versions, commentaires, libellés, favoris, suivis, permissions ; l'auteur est rattaché par identifiant | base SQLite |
+| Photo de profil (facultative) | une image réduite à 256 px, envoyée par la personne elle-même ; visible des personnes connectées ; métadonnées retirées par le navigateur ; supprimée avec le compte, ou par la personne, ou par un administrateur | base SQLite |
 | Sessions et jetons | hash de l'identifiant de session, hash des jetons d'API, dates | base SQLite |
 | Journal d'audit | action, date, identifiant de l'utilisateur, **adresse IP** | base SQLite |
 | Notifications | type, page concernée, auteur, état de lecture ; l'e-mail ne contient que le titre, le nom et un lien | base SQLite, serveur SMTP |
