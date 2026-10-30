@@ -28,6 +28,7 @@ function highlightTitle(text, query) {
 }
 
 // Le serveur balise les extraits avec \u0002…\u0003 : on échappe tout puis on pose <mark>.
+// eslint-disable-next-line no-control-regex -- STX et ETX sont les balises posées par le serveur
 const snippetHTML = (s) => esc(s).replace(/\u0002/g, '<mark>').replace(/\u0003/g, '</mark>');
 
 function pathOf(page) {
@@ -189,6 +190,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
     const answer = h('div', { class: 'ai-answer prose' }, h('p', { class: 'ai-thinking' }, 'Recherche dans la documentation…'));
     const sourceList = h('div', { class: 'ai-sources' });
     list.replaceChildren(h('div', { class: 'ai-question' }, question), answer, sourceList);
+    // eslint-disable-next-line no-unsanitized/property -- renderAnswer échappe tout le texte avant de poser ses balises
     const paint = () => { answer.innerHTML = renderAnswer(text, sources); };
     streamAsk(question, {
       signal: askController.signal,

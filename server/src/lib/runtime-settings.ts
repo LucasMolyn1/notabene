@@ -41,7 +41,7 @@ const SPECS: Record<SectionName, SectionSpec> = {
       origins: z.array(z.string().trim().max(200)).max(20).superRefine((all, ctx) => {
         for (const o of all) {
           const ok = /^https?:\/\/[^/\s*?#]+$/.test(o)
-            && (o.startsWith('https://') || /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(o) || env.NODE_ENV !== 'production');
+            && (o.startsWith('https://') || /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])$/.test(o) || /^http:\/\/(localhost|127\.0\.0\.1|\[::1\]):\d+$/.test(o) || env.NODE_ENV !== 'production');
           if (!ok) ctx.addIssue({ code: 'custom', message: `origine invalide : ${o} (https://domaine, sans chemin ni joker)` });
         }
       }).transform((all) => [...new Set(all)]).default([]),

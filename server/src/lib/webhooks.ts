@@ -32,7 +32,7 @@ interface Row { id: string; url: string; secret: string; events: string; failure
 export async function deliver(db: DB, box: SecretBox, allowPrivate: boolean, hook: Row, event: string, payload: unknown): Promise<number> {
   const body = JSON.stringify({ event, at: new Date().toISOString(), data: payload });
   const ts = String(Math.floor(Date.now() / 1000));
-  let status = 0;
+  let status: number;
   try {
     const url = await assertSafeUrl(hook.url, allowPrivate);
     const secret = box.open(hook.secret, `webhook:${hook.id}`);

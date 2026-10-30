@@ -24,6 +24,7 @@ const nullable = (f: (v: unknown) => unknown) => (v: unknown) => (v === null ? n
 
 export function isSafeHref(href: unknown): href is string {
   if (typeof href !== 'string' || href.length > 2048) return false;
+  // eslint-disable-next-line no-control-regex -- on refuse justement les caractères de contrôle (contournement de schéma)
   if (/[\u0000-\u001f\s]/.test(href.slice(0, 16))) return false;
   if (href.startsWith('#') || (href.startsWith('/') && !href.startsWith('//'))) return true;
   return /^(https?:|mailto:)/i.test(href);

@@ -21,6 +21,22 @@ updates:
       fastify:
         patterns: ['fastify', '@fastify/*']
 
+  # Outils de lint isolés (typescript-eslint tourne avec TypeScript 6 ici, le projet est en TypeScript 7).
+  - package-ecosystem: npm
+    directory: /tools/lint
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+      semver-major-days: 14
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+    ignore:
+      # Doit rester en TypeScript 6 tant que typescript-eslint ne supporte pas TypeScript 7.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+
   - package-ecosystem: docker
     directory: /
     schedule:

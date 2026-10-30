@@ -22,6 +22,7 @@ export function h(tag, props, ...children) {
       if (v == null || v === false) continue;
       if (k === 'class') el.className = v;
       else if (k === 'style' && typeof v === 'object') for (const [p, val] of Object.entries(v)) el.style.setProperty(p.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`), val);
+      // eslint-disable-next-line no-unsanitized/property -- la clé « html » ne reçoit que du HTML déjà échappé (esc) ou constant
       else if (k === 'html') el.innerHTML = v;
       else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
       else if (typeof v === 'boolean') el.toggleAttribute(k, v);
