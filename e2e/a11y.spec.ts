@@ -4,7 +4,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { ADMIN } from './accounts';
-import { loginUi } from './helpers';
+import { adminContext, api, loginUi } from './helpers';
 
 // Sans animation : axe mesure les contrastes d'un menu ou d'une palette en pleine transition, d'où de fausses alertes.
 test.use({ reducedMotion: 'reduce' });
@@ -82,6 +82,31 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.getByRole('button', { name: 'Depuis un modèle' }).click();
       await page.getByRole('dialog', { name: 'Nouvelle page depuis un modèle' }).getByRole('button', { name: /Procédure/ }).waitFor();
       expect(await violations(page, 'modèles')).toEqual([]);
+    });
+
+    test('commentaires ancrés et mentions', async ({ page, browser }) => {
+      const admin = await adminContext(browser);
+      const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+      const me = await (await api(admin.request, 'GET', '/me')).json();
+      const created = await (await api(admin.request, 'POST', '/pages', { spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: `A11y ancres ${scheme}` })).json();
+      const comment = await (await api(admin.request, 'POST', `/pages/${created.id}/comments`, { body: 'Un commentaire', anchorText: 'texte ancré', mentions: [me.user.id] })).json();
+      const patched = await admin.request.fetch(`/api/v3/pages/${created.id}`, { method: 'PATCH', headers: { 'x-csrf-token': me.csrf, 'if-match': `"${created.version}"` }, data: {
+        content: { type: 'doc', content: [{ type: 'paragraph', content: [
+          { type: 'text', text: 'texte ancré', marks: [{ type: 'commentAnchor', attrs: { id: comment.id } }] },
+          { type: 'text', text: ' avec ' }, { type: 'mention', attrs: { id: me.user.id, label: 'Admin E2E' } },
+        ] }] },
+      } });
+      expect(patched.ok()).toBeTruthy();
+      await admin.close();
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.goto(`/p/${created.id}`);
+      await page.locator('.comment-live').waitFor();
+      const found = await violations(page, 'page avec ancre et mention');
+      await page.getByRole('button', { name: 'Commentaires' }).click();
+      await page.getByRole('textbox', { name: 'Nouveau commentaire' }).fill('Salut @Adm');
+      await page.getByRole('option', { name: /Admin E2E/ }).waitFor();
+      found.push(...await violations(page, 'commentaires et liste de mentions'));
+      expect(found).toEqual([]);
     });
 
     test('paramètres : toutes les sections', async ({ page }) => {

@@ -13,9 +13,10 @@ import { openMenu, openModal, toast, pageIcon } from './ui.js';
 import { openPalette } from './palette.js';
 import { forgotPasswordForm, ldapLoginForm, localLoginForm } from './local-auth.js';
 import { bellButton, watchButton } from './notifications.js';
-import { commentsButton } from './comments.js';
+import { bindAnchors, commentsButton, openComments } from './comments.js';
+import { rememberMentionNames } from './editor/mention.js';
 import { labelBar } from './labels.js';
-import { listAll } from './api.js';
+import { api, listAll } from './api.js';
 import { permissionsButton } from './permissions.js';
 import * as A from './actions.js';
 
@@ -130,7 +131,7 @@ function mountPage(page) {
   const scroller = h('div', { class: 'scroller' }, wrap);
 
   main().replaceChildren(
-    topbar(crumbsEl, app.embed ? [] : [presenceEl, saveEl, commentsButton(id), watchBtn, permBtn, starBtn, modeBtn, histBtn, moreBtn]),
+    topbar(crumbsEl, app.embed ? [] : [presenceEl, saveEl, commentsButton(id, () => editor), watchBtn, permBtn, starBtn, modeBtn, histBtn, moreBtn]),
     scroller,
   );
 
@@ -242,8 +243,14 @@ function mountPage(page) {
         return cid;
       },
       pickPage: (cb) => openPalette({ mode: 'pick', onPick: cb, exclude: id }),
+      pageId: id,
+      onComment: canWrite && !app.embed ? (selection) => openComments(id, { getEditor: () => editor, anchor: selection }) : null,
+      onAnchorClick: (commentId) => openComments(id, { getEditor: () => editor, focus: commentId }),
     },
   });
+  // Surlignage du texte commenté, et noms des personnes mentionnées dans la page.
+  const anchors = bindAnchors(id, () => editor);
+  if (session.user) api.get(`/pages/${id}/mentioned`).then((r) => rememberMentionNames(r.items)).catch(() => undefined);
 
   // -- Titre --
   const autosize = () => { titleEl.style.height = 'auto'; titleEl.style.height = `${titleEl.scrollHeight}px`; };
@@ -408,6 +415,7 @@ function mountPage(page) {
       offPresence();
       refreshDerived.cancel();
       labels.destroy();
+      anchors.destroy();
       window.removeEventListener('beforeunload', beforeUnload);
       editor.destroy();
       collab?.destroy();

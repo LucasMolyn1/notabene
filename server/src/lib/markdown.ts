@@ -11,6 +11,7 @@ type TitleOf = (id: string) => string | null;
 export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: TitleOf): string {
   const inline = (nodes: DocNode[] = []): string => nodes.map((n) => {
     if (n.type === 'hardBreak') return '  \n';
+    if (n.type === 'mention') return `@${String(n.attrs?.label ?? 'utilisateur').replace(/([\\*_`~[\]])/g, '\\$1')}`;
     if (n.type === 'pageLink') return `[${titleOf(String(n.attrs?.id)) ?? 'Sans titre'}](/p/${n.attrs?.id})`;
     if (n.type !== 'text') return '';
     const marks = n.marks ?? [];

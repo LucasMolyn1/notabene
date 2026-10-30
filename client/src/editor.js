@@ -11,7 +11,9 @@ import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table
 import { DrawIo, Excalidraw, Mermaid, PlantUml } from './diagrams.js';
 import { CodeBlockEditor } from './editor/code-block.js';
 import { ResizableImage } from './editor/image.js';
+import { CommentAnchor } from './editor/comment-anchor.js';
 import { createBubbleMenu, createTableMenu } from './editor/menus.js';
+import { createMentionMenu, Mention } from './editor/mention.js';
 import { Callout, PageLink } from './editor/nodes.js';
 import { createMobileToolbar } from './editor/mobile-toolbar.js';
 import { createSlashMenu, insertImageFile } from './editor/slash.js';
@@ -37,6 +39,8 @@ function baseExtensions({ collab = false } = {}) {
     Typography.configure({ openDoubleQuote: '« ', closeDoubleQuote: ' »' }),
     Callout,
     PageLink,
+    Mention,
+    CommentAnchor,
     Mermaid,
     PlantUml,
     Excalidraw,
@@ -59,6 +63,7 @@ export function jsonToHTML(json) {
 /** @param {{ element: HTMLElement, content?: object, editable?: boolean, onChange?: (editor: any) => void, context?: { navigate?: (path: string) => void, [key: string]: any }, collab?: any }} options */
 export function createEditor({ element, content, editable = true, onChange, context = {}, collab = null }) {
   let slash = null;
+  let mention = null;
   const editor = new Editor({
     element,
     ...(collab ? {} : { content: content || '' }),
@@ -77,7 +82,7 @@ export function createEditor({ element, content, editable = true, onChange, cont
     ],
     editorProps: {
       attributes: { class: 'prose', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Contenu de la page' },
-      handleKeyDown: (_view, event) => slash?.onKeyDown(event) || false,
+      handleKeyDown: (_view, event) => slash?.onKeyDown(event) || mention?.onKeyDown(event) || false,
       handlePaste: (_view, event) => {
         const file = [...(event.clipboardData?.files || [])].find((f) => f.type.startsWith('image/'));
         if (!file) return false;
@@ -96,13 +101,16 @@ export function createEditor({ element, content, editable = true, onChange, cont
   });
 
   slash = createSlashMenu(editor, context);
-  const bubble = createBubbleMenu(editor);
+  mention = createMentionMenu(editor, () => context.pageId);
+  const bubble = createBubbleMenu(editor, context);
   const tableMenu = createTableMenu(editor);
   const mobileToolbar = createMobileToolbar(editor);
 
   // Liens : navigation interne au clic, liens externes avec ⌘/Ctrl (ou en mode lecture).
   const onClick = (e) => {
     const a = e.target.closest('a[href]');
+    const anchor = !a && e.target.closest('.comment-live, .comment-resolved'); // l'état est posé par décoration (voir comment-anchor.js)
+    if (anchor) { context.onAnchorClick?.(anchor.getAttribute('data-comment-id')); return; }
     if (!a) return;
     const href = a.getAttribute('href');
     if (/^\/(?:p|s)\//.test(href)) {
@@ -117,6 +125,7 @@ export function createEditor({ element, content, editable = true, onChange, cont
 
   editor.on('destroy', () => {
     slash.destroy();
+    mention.destroy();
     bubble.destroy();
     tableMenu.destroy();
     mobileToolbar.destroy();

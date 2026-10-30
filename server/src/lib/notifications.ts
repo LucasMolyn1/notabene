@@ -8,11 +8,12 @@ import { type EventBus } from './events.js';
 import { newId } from './http.js';
 import type { Mailer } from './mail.js';
 import { mails } from './mail.js';
+import { mentionIds } from './content.js';
 import { canReadPage } from './page-acl.js';
 import { getPageRow } from './pages.js';
 
 const EMAIL_CHANGES_INTERVAL = 60 * 60_000;
-export type NotificationType = 'comment' | 'reply' | 'page.updated';
+export type NotificationType = 'comment' | 'reply' | 'page.updated' | 'mention';
 
 interface UserRow { id: string; name: string; email: string | null; role: 'admin' | 'editor' | 'reader'; disabled: number }
 const asAuth = (u: UserRow): Auth => ({ user: { id: u.id, name: u.name, email: u.email, role: u.role }, via: 'session', scopes: new Set() });
@@ -60,8 +61,20 @@ export function startNotifications(db: DB, bus: EventBus, mailer: Mailer, config
     const actor = actorId ? user(actorId)?.name ?? 'Quelqu’un' : 'Quelqu’un';
     const title = oneLine(page.title || 'Sans titre');
     const url = `${config().PUBLIC_URL}/p/${pageId}`;
-    const what = { comment: 'a commenté', reply: 'a répondu à votre commentaire sur', 'page.updated': 'a modifié' }[type];
+    const what = { comment: 'a commenté', reply: 'a répondu à votre commentaire sur', 'page.updated': 'a modifié', mention: 'vous a mentionné dans' }[type];
     await mailer.send({ to: target.email, ...mails.notification(`Notabene : ${oneLine(actor)} ${what} « ${title} »`, `${oneLine(actor)} ${what} la page « ${title} ».\n\nOuvrir la page : ${url}`) });
+  };
+
+  // Mentions dans le contenu d'une page : une notification par page et par personne, à la première apparition.
+  // Le contenu n'est lu que s'il contient une mention (test sur le texte JSON, sans l'analyser).
+  const pageMentions = (pageId: string, actorId: string | null) => {
+    const row = db.prepare("SELECT content FROM pages WHERE id = ? AND deleted_at IS NULL AND instr(content, '\"type\":\"mention\"') > 0").get(pageId) as { content: string } | undefined;
+    if (!row) return;
+    for (const id of mentionIds(JSON.parse(row.content)).slice(0, 20)) {
+      if (db.prepare('INSERT OR IGNORE INTO page_mentions (page_id, user_id, notified_at) VALUES (?, ?, ?)').run(pageId, id, Date.now()).changes) {
+        deliver(id, 'mention', pageId, actorId);
+      }
+    }
   };
 
   return bus.subscribe((e) => {
@@ -69,15 +82,21 @@ export function startNotifications(db: DB, bus: EventBus, mailer: Mailer, config
       if (!e.pageId) return;
       const actorId = e.by?.id ?? null;
       if (e.type === 'page.created' && actorId) watch(db, actorId, e.pageId);
+      if (e.type === 'page.created' || e.type === 'page.updated') pageMentions(e.pageId, actorId);
       if (e.type === 'comment.created') {
         const commentId = (e.data as { commentId?: string } | undefined)?.commentId;
         const c = commentId ? db.prepare('SELECT parent_id, author_id FROM page_comments WHERE id = ?').get(commentId) as { parent_id: string | null; author_id: string | null } | undefined : undefined;
         if (!c) return;
         if (c.author_id) watch(db, c.author_id, e.pageId); // commenter, c'est suivre
         const done = new Set<string>();
+        // Une personne mentionnée reçoit « mention » et rien d'autre pour ce commentaire.
+        for (const m of db.prepare('SELECT user_id FROM comment_mentions WHERE comment_id = ?').all(commentId) as { user_id: string }[]) {
+          done.add(m.user_id);
+          deliver(m.user_id, 'mention', e.pageId, c.author_id);
+        }
         if (c.parent_id) {
           const parent = db.prepare('SELECT author_id FROM page_comments WHERE id = ?').get(c.parent_id) as { author_id: string | null } | undefined;
-          if (parent?.author_id) { done.add(parent.author_id); deliver(parent.author_id, 'reply', e.pageId, c.author_id); }
+          if (parent?.author_id && !done.has(parent.author_id)) { done.add(parent.author_id); deliver(parent.author_id, 'reply', e.pageId, c.author_id); }
         }
         for (const w of db.prepare('SELECT user_id FROM page_watch WHERE page_id = ?').all(e.pageId) as { user_id: string }[]) {
           if (!done.has(w.user_id)) deliver(w.user_id, 'comment', e.pageId, c.author_id);

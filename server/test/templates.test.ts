@@ -1,7 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
@@ -12,6 +9,7 @@ import { sanitizeDoc } from '../src/lib/content.js';
 import { hashPassword } from '../src/lib/password.js';
 import { eraseUser } from '../src/lib/personal-data.js';
 import { seedDemo } from '../src/seed.js';
+import { oldDb } from './migrations.js';
 
 const env = { NODE_ENV: 'test', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), AUTH_LOCAL: 'true', SEED_DEMO: 'false' };
 const PASS = 'Sup3r-secret-pass';
@@ -184,16 +182,9 @@ describe('cycle de vie', () => {
   });
 
   it('migration v12 : ajoute la table à une base v11 sans toucher aux pages', () => {
-    const file = join(mkdtempSync(join(tmpdir(), 'nb-mig-')), 'v11.db');
-    const fresh = openDb(file);
-    seedDemo(fresh);
-    const pages = fresh.prepare('SELECT count(*) AS n FROM pages').get();
-    fresh.pragma('user_version = 11');
-    fresh.exec('DROP TABLE page_templates');
-    fresh.close();
-    const upgraded = openDb(file);
-    expect(upgraded.pragma('user_version', { simple: true })).toBe(12);
-    expect(upgraded.prepare('SELECT count(*) AS n FROM pages').get()).toEqual(pages);
+    const upgraded = openDb(oldDb(11));
+    expect(upgraded.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(12);
+    expect(upgraded.prepare('SELECT title FROM pages').all()).toEqual([{ title: 'Page' }]);
     expect(upgraded.prepare("SELECT name FROM sqlite_master WHERE name = 'page_templates'").get()).toBeTruthy();
     upgraded.close();
   });

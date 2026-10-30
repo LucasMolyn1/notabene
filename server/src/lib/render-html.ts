@@ -11,6 +11,7 @@ const MARK: Record<string, string> = { bold: 'strong', italic: 'em', strike: 's'
 export function renderHtml(doc: DocNode, titleOf: TitleOf): string {
   const inline = (nodes: DocNode[] = []): string => nodes.map((n) => {
     if (n.type === 'hardBreak') return '<br>';
+    if (n.type === 'mention') return `<span>@${escapeHtml(String(n.attrs?.label ?? 'utilisateur'))}</span>`;
     if (n.type === 'pageLink') return `<a href="/p/${escapeHtml(String(n.attrs?.id ?? ''))}">${escapeHtml(titleOf(String(n.attrs?.id)) ?? 'Sans titre')}</a>`;
     if (n.type !== 'text') return '';
     let html = escapeHtml(n.text ?? '');
