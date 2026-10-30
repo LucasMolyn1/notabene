@@ -4,6 +4,13 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [3.6.0] - 2026-10-30
+
+Mise à jour depuis l'interface, sans donner à Notabene l'accès à Docker.
+
+### Ajouté
+- **Bouton « Mettre à jour » (Paramètres, À propos)**, optionnel. Notabene dépose une demande dans un dossier d'échange (`UPDATER_DIR`) ; un service installé sur l'hôte ([docs/MISE-A-JOUR.md](docs/MISE-A-JOUR.md), `scripts/updater/`) la contrôle (version = dernière release interrogée par le service lui-même), sauvegarde la base, change l'image épinglée par digest, vérifie que la bonne version répond et revient à l'ancienne sinon. Mot de passe ressaisi à chaque fois, action journalisée. Sans le service, aucun bouton : la page explique comment l'installer. Le script est testé contre de fausses commandes (injection, liens symboliques, absence de sauvegarde, retour arrière).
+
 ## [3.5.0] - 2026-10-30
 
 La vérification de mise à jour s'active depuis l'interface.

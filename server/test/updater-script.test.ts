@@ -51,7 +51,8 @@ const request = (body: string) => writeFileSync(join(exchange, 'request.json'), 
 const status = () => JSON.parse(readFileSync(join(exchange, 'status.json'), 'utf8')) as { state: string; version: string; message: string; heartbeat: number };
 const envImage = () => /^NOTABENE_IMAGE=(.*)$/m.exec(readFileSync(join(compose, '.env'), 'utf8'))![1];
 
-describe('service de mise à jour de l’hôte', () => {
+// Le script vise un hôte Linux (flock, mv -T, sed GNU) : ignoré ailleurs (macOS), exécuté dans la CI.
+describe.skipIf(process.platform !== 'linux')('service de mise à jour de l’hôte', () => {
   it('sans demande : écrit seulement un signe de vie', () => {
     expect(run().status).toBe(0);
     expect(status()).toMatchObject({ state: 'idle' });
@@ -146,6 +147,6 @@ esac`);
   });
 });
 
-it('le script est valide pour bash', () => {
+it.skipIf(process.platform !== 'linux')('le script est valide pour bash', () => {
   expect(() => execFileSync('bash', ['-n', SCRIPT])).not.toThrow();
 });

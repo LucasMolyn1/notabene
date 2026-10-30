@@ -56,6 +56,8 @@ const schema = z
     WEBHOOK_ALLOW_PRIVATE: bool('false'),
     // Vérification de mise à jour (désactivée par défaut) : contacte api.github.com, voir lib/update-check.ts.
     UPDATE_CHECK: bool('false'),
+    // Dossier d'échange avec le service de mise à jour de l'hôte (voir docs/MISE-A-JOUR.md). Absent : pas de bouton « Mettre à jour ».
+    UPDATER_DIR: z.string().regex(/^\/[\w./-]{1,200}$/, 'chemin absolu attendu').optional(),
     UPDATE_CHECK_REPO: z.string().regex(/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/, 'attendu : propriétaire/dépôt').default('LucasMolyn1/notabene'),
     // Autorise le fournisseur IA à viser un réseau privé (Ollama, LM Studio…). Variable d'environnement seulement : jamais modifiable depuis l'interface.
     AI_ALLOW_PRIVATE: bool('false'),
