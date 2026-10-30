@@ -3,6 +3,7 @@ import { h } from './util.js';
 import { icon } from './icons.js';
 import { session } from './session.js';
 import { newsPending } from './news.js';
+import { reauthNotice } from './provider-settings.js';
 import { beginView, setView, topbar } from './views.js';
 import { renderAudit, renderAuth, renderMail, renderSpaces, renderUsers } from './settings/access.js';
 import { renderAbout, renderApi, renderAppearance, renderProfile, renderTokens } from './settings/account.js';
@@ -17,14 +18,14 @@ const SECTIONS = [
   { group: 'Compte', id: 'appearance', label: 'Apparence', ico: 'sun', render: renderAppearance },
   { group: 'Compte', id: 'tokens', label: 'Jetons d’API', ico: 'key', render: renderTokens },
   { group: 'Compte', id: 'about', label: 'À propos', ico: 'sparkle', render: renderAbout },
-  { group: 'Fonctionnalités', id: 'ai', label: 'Recherche IA', ico: 'sparkle', render: renderAi },
+  { group: 'Fonctionnalités', id: 'ai', label: 'Recherche IA', ico: 'sparkle', sensitive: true, render: renderAi },
   { group: 'Fonctionnalités', id: 'diagrams', label: 'Diagrammes', ico: 'diamond', render: renderDiagrams },
   { group: 'Fonctionnalités', id: 'tools', label: 'Outils', ico: 'qrcode', render: renderTools },
   { group: 'Fonctionnalités', id: 'api', label: 'API REST', ico: 'code', render: renderApi },
-  { group: 'Fonctionnalités', id: 'embed', label: 'Intégration portfolio', ico: 'globe', render: renderEmbed },
+  { group: 'Fonctionnalités', id: 'embed', label: 'Intégration portfolio', ico: 'globe', sensitive: true, render: renderEmbed },
   { group: 'Administration', id: 'spaces', label: 'Espaces', ico: 'folder', admin: true, render: renderSpaces },
-  { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', admin: true, render: renderAuth },
-  { group: 'Administration', id: 'mail', label: 'E-mail', ico: 'mail', admin: true, render: renderMail },
+  { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', admin: true, sensitive: true, render: renderAuth },
+  { group: 'Administration', id: 'mail', label: 'E-mail', ico: 'mail', admin: true, sensitive: true, render: renderMail },
   { group: 'Administration', id: 'webhooks', label: 'Webhooks', ico: 'webhook', admin: true, render: renderWebhooks },
   { group: 'Administration', id: 'import', label: 'Import', ico: 'upload', admin: true, render: renderImport },
   { group: 'Administration', id: 'users', label: 'Utilisateurs', ico: 'users', admin: true, render: renderUsers },
@@ -52,7 +53,7 @@ export function showSettings(sectionId) {
       h('span', { class: 'crumb current' }, section.label))),
     h('div', { class: 'scroller' }, h('div', { class: 'settings' },
       nav,
-      h('div', { class: 'set-main' }, h('h1', null, icon(section.ico, 24), ` ${section.label}`), content))));
+      h('div', { class: 'set-main' }, h('h1', null, icon(section.ico, 24), ` ${section.label}`), section.sensitive && session.can('admin') ? reauthNotice() : null, content))));
   section.render(content);
   // Les sections qui affichent des espaces se rafraîchissent quand ils changent.
   setView({ kind: 'settings', id: section.id, onStore: (evt) => { if (['spaces', 'embed'].includes(section.id) && evt.type !== 'page') section.render(content); } });

@@ -54,6 +54,13 @@ describe('vérification de mise à jour', () => {
     }
   });
 
+  it('joint les notes de version de la release, au format du CHANGELOG', async () => {
+    const body = '## [3.1.0] - 2026-11-01\n\nRésumé.\n\n### Attention à la mise à jour\n- Sauvegardez avant.\n\n### Ajouté\n- Une chose\n';
+    const s = await new UpdateChecker(true, 'o/r', '3.0.0', async () => release('v3.1.0', { body })).status();
+    expect(s.latest?.notes).toMatchObject({ version: '3.1.0', summary: 'Résumé.', sections: [{ title: 'Attention à la mise à jour' }, { title: 'Ajouté' }] });
+    expect((await new UpdateChecker(true, 'o/r', '3.0.0', async () => release('v3.1.0')).status()).latest?.notes).toBeNull();
+  });
+
   it('à jour, sans release, ou en erreur', async () => {
     expect(await new UpdateChecker(true, 'o/r', '3.0.0', async () => release('v3.0.0')).status()).toMatchObject({ updateAvailable: false });
     expect(await new UpdateChecker(true, 'o/r', '3.0.0', async () => null).status()).toMatchObject({ latest: null, updateAvailable: false, error: null });

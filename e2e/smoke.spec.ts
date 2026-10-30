@@ -77,3 +77,19 @@ test('un diagramme se redimensionne au clavier et garde sa largeur', async ({ pa
   await page.reload();
   await expect.poll(async () => (await page.locator('.diagram').first().boundingBox())!.width).toBeLessThan(before);
 });
+
+test('une mise à jour disponible alerte l’administrateur et mène aux nouveautés', async ({ page }) => {
+  // Réponse simulée : le serveur de test n'interroge pas GitHub.
+  await page.route('**/api/v3/admin/update-check', (route) => route.fulfill({ json: {
+    enabled: true, current: '3.2.0', updateAvailable: true, checkedAt: Date.now(), error: null,
+    latest: { version: '9.9.9', url: 'https://github.com/LucasMolyn1/notabene/releases/tag/v9.9.9', publishedAt: null, notes: {
+      version: '9.9.9', date: '2026-12-01', summary: 'Version de test.', sections: [{ title: 'Attention à la mise à jour', items: ['Sauvegardez avant.'] }] } },
+  } }));
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  const banner = page.getByRole('link', { name: /Version 9\.9\.9 disponible/ });
+  await expect(banner).toBeVisible();
+  await banner.click();
+  await expect(page.getByText('Sauvegardez avant.')).toBeVisible();
+  await expect(page.getByText('Disponible', { exact: true })).toBeVisible();
+  await expect(page.getByText('docker compose pull')).toBeVisible();
+});

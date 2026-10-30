@@ -1,5 +1,5 @@
 // Session courante : identité, permissions et configuration publique de l'instance.
-import { initNews } from './news.js';
+import { initNews, notifyNewsChange } from './news.js';
 import { api, request, setCsrf } from './api.js';
 
 export const session = {
@@ -20,7 +20,21 @@ export const session = {
     initNews(me.version);
     this.permissions = me.permissions;
     setCsrf(me.csrf);
+    if (!this.permissions.admin) this.update = null;
+    else if (this.update === undefined) this.refreshUpdate();
   },
+
+  // Mise à jour disponible (administrateurs, si UPDATE_CHECK=true) : consultée une fois par chargement de la page, sans bloquer le démarrage.
+  update: undefined,
+  async refreshUpdate() {
+    this.update = null;
+    try {
+      this.update = await api.get('/admin/update-check');
+    } catch { /* GitHub injoignable ou droits insuffisants : pas d'alerte */ }
+    notifyNewsChange();
+  },
+  get updateAvailable() { return !!this.update?.updateAvailable; },
+  reauthUntil: 0,
 
   can(permission) {
     return !!this.permissions[permission];

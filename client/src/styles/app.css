@@ -895,3 +895,9 @@ select.input { height: 36px; }
 .gate h1 { margin: 0; font-size: 24px; letter-spacing: -.02em; }
 .gate p { margin: 0; }
 .gate .set-card { width: 100%; text-align: left; }
+
+/* Alerte de mise à jour (administrateurs) */
+.update-banner { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; padding: 9px 10px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); color: var(--text); text-decoration: none; }
+.update-banner span { display: grid; min-width: 0; }
+.update-banner small { color: var(--text-2); font-size: 12px; }
+.update-banner:hover { background: var(--hover); }

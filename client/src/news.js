@@ -19,3 +19,4 @@ export function markNewsSeen(version) {
 }
 
 export const onNewsChange = (fn) => { listeners.add(fn); };
+export const notifyNewsChange = () => listeners.forEach((fn) => fn());

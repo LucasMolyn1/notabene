@@ -4,6 +4,7 @@ import { h } from './util.js';
 import { api } from './api.js';
 import { session } from './session.js';
 import { toast, openModal } from './ui.js';
+import { icon } from './icons.js';
 
 const ROLE_OPTIONS = [['none', 'Refuser l’accès'], ['reader', 'Lecteur']];
 
@@ -77,10 +78,43 @@ const FORMS = {
 
 const field = (label, control, hint) => h('label', { class: 'field' }, h('span', null, label), control, hint && h('small', null, hint));
 
+// Compte fédéré : l'identité se confirme auprès du fournisseur (nouvelle connexion, sans connexion silencieuse) ou par une reconnexion.
+function confirmWithProvider(what) {
+  const oidc = session.provider === 'oidc';
+  return new Promise((resolve) => {
+    const m = openModal({
+      title: 'Confirmez votre identité',
+      body: h('div', { class: 'stack' },
+        h('p', null, `Action sensible : ${what}.`),
+        h('p', { class: 'muted' }, 'Pour protéger la configuration, votre session doit avoir été ouverte il y a moins de 15 minutes. La vôtre est plus ancienne.'),
+        h('p', { class: 'muted' }, oidc
+          ? 'Vous allez être renvoyé vers votre fournisseur d’identité pour vous réauthentifier, puis ramené ici.'
+          : 'Déconnectez-vous puis reconnectez-vous pour continuer.')),
+      actions: [{ label: 'Annuler' }, {
+        label: oidc ? 'Confirmer auprès de mon fournisseur' : 'Se déconnecter', primary: true,
+        onClick: () => { if (oidc) location.href = `/auth/login?reauth=1&returnTo=${encodeURIComponent(`/${location.hash}`)}`; else session.logout(); return undefined; },
+      }],
+    });
+    m.el.addEventListener('close', () => resolve(null));
+  });
+}
+
+// Encart des réglages sensibles pour un compte fédéré : jusqu'à quand la session est confirmée (null pour un compte local).
+export function reauthNotice() {
+  if (session.provider === 'local') return null;
+  const until = session.reauthUntil;
+  if (until > Date.now()) {
+    return h('p', { class: 'hint' }, `Session confirmée : ces réglages sont modifiables jusqu’à ${new Date(until).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}.`);
+  }
+  return h('div', { class: 'notice info stack' },
+    h('p', null, 'Ces réglages exigent une session ouverte il y a moins de 15 minutes. La vôtre est plus ancienne : confirmez votre identité avant de saisir quoi que ce soit.'),
+    session.provider === 'oidc' && h('div', null, h('a', { class: 'btn btn-primary btn-sm', href: `/auth/login?reauth=1&returnTo=${encodeURIComponent(`/${location.hash}`)}` }, icon('shield', 14), 'Confirmer auprès de mon fournisseur')));
+}
+
 // Demande la preuve d'identité. Renvoie l'objet `reauth` à joindre à la requête, ou null si annulé.
 // Dans la fenêtre de 10 minutes ouverte par une saisie précédente, rien n'est redemandé sauf si `strict`.
 export function askReauth(what, { strict = false } = {}) {
-  if (session.provider !== 'local') return Promise.resolve({});
+  if (session.provider !== 'local') return session.reauthUntil > Date.now() ? Promise.resolve({}) : confirmWithProvider(what);
   if (!strict && session.reauthUntil > Date.now()) return Promise.resolve({});
   return new Promise((resolve) => {
     let value = null;

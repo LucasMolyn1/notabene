@@ -11,5 +11,5 @@ export default async function aboutRoutes(app: FastifyInstance) {
     releases: loadChangelog().slice(0, 8),
   }));
 
-  app.get('/admin/update-check', { preHandler: guard('admin'), config: { rateLimit: { max: 20, timeWindow: '1 hour' } }, schema: { tags: ['admin'], summary: 'Mise à jour disponible (si UPDATE_CHECK=true)' } }, async () => app.updates.status());
+  app.get('/admin/update-check', { preHandler: guard('admin'), config: { rateLimit: { max: 60, timeWindow: '1 hour' } }, schema: { tags: ['admin'], summary: 'Mise à jour disponible (si UPDATE_CHECK=true)' } }, async () => app.updates.status());
 }

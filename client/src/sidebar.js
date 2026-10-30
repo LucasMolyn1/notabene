@@ -308,8 +308,11 @@ export function renderSidebar() {
             : h('p', { class: 'sb-empty' }, 'Aucune page.'),
         rootDrop)),
     h('div', { class: 'sb-foot' },
+      // Administrateur : une nouvelle version existe. Le lien mène aux nouveautés (et aux consignes de mise à jour).
+      session.updateAvailable && h('a', { class: 'update-banner', href: '#/settings/about' }, icon('sparkle', 16),
+        h('span', null, h('strong', null, `Version ${session.update.latest.version} disponible`), h('small', null, 'Voir les nouveautés'))),
       canWrite && navBtn('trash', 'Corbeille', A.openTrash),
-      session.user && navBtn('settings', 'Paramètres', () => A.go('/settings'), { active: location.hash.startsWith('#/settings'), badge: newsPending(session.version) || undefined }),
+      session.user && navBtn('settings', 'Paramètres', () => A.go('/settings'), { active: location.hash.startsWith('#/settings'), badge: newsPending(session.version) || session.updateAvailable || undefined }),
       accountBox()));
 
   el.querySelector('.sb-scroll').scrollTop = scrollTop;

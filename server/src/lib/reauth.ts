@@ -17,9 +17,13 @@ const FRESH_SESSION_MS = 15 * 60_000;
 // Après une preuve d'identité réussie, les actions sensibles ordinaires ne la redemandent pas pendant cette durée (fixe, non prolongée à l'usage).
 export const REAUTH_WINDOW_MS = 10 * 60_000;
 
+// Fin de la fenêtre de confirmation de la session : saisie du mot de passe (compte local, 10 min) ou ouverture de la session (compte fédéré, 15 min).
 export function reauthUntil(db: FastifyInstance['db'], sessionHash: string | undefined): number | null {
-  const s = db.prepare('SELECT reauth_at FROM sessions WHERE id_hash = ?').get(sessionHash ?? '') as { reauth_at: number | null } | undefined;
-  return s?.reauth_at && Date.now() - s.reauth_at < REAUTH_WINDOW_MS ? s.reauth_at + REAUTH_WINDOW_MS : null;
+  const s = db.prepare('SELECT s.created_at, s.reauth_at, u.password_hash IS NOT NULL AS local FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ?')
+    .get(sessionHash ?? '') as { created_at: number; reauth_at: number | null; local: number } | undefined;
+  if (!s) return null;
+  const until = s.local ? (s.reauth_at ? s.reauth_at + REAUTH_WINDOW_MS : 0) : s.created_at + FRESH_SESSION_MS;
+  return until > Date.now() ? until : null;
 }
 
 // `strict` : toujours ressaisir le mot de passe (suppression de compte, clé d'API), même dans la fenêtre.
