@@ -2,6 +2,7 @@
 // Principe : une configuration dangereuse empêche le serveur de démarrer.
 import { isIP } from 'node:net';
 import { z } from 'zod';
+import { normalizeEmbedHost, selfHost } from './lib/embed.js';
 
 const bool = (def: 'true' | 'false') =>
   z.enum(['true', 'false', '1', '0']).default(def).transform((v) => v === 'true' || v === '1');
@@ -150,6 +151,8 @@ const schema = z
 
     DRAWIO_URL: optionalUrl,
     EMBED_ALLOWED_ORIGINS: csv(''),
+    // Hôtes dont le contenu peut être intégré dans une page (iframe). Vide : aucune intégration (par défaut).
+    CONTENT_EMBED_HOSTS: csv(''),
     SEED_DEMO: bool('true'),
   })
   .superRefine((c, ctx) => {
@@ -175,6 +178,13 @@ const schema = z
       if (!c.SAML_IDP_CERT && !c.SAML_IDP_CERT_FILE) ctx.addIssue({ code: 'custom', path: ['SAML_IDP_CERT'], message: 'SAML_IDP_CERT ou SAML_IDP_CERT_FILE requis' });
       if (c.NODE_ENV === 'production' && !c.SAML_ENTRY_POINT.startsWith('https://')) {
         ctx.addIssue({ code: 'custom', path: ['SAML_ENTRY_POINT'], message: 'doit être en https en production' });
+      }
+    }
+    for (const host of c.CONTENT_EMBED_HOSTS) {
+      if (!normalizeEmbedHost(host) || normalizeEmbedHost(host) !== host) {
+        ctx.addIssue({ code: 'custom', path: ['CONTENT_EMBED_HOSTS'], message: `hôte invalide : ${host} (nom de domaine en minuscules, sans https://, chemin, port ni joker)` });
+      } else if (host === selfHost(c.PUBLIC_URL)) {
+        ctx.addIssue({ code: 'custom', path: ['CONTENT_EMBED_HOSTS'], message: `${host} est l'hôte de Notabene : il ne peut pas s'intégrer lui-même` });
       }
     }
     for (const origin of c.EMBED_ALLOWED_ORIGINS) {

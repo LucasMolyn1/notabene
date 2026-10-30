@@ -155,7 +155,8 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
         fontSrc: ["'self'", 'data:'],
         connectSrc: ["'self'"],
         workerSrc: ["'self'", 'blob:'],
-        frameSrc: drawioOrigin ? [drawioOrigin] : ["'none'"],
+        // Liste relue à chaque réponse (contenus intégrés autorisés depuis les paramètres, sans redémarrage) ; rien par défaut.
+        frameSrc: [() => [...(drawioOrigin ? [drawioOrigin] : []), ...rt.get().CONTENT_EMBED_HOSTS.map((h) => `https://${h}`)].join(' ') || "'none'"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'"],

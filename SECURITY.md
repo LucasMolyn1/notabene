@@ -43,6 +43,7 @@ Merci de ne pas ouvrir d’issue publique : utilisez les *GitHub Security Adviso
 ### En-têtes HTTP
 - **CSP stricte** : `script-src 'self'` sans `unsafe-inline` ni CDN. Dépendances embarquées au build, polices servies localement.
 - `frame-ancestors` limité à `EMBED_ALLOWED_ORIGINS`, HSTS en HTTPS, `nosniff`, `Referrer-Policy`, COOP/CORP.
+- **Contenus intégrés (iframe)** : désactivés par défaut (`frame-src 'none'`). Un administrateur autorise des **hôtes exacts** (Paramètres, Contenus intégrés, ou `CONTENT_EMBED_HOSTS`) : noms de domaine ASCII, jamais de joker, d'adresse IP, de port, de chemin ni l'hôte de Notabene lui-même ; la liste alimente `frame-src`, relue à chaque réponse, modification avec ressaisie du mot de passe et journal d'audit. Le navigateur refuse donc tout autre hôte, quoi que contienne une page (testé). L'adresse enregistrée dans une page doit être en https, sans identifiants ni port ; le bloc est affiché dans une iframe en bac à sable (`allow-scripts allow-same-origin allow-popups allow-presentation`, ni navigation du haut, ni formulaires, ni fenêtres modales), `referrerpolicy=no-referrer`, **seulement après un clic** du lecteur (le tiers voit alors son adresse IP et peut déposer ses cookies : c'est dit dans l'interface). Les exports et les pages publiques rendues pour les moteurs de recherche n'affichent qu'un lien.
 
 ### Secrets
 - Clé d’API du LLM chiffrée en **AES-256-GCM**, liée à son usage par AAD, et jamais renvoyée au client (seuls ses 4 derniers caractères sont affichés).

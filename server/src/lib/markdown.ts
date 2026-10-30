@@ -41,6 +41,7 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
       case 'callout': return quote(`[!${ALERT[String(a.type)] ?? 'NOTE'}]\n${blocks(node.content)}`);
       case 'codeBlock': return `\`\`\`${a.language ?? ''}\n${(node.content ?? []).map((t) => t.text).join('')}\n\`\`\``;
       case 'plantuml': return `\`\`\`plantuml\n${a.code ?? ''}\n\`\`\``;
+      case 'embed': return `[${String(a.url).replace(/([\\*_`~[\]])/g, '\\$1')}](${String(a.url).replace(/[()\s]/g, encodeURIComponent)})`;
       case 'mermaid': return `\`\`\`mermaid\n${a.code ?? ''}\n\`\`\``;
       case 'excalidraw': return '_[Dessin Excalidraw]_';
       case 'drawio': return '_[Diagramme Draw.io]_';

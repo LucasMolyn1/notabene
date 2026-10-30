@@ -36,6 +36,7 @@ export function renderHtml(doc: DocNode, titleOf: TitleOf, mentionName: MentionN
       case 'blockquote': return `<blockquote>${children(node)}</blockquote>`;
       case 'callout': return `<aside>${children(node)}</aside>`;
       case 'codeBlock': return `<pre><code>${text(node)}</code></pre>`;
+      case 'embed': return `<p><a href="${escapeHtml(String(a.url))}" rel="nofollow ugc noopener noreferrer">${escapeHtml(String(a.url))}</a></p>`;
       case 'mermaid': case 'plantuml': return `<pre><code>${escapeHtml(String(a.code ?? ''))}</code></pre>`;
       case 'horizontalRule': return '<hr>';
       case 'image': return isSafeImageSrc(a.src) && !String(a.src).startsWith('data:') ? `<img src="${escapeHtml(String(a.src))}" alt="${escapeHtml(String(a.alt ?? ''))}" loading="lazy">` : '';

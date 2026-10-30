@@ -16,7 +16,7 @@ import { SECTION_NAMES, SettingsError, type SectionName } from '../lib/runtime-s
 
 const strict = { rateLimit: { max: 10, timeWindow: '1 minute' } };
 const TEST_TTL = 10 * 60_000;
-const needsTest = (section: SectionName) => section !== 'embed';
+const needsTest = (section: SectionName) => section !== 'embed' && section !== 'embeds';
 
 const sectionParams = z.object({ section: z.enum(SECTION_NAMES as [SectionName, ...SectionName[]]) });
 const writeBody = z.object({
@@ -39,6 +39,7 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
   // Test de connexion propre à chaque section (table de correspondance, pas de branchement sur l'entrée).
   const testers: Record<SectionName, (cfg: Config) => Promise<string>> = {
     embed: async () => 'Aucun test nécessaire.',
+    embeds: async () => 'Aucun test nécessaire.',
     oidc: async (cfg) => {
       const r = await probeOidc(cfg);
       return `Fournisseur joint (${r.issuer}). Points d’accès : ${r.endpoints.join(', ')}. La connexion complète sera vérifiée à la première authentification.`;

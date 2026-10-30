@@ -1,6 +1,7 @@
 // Validation stricte des documents TipTap reçus : liste blanche de nœuds, de marques
 // et d'attributs, URL filtrées. Tout ce qui n'est pas explicitement autorisé est refusé
 // ou retiré, pour qu'aucun contenu stocké ne puisse porter de script.
+import { embedUrl } from './embed.js';
 import { HttpError } from './http.js';
 
 export interface DocNode {
@@ -76,6 +77,8 @@ const NODES: Record<string, AttrRules> = {
   // Mention d'une personne : seul l'identifiant est enregistré. Le nom n'entre jamais dans la page (il vient de la table des utilisateurs).
   mention: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined) },
   mermaid: { code: str(50_000), width: nullable(int(120, 4000)) },
+  // Contenu intégré (iframe) : adresse https normalisée ; l'affichage dépend en plus de la liste d'hôtes de l'instance (CSP frame-src).
+  embed: { url: (v) => embedUrl(v) ?? undefined },
   plantuml: { code: str(50_000), width: nullable(int(120, 4000)) },
   excalidraw: { scene: str(MAX_DIAGRAM), svg: isSvgDataUrl, width: nullable(int(120, 4000)) },
   drawio: { xml: str(MAX_DIAGRAM), svg: isSvgDataUrl, width: nullable(int(120, 4000)) },
@@ -141,6 +144,7 @@ export function sanitizeDoc(input: unknown): DocNode {
     if (type === 'image' && !attrs?.src) return null;
     if (type === 'pageLink' && !attrs?.id) return null;
     if (type === 'mention' && !attrs?.id) return null;
+    if (type === 'embed' && !attrs?.url) return null;
     if (Array.isArray(node.content)) {
       out.content = node.content.map((c) => walk(c, depth + 1)).filter((c): c is DocNode => c !== null);
     }

@@ -8,7 +8,7 @@ import { beginView, setView, topbar } from './views.js';
 import { renderAudit, renderAuth, renderMail, renderSpaces, renderUsers } from './settings/access.js';
 import { renderAbout, renderApi, renderAppearance, renderProfile, renderTokens } from './settings/account.js';
 import { renderAi } from './settings/ai.js';
-import { renderDiagrams, renderEmbed, renderTools, renderWebhooks } from './settings/features.js';
+import { renderDiagrams, renderEmbed, renderEmbeds, renderTools, renderWebhooks } from './settings/features.js';
 import { renderImport, renderInstance } from './settings/instance.js';
 
 // ---- Page -----------------------------------------------------------------------------
@@ -26,6 +26,7 @@ const SECTIONS = [
   { group: 'Administration', id: 'spaces', label: 'Espaces', ico: 'folder', admin: true, render: renderSpaces },
   { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', admin: true, sensitive: true, render: renderAuth },
   { group: 'Administration', id: 'mail', label: 'E-mail', ico: 'mail', admin: true, sensitive: true, render: renderMail },
+  { group: 'Administration', id: 'embeds', label: 'Contenus intégrés', ico: 'globe', admin: true, sensitive: true, render: renderEmbeds },
   { group: 'Administration', id: 'webhooks', label: 'Webhooks', ico: 'webhook', admin: true, render: renderWebhooks },
   { group: 'Administration', id: 'import', label: 'Import', ico: 'upload', admin: true, render: renderImport },
   { group: 'Administration', id: 'users', label: 'Utilisateurs', ico: 'users', admin: true, render: renderUsers },
