@@ -4,6 +4,11 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [3.5.1] - 2026-10-30
+
+### Corrigé
+- **Recherche IA : le modèle se choisit dans une vraie liste déroulante.** Le champ à suggestions n'affichait que les noms proches de la valeur déjà saisie, donc presque rien une fois la clé enregistrée. La liste montre tous les modèles du fournisseur ; « Autre modèle… » ouvre un champ libre pour un nom absent.
+
 ## [3.5.0] - 2026-10-30
 
 La vérification de mise à jour s'active depuis l'interface.

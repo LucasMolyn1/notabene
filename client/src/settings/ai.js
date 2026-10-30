@@ -34,8 +34,19 @@ export async function renderAi(el) {
     h('option', { value: 'openai' }, 'Compatible OpenAI (OpenAI, Mistral, Ollama, LM Studio…)'));
   provider.value = current.provider;
   const baseUrl = h('input', { class: 'input', placeholder: 'https://api.openai.com/v1', value: current.baseUrl || '' });
-  const model = h('input', { class: 'input', list: 'ai-models', value: current.model });
-  const models = h('datalist', { id: 'ai-models' });
+  // Vraie liste déroulante (un <datalist> n'affiche que les noms proches de la valeur déjà saisie, donc presque rien).
+  // Le dernier choix, « Autre modèle… », ouvre un champ libre pour un nom absent de la liste.
+  const CUSTOM = '__custom';
+  let chosen = current.model;
+  const model = h('select', { class: 'input', 'aria-label': 'Modèle' });
+  const custom = h('input', { class: 'input', placeholder: 'Nom exact du modèle', 'aria-label': 'Nom du modèle', value: '' });
+  custom.hidden = true;
+  const modelValue = () => (model.value === CUSTOM ? custom.value.trim() : model.value);
+  model.addEventListener('change', () => {
+    custom.hidden = model.value !== CUSTOM;
+    if (model.value === CUSTOM) custom.focus(); else chosen = model.value;
+  });
+  custom.addEventListener('input', () => { chosen = custom.value.trim(); });
   const apiKey = h('input', {
     class: 'input', type: 'password', autocomplete: 'off',
     placeholder: current.hasKey ? `Clé enregistrée (${current.keyHint}) : laisser vide pour la conserver` : 'Collez la clé d’API',
@@ -49,13 +60,19 @@ export async function renderAi(el) {
   let fetched = [];
   const paint = () => {
     baseField.hidden = provider.value !== 'openai';
-    models.replaceChildren(...(fetched.length ? fetched : MODEL_SUGGESTIONS[provider.value]).map((m) => h('option', { value: m })));
+    const list = [...new Set(fetched.length ? fetched : MODEL_SUGGESTIONS[provider.value])];
+    const known = list.includes(chosen);
+    model.replaceChildren(...list.map((m) => h('option', { value: m }, m)), h('option', { value: CUSTOM }, 'Autre modèle…'));
+    model.value = known ? chosen : CUSTOM;
+    custom.hidden = known;
+    if (!known) custom.value = chosen;
   };
   provider.addEventListener('change', () => {
     fetched = [];
     modelsHint.textContent = '';
     paint();
-    if (!MODEL_SUGGESTIONS[provider.value].includes(model.value)) model.value = MODEL_SUGGESTIONS[provider.value][0];
+    if (!MODEL_SUGGESTIONS[provider.value].includes(chosen)) chosen = MODEL_SUGGESTIONS[provider.value][0];
+    paint();
   });
   const modelsHint = h('small', { class: 'hint' });
   const loadModels = async ({ quiet = false } = {}) => {
@@ -66,17 +83,17 @@ export async function renderAi(el) {
     try {
       const r = await api.post('/admin/ai/models', body);
       fetched = r.models;
-      modelsHint.textContent = fetched.length ? `${fetched.length} modèle${fetched.length > 1 ? 's' : ''} disponible${fetched.length > 1 ? 's' : ''} : cliquez dans le champ pour choisir.` : 'Le fournisseur ne propose aucun modèle.';
+      modelsHint.textContent = fetched.length ? `${fetched.length} modèle${fetched.length > 1 ? 's' : ''} disponible${fetched.length > 1 ? 's' : ''} : choisissez dans la liste.` : 'Le fournisseur ne propose aucun modèle.';
     } catch (err) {
       fetched = [];
-      modelsHint.textContent = quiet ? 'Liste non chargée : saisissez le nom du modèle, ou utilisez « Charger les modèles ».' : err.message;
+      modelsHint.textContent = quiet ? 'Liste non chargée : choisissez « Autre modèle… » pour saisir son nom, ou utilisez « Charger les modèles ».' : err.message;
     }
     paint();
   };
   paint();
 
   const save = async () => {
-    const payload = { enabled: enabled.checked, provider: provider.value, baseUrl: provider.value === 'openai' ? baseUrl.value.trim() : '', model: model.value.trim() };
+    const payload = { enabled: enabled.checked, provider: provider.value, baseUrl: provider.value === 'openai' ? baseUrl.value.trim() : '', model: modelValue() };
     if (removeKey.checked) payload.apiKey = '';
     else if (apiKey.value.trim()) payload.apiKey = apiKey.value.trim();
     const reauth = await askReauth('modifier le fournisseur IA (la clé d’API est un secret)', { strict: true });
@@ -95,7 +112,7 @@ export async function renderAi(el) {
       h('label', { class: 'check' }, enabled, h('span', null, h('strong', null, 'Activer la recherche IA'), h('small', null, 'Les utilisateurs pourront interroger la documentation qu’ils ont le droit de lire.'))),
       h('label', { class: 'field' }, h('span', null, 'Fournisseur'), provider),
       baseField,
-      h('label', { class: 'field' }, h('span', null, 'Modèle'), h('div', { class: 'row' }, model, h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: (e) => { e.preventDefault(); loadModels(); } }, 'Charger les modèles')), models, modelsHint),
+      h('label', { class: 'field' }, h('span', null, 'Modèle'), h('div', { class: 'row' }, model, h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: (e) => { e.preventDefault(); loadModels(); } }, 'Charger les modèles')), custom, modelsHint),
       h('label', { class: 'field' }, h('span', null, 'Clé d’API'), apiKey,
         h('small', { class: 'hint' }, 'Chiffrée (AES-256-GCM) côté serveur et jamais renvoyée au navigateur. Optionnelle pour un modèle local.')),
       current.hasKey && h('label', { class: 'check' }, removeKey, h('span', null, 'Supprimer la clé enregistrée')),
