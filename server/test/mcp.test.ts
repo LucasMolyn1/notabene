@@ -93,3 +93,29 @@ describe('versions d’API', () => {
     expect((await app.inject({ method: 'GET', url: '/api/v3/config' })).statusCode).toBe(200);
   });
 });
+
+describe('serveur MCP : libellés', () => {
+  it('liste, pose et retire un libellé avec les droits du jeton', async () => {
+    const editor = await token('editor', ['read', 'write']);
+    const reader = await token('reader', ['read']);
+    const names = (await call(editor, rpc('tools/list'))).json().result.tools.map((t: { name: string }) => t.name);
+    expect(names).toEqual(expect.arrayContaining(['list_labels', 'add_label', 'remove_label']));
+    expect((await call(reader, rpc('tools/list'))).json().result.tools.map((t: { name: string }) => t.name)).not.toContain('add_label');
+
+    const spaces = JSON.parse((await call(editor, rpc('tools/call', { name: 'list_spaces', arguments: {} }))).json().result.content[0].text) as { id: string }[];
+    const created = (await call(editor, rpc('tools/call', { name: 'create_page', arguments: { spaceId: spaces[0]!.id, title: 'Page MCP libellée', text: 'zebre' } }))).json();
+    const id = JSON.parse(created.result.content[0].text).id as string;
+
+    const added = (await call(editor, rpc('tools/call', { name: 'add_label', arguments: { id, name: 'Important' } }))).json();
+    expect(JSON.parse(added.result.content[0].text).items).toEqual(['important']);
+    const listed = (await call(reader, rpc('tools/call', { name: 'list_labels', arguments: {} }))).json();
+    expect(JSON.parse(listed.result.content[0].text)).toContainEqual({ name: 'important', count: 1 });
+    const found = (await call(reader, rpc('tools/call', { name: 'search_pages', arguments: { query: 'zebre', label: 'important' } }))).json();
+    expect(found.result.content[0].text).toContain(id);
+
+    const denied = (await call(reader, rpc('tools/call', { name: 'add_label', arguments: { id, name: 'x' } }))).json();
+    expect(denied.error ?? denied.result?.isError).toBeTruthy();
+    const removed = (await call(editor, rpc('tools/call', { name: 'remove_label', arguments: { id, name: 'important' } }))).json();
+    expect(JSON.parse(removed.result.content[0].text).items).toEqual([]);
+  });
+});

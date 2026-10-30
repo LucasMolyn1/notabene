@@ -332,6 +332,25 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
   border-bottom: 1px solid var(--border); color: var(--text-3); font-size: 12.5px;
 }
 
+/* Libellés de page */
+.labels { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.labels[hidden] { display: none; }
+.label-chip {
+  display: inline-flex; align-items: center; border: 1px solid var(--border-strong); border-radius: 14px;
+  background: var(--accent-soft); font-size: 12.5px; line-height: 1;
+}
+.label-link { padding: 5px 4px 5px 10px; color: var(--accent-text); border-radius: 14px; }
+.label-link:hover { text-decoration: underline; }
+.label-chip:not(:has(.label-x)) .label-link { padding-right: 10px; }
+.label-x { display: grid; place-items: center; width: 24px; height: 24px; margin-right: 2px; border-radius: 50%; color: var(--text-2); }
+.label-x:hover { background: var(--hover); color: var(--text); }
+.label-add {
+  display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px dashed var(--border-strong);
+  border-radius: 14px; font-size: 12.5px; color: var(--text-2);
+}
+.label-add:hover { background: var(--hover); color: var(--text); }
+.label-input { width: 180px; }
+
 .toc { position: sticky; top: 24px; align-self: start; max-height: calc(100vh - 120px); overflow: auto; padding-top: 128px; }
 .toc-title { font-size: 11.5px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
 .toc-item {

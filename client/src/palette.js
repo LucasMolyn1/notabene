@@ -7,6 +7,7 @@ import { pageIcon } from './ui.js';
 import { store } from './store.js';
 import { session } from './session.js';
 import { streamAsk } from './api.js';
+import { normalizeLabel } from './labels.js';
 
 let current = null;
 
@@ -108,7 +109,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
     tabs?.querySelectorAll('.pal-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === next));
     input.placeholder = next === 'ai'
       ? 'Posez une question sur la documentation… (Entrée pour envoyer)'
-      : mode === 'pick' ? 'Rechercher la page à lier…' : 'Rechercher dans toutes les pages…';
+      : mode === 'pick' ? 'Rechercher la page à lier…' : 'Rechercher dans toutes les pages… (#libellé pour filtrer)';
     foot.replaceChildren(...(next === 'ai'
       ? [h('span', null, h('kbd', null, '↵'), ' envoyer'), h('span', null, h('kbd', null, 'Tab'), ' recherche classique')]
       : [h('span', null, h('kbd', null, '↑'), h('kbd', null, '↓'), ' naviguer'), h('span', null, h('kbd', null, '↵'), mode === 'pick' ? ' insérer' : ' ouvrir'),
@@ -120,7 +121,14 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
 
   const runSearch = debounce(async (q, seq) => {
     try {
-      const found = await store.search(q, spaceFilter);
+      // « #libellé » seul liste les pages du libellé, « #libellé mots » restreint la recherche.
+      const tag = q.startsWith('#') ? q.slice(1) : null;
+      const cut = tag === null ? -1 : tag.search(/\s/u);
+      const label = tag === null ? null : normalizeLabel(cut < 0 ? tag : tag.slice(0, cut));
+      const text = tag === null ? q : cut < 0 ? '' : tag.slice(cut).trim();
+      const found = label === null ? await store.search(q, spaceFilter)
+        : !label ? []
+          : text ? await store.search(text, spaceFilter, label) : await store.byLabel(label, spaceFilter);
       if (seq !== requestSeq) return;
       results = groupBySpace(found.filter((r) => r.id !== exclude).map((r) => ({ page: store.page(r.id) || r, snippet: r.snippet })));
     } catch {

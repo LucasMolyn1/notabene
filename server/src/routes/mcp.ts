@@ -23,7 +23,7 @@ interface Tool {
   schema: z.ZodObject;
   run: (args: never, call: Call) => Promise<string>;
 }
-type Call = (method: 'GET' | 'POST', url: string, payload?: unknown) => Promise<{ status: number; body: string }>;
+type Call = (method: 'GET' | 'POST' | 'DELETE', url: string, payload?: unknown) => Promise<{ status: number; body: string }>;
 
 const ok = (r: { status: number; body: string }) => {
   if (r.status >= 400) {
@@ -67,8 +67,24 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'search_pages', description: 'Recherche plein texte dans les pages accessibles ; renvoie id, titre et extrait.', scope: 'read', readOnly: true,
-    schema: z.object({ query: z.string().trim().min(1).max(200), limit: z.number().int().min(1).max(50).default(10) }),
-    run: async (a: { query: string; limit: number }, call) => JSON.stringify((JSON.parse(ok(await call('GET', `/api/v3/search?q=${encodeURIComponent(a.query)}&limit=${a.limit}`))) as { items: unknown[] }).items),
+    schema: z.object({ query: z.string().trim().min(1).max(200), limit: z.number().int().min(1).max(50).default(10), label: z.string().trim().min(1).max(80).optional().describe('Ne garder que les pages portant ce libellé') }),
+    run: async (a: { query: string; limit: number; label?: string }, call) =>
+      JSON.stringify((JSON.parse(ok(await call('GET', `/api/v3/search?q=${encodeURIComponent(a.query)}&limit=${a.limit}${a.label ? `&label=${encodeURIComponent(a.label)}` : ''}`))) as { items: unknown[] }).items),
+  },
+  {
+    name: 'list_labels', description: 'Liste les libellés utilisés, avec le nombre de pages lisibles qui les portent.', scope: 'read', readOnly: true,
+    schema: z.object({}),
+    run: async (_a, call) => JSON.stringify((JSON.parse(ok(await call('GET', '/api/v3/labels'))) as { items: unknown[] }).items),
+  },
+  {
+    name: 'add_label', description: 'Ajoute un libellé à une page (lettres, chiffres, tirets ; 40 caractères au plus). Nécessite la portée write.', scope: 'write', readOnly: false,
+    schema: z.object({ id: idSchema, name: z.string().trim().min(1).max(80) }),
+    run: async (a: { id: string; name: string }, call) => ok(await call('POST', `/api/v3/pages/${a.id}/labels`, { name: a.name })),
+  },
+  {
+    name: 'remove_label', description: 'Retire un libellé d’une page. Nécessite la portée write.', scope: 'write', readOnly: false,
+    schema: z.object({ id: idSchema, name: z.string().trim().min(1).max(80) }),
+    run: async (a: { id: string; name: string }, call) => ok(await call('DELETE', `/api/v3/pages/${a.id}/labels/${encodeURIComponent(a.name)}`)),
   },
   {
     name: 'get_page', description: 'Lit le contenu d’une page au format Markdown.', scope: 'read', readOnly: true,
