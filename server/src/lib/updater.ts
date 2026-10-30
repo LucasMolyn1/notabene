@@ -1,6 +1,6 @@
 // Pont avec le service de mise à jour de l'hôte (scripts/updater). Notabene ne touche jamais à Docker : il dépose une DEMANDE
 // dans un dossier d'échange et lit un STATUT que l'hôte y publie. Tout ce qui vient de ce dossier est traité comme non fiable.
-import { lstatSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readSync, renameSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -29,11 +29,16 @@ const OFF: UpdaterStatus = { available: false, state: null, version: null, messa
 
 export function readUpdater(dir: string | undefined, now = Date.now()): UpdaterStatus {
   if (!dir) return OFF;
+  let fd: number | null = null;
   try {
-    const file = join(dir, 'status.json');
-    const st = lstatSync(file);
+    // Un seul descripteur : le type et la taille se contrôlent sur le fichier réellement lu (pas de course entre
+    // vérification et lecture), et un lien symbolique est refusé à l'ouverture (O_NOFOLLOW).
+    fd = openSync(join(dir, 'status.json'), constants.O_RDONLY | constants.O_NOFOLLOW);
+    const st = fstatSync(fd);
     if (!st.isFile() || st.size > MAX_STATUS_BYTES) return OFF;
-    const s = statusSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
+    const buf = Buffer.alloc(st.size);
+    readSync(fd, buf, 0, st.size, 0);
+    const s = statusSchema.parse(JSON.parse(buf.toString('utf8')));
     return {
       available: now - s.heartbeat * 1000 < HEARTBEAT_MAX_AGE_MS,
       state: s.state,
@@ -43,6 +48,8 @@ export function readUpdater(dir: string | undefined, now = Date.now()): UpdaterS
     };
   } catch {
     return OFF;
+  } finally {
+    if (fd !== null) closeSync(fd);
   }
 }
 

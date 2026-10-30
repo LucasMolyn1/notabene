@@ -143,6 +143,23 @@ test('la vérification de mise à jour s’active depuis l’interface, avec exp
   await expect(page.getByRole('button', { name: 'Activer la vérification' })).toBeVisible();
 });
 
+test('le modèle de l’IA se choisit dans une liste déroulante une fois la clé enregistrée', async ({ page }) => {
+  // Réponses simulées : pas de vrai fournisseur dans les tests.
+  await page.route('**/api/v3/admin/ai', (route) => route.request().method() === 'GET'
+    ? route.fulfill({ json: { enabled: true, provider: 'openai', baseUrl: 'https://api.example.com/v1', model: 'gpt-4o', hasKey: true, keyHint: '…abcd' } })
+    : route.continue());
+  await page.route('**/api/v3/admin/ai/models', (route) => route.fulfill({ json: { models: ['gpt-4o', 'gpt-4o-mini', 'mistral-large-latest'] } }));
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto('/#/settings/ai');
+  const model = page.getByRole('combobox', { name: 'Modèle', exact: true });
+  await expect(model).toHaveValue('gpt-4o');
+  await expect(model.locator('option')).toHaveText(['gpt-4o', 'gpt-4o-mini', 'mistral-large-latest', 'Autre modèle…']);
+  await model.selectOption('mistral-large-latest');
+  await expect(model).toHaveValue('mistral-large-latest');
+  await model.selectOption('__custom');
+  await expect(page.getByRole('textbox', { name: 'Nom du modèle' })).toBeVisible();
+});
+
 test('le bouton de mise à jour demande confirmation et le mot de passe, puis dépose la demande', async ({ page }) => {
   const check = (updater: object) => ({ enabled: true, source: 'env', locked: false, current: '3.5.0', updateAvailable: true, checkedAt: Date.now(), error: null,
     latest: { version: '9.9.9', url: 'https://github.com/LucasMolyn1/notabene/releases/tag/v9.9.9', publishedAt: null, notes: null }, updater });
