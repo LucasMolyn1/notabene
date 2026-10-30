@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { loadReadablePage, loadWritablePage, readableSpaceIds } from '../lib/access.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
+import { hasPageLink } from '../lib/content.js';
 import { labelsOf, normalizeLabel, pageIdsWithLabel } from '../lib/labels.js';
 import { filterReadable } from '../lib/page-acl.js';
 import { isFavorite, listPages, searchPages, toMeta, toPage, updatePage } from '../lib/pages.js';
@@ -57,6 +58,19 @@ export default async function pageQueryRoutes(app: FastifyInstance) {
     const row = loadReadablePage(db, req, (req.params as { id: string }).id);
     reply.header('etag', etag(row.version));
     return { ...toPage(row, isFavorite(db, userId(req), row.id)), labels: labelsOf(db, row.id) };
+  });
+
+  // Pages qui contiennent un lien vers celle-ci. Lecture filtrée comme partout : seules comptent les pages que la personne peut lire.
+  app.get('/pages/:id/backlinks', { schema: { tags, summary: 'Pages qui renvoient vers cette page', params: idParams } }, async (req) => {
+    const target = loadReadablePage(db, req, (req.params as { id: string }).id);
+    const rows = db.prepare(
+      `SELECT id, content FROM pages WHERE deleted_at IS NULL AND id != ? AND instr(content, ?) > 0
+         AND space_id IN (SELECT value FROM json_each(?)) LIMIT 300`,
+    ).all(target.id, `"id":"${target.id}"`, JSON.stringify(readableSpaceIds(db, req))) as { id: string; content: string }[];
+    const linking = new Set(rows.filter((r) => { try { return hasPageLink(JSON.parse(r.content), target.id); } catch { return false; } }).map((r) => r.id));
+    const items = filterReadable(db, req.auth, listPages(db, readableSpaceIds(db, req), null).filter((p) => linking.has(p.id)))
+      .slice(0, 50).map((p) => ({ id: p.id, title: p.title, icon: p.icon, spaceId: p.spaceId }));
+    return { items };
   });
 
   app.patch('/pages/:id', {

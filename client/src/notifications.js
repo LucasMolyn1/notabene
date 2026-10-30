@@ -13,6 +13,8 @@ function paint() {
   for (const b of badges) {
     b.textContent = unread > 99 ? '99+' : String(unread);
     b.hidden = unread === 0;
+    // Le nom accessible doit contenir le nombre affiché (WCAG 2.5.3, « étiquette dans le nom »).
+    b.parentElement?.setAttribute('aria-label', unread === 0 ? 'Notifications' : `Notifications, ${b.textContent} non lue${unread > 1 ? 's' : ''}`);
   }
 }
 
@@ -61,9 +63,10 @@ async function openInbox() {
 export function bellButton() {
   if (!session.user) return null;
   const badge = h('span', { class: 'bell-badge', hidden: true });
+  const button = h('button', { class: 'icon-btn bell', title: 'Notifications', 'aria-label': 'Notifications', onClick: openInbox }, icon('bell'), badge);
   badges.add(badge);
-  paint();
-  return h('button', { class: 'icon-btn bell', title: 'Notifications', 'aria-label': 'Notifications', onClick: openInbox }, icon('bell'), badge);
+  paint(); // après la création du bouton : le nom accessible suit le badge
+  return button;
 }
 
 // Bouton « Suivre » d'une page.

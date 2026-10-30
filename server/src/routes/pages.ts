@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { can, guard, requireAuth } from '../auth/context.js';
 import { mentionIds } from '../lib/content.js';
+import { copyTree } from '../lib/page-copy.js';
 import { readersAmong } from '../lib/mentions.js';
 import { loadReadablePage, loadWritablePage, readableSpaceIds } from '../lib/access.js';
 import { assertMoveKeepsRestriction, canReadPage, canWritePage, filterReadable, governingPage } from '../lib/page-acl.js';
@@ -91,6 +92,23 @@ export default async function pageRoutes(app: FastifyInstance) {
     const row = duplicatePage(db, id, userId(req));
     bus.publish({ type: 'page.created', spaceId: row.space_id, pageId: row.id, by: by(req) });
     return reply.status(201).send(toMeta(row));
+  });
+
+  // Copie d'une page et de ses sous-pages (que la personne peut lire) vers un espace, l'original restant en place.
+  const copyBody = z.object({ spaceId: idSchema, parentId: idSchema.nullable().optional() });
+  app.post('/pages/:id/copy', {
+    preHandler: guard('write'),
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    schema: { tags, summary: 'Copier une page et ses sous-pages lisibles vers un espace (la copie reste aussi restreinte que la source)', params: idParams, body: copyBody },
+  }, async (req, reply) => {
+    const src = loadReadablePage(db, req, (req.params as { id: string }).id);
+    const body = req.body as z.output<typeof copyBody>;
+    if (!readableSpaceIds(db, req).includes(body.spaceId)) throw new HttpError(404, 'Espace introuvable');
+    if (body.parentId && !canWritePage(db, req.auth, body.parentId)) throw new HttpError(403, 'Accès en lecture seule sur la page parente');
+    const result = copyTree(db, src.id, { spaceId: body.spaceId, parentId: body.parentId ?? null }, userId(req), (pid) => canReadPage(db, req.auth, pid));
+    audit(db, req, 'page.copy', src.id, { to: body.spaceId, pages: result.count, skipped: result.skipped });
+    bus.publish({ type: 'space.changed', spaceId: body.spaceId, by: by(req) });
+    return reply.status(201).send({ page: toMeta(result.root), count: result.count, skipped: result.skipped });
   });
 
   app.delete('/pages/:id', { preHandler: guard('write'), schema: { tags, summary: 'Mettre une page (et ses sous-pages) à la corbeille', params: idParams } }, async (req, reply) => {
