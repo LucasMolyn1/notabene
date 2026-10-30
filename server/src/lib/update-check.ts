@@ -1,14 +1,19 @@
-// Vérification de mise à jour, désactivée par défaut (UPDATE_CHECK=true pour l'activer).
+// Vérification de mise à jour, désactivée par défaut : activable par UPDATE_CHECK=true ou depuis Paramètres, À propos.
 // Elle interroge l'API publique de GitHub (dernière release) : l'adresse IP du serveur et la version de Notabene sont alors
 // visibles de GitHub. Aucune donnée de l'instance n'est envoyée. Déclenchée seulement quand un administrateur consulte l'écran
 // (pas de tâche de fond), résultat gardé en mémoire 12 heures, requête protégée par la garde réseau (net-guard).
 import { z } from 'zod';
+import type { Config } from '../config.js';
+import type { DB } from '../db.js';
 import { compareVersions, parseChangelog, type Release } from './changelog.js';
 import { safeFetch } from './net-guard.js';
 
 export interface LatestRelease { version: string; url: string; publishedAt: string | null; /** Notes de version (même format que le CHANGELOG), si la release en publie. */ notes: Release | null }
 export interface UpdateStatus {
   enabled: boolean;
+  /** « env » : réglé par l'environnement ; « db » : choisi dans l'interface ; `locked` : l'environnement a le dernier mot (CONFIG_LOCKED). */
+  source: 'env' | 'db';
+  locked: boolean;
   current: string;
   latest: LatestRelease | null;
   updateAvailable: boolean;
@@ -40,15 +45,21 @@ export class UpdateChecker {
   #cached: { at: number; ttl: number; latest: LatestRelease | null; error: string | null } | null = null;
 
   constructor(
-    readonly enabled: boolean,
+    enabled: boolean | (() => { enabled: boolean; source: 'env' | 'db'; locked: boolean }),
     private readonly repo: string,
     private readonly current: string,
     private readonly fetcher: Fetcher = githubFetcher,
-  ) {}
+  ) {
+    this.#setting = typeof enabled === 'function' ? enabled : () => ({ enabled, source: 'env', locked: true });
+  }
+
+  readonly #setting: () => { enabled: boolean; source: 'env' | 'db'; locked: boolean };
+  get enabled() { return this.#setting().enabled; }
 
   async status(): Promise<UpdateStatus> {
-    const base = { enabled: this.enabled, current: this.current };
-    if (!this.enabled) return { ...base, latest: null, updateAvailable: false, checkedAt: null, error: null };
+    const setting = this.#setting();
+    const base = { ...setting, current: this.current };
+    if (!setting.enabled) return { ...base, latest: null, updateAvailable: false, checkedAt: null, error: null };
     const now = Date.now();
     if (!this.#cached || now - this.#cached.at > this.#cached.ttl) {
       try {
@@ -64,4 +75,22 @@ export class UpdateChecker {
     const { latest, error, at } = this.#cached;
     return { ...base, latest, updateAvailable: !!latest && compareVersions(latest.version, this.current) > 0, checkedAt: at, error };
   }
+}
+
+const KEY = 'updates';
+
+// Réglage effectif : l'environnement (UPDATE_CHECK) sert de valeur de départ, le choix fait dans l'interface le remplace
+// (sauf CONFIG_LOCKED, où l'environnement garde le dernier mot).
+export function updateSetting(db: DB, config: Pick<Config, 'UPDATE_CHECK' | 'CONFIG_LOCKED'>): { enabled: boolean; source: 'env' | 'db'; locked: boolean } {
+  if (config.CONFIG_LOCKED) return { enabled: config.UPDATE_CHECK, source: 'env', locked: true };
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(KEY) as { value: string } | undefined;
+  if (!row) return { enabled: config.UPDATE_CHECK, source: 'env', locked: false };
+  try { return { enabled: z.object({ enabled: z.boolean() }).parse(JSON.parse(row.value)).enabled, source: 'db', locked: false }; } catch { return { enabled: false, source: 'db', locked: false }; }
+}
+
+export function saveUpdateSetting(db: DB, enabled: boolean, userId: string) {
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+  ).run(KEY, JSON.stringify({ enabled }), Date.now(), userId);
 }

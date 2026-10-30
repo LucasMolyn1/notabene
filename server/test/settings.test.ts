@@ -239,6 +239,34 @@ describe('fenêtre de réauthentification', () => {
   });
 });
 
+describe('vérification de mise à jour activable depuis l’interface', () => {
+  const put = (s: Awaited<ReturnType<typeof login>>, payload: object) => api(s, 'PUT', '/admin/update-check/settings', payload);
+
+  it('est désactivée au départ, s’active avec le mot de passe, et reste choisie en base', async () => {
+    await addUser('a@example.com', 'admin');
+    const s = await login('a@example.com');
+    expect((await api(s, 'GET', '/admin/update-check')).json()).toMatchObject({ enabled: false, source: 'env', locked: false });
+    expect((await put(s, { enabled: true, reauth: { password: 'faux' } })).statusCode).toBe(401);
+    const on = await put(s, { enabled: true, reauth });
+    expect(on.statusCode).toBe(200);
+    expect(on.json()).toMatchObject({ enabled: true, source: 'db' });
+    expect((await api(s, 'GET', '/admin/update-check')).json()).toMatchObject({ enabled: true, source: 'db' });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'settings.updates'").get()).toEqual({ n: 1 });
+    expect((await put(s, { enabled: false, reauth: {} })).json()).toMatchObject({ enabled: false, source: 'db' }); // fenêtre de 10 min
+  });
+
+  it('est réservée aux administrateurs et refusée quand l’environnement verrouille', async () => {
+    await addUser('ed@example.com', 'editor');
+    expect((await put(await login('ed@example.com'), { enabled: true, reauth })).statusCode).toBe(403);
+    await app.close(); db.close();
+    await boot({ CONFIG_LOCKED: 'true', UPDATE_CHECK: 'true' });
+    await addUser('a2@example.com', 'admin');
+    const s = await login('a2@example.com');
+    expect((await api(s, 'GET', '/admin/update-check')).json()).toMatchObject({ enabled: true, source: 'env', locked: true });
+    expect((await put(s, { enabled: false, reauth })).statusCode).toBe(409);
+  });
+});
+
 describe('confirmation de session d’un compte fédéré', () => {
   it('annonce la fin de la fenêtre de 15 minutes et refuse les réglages passé ce délai', async () => {
     db.prepare('INSERT INTO users (id, sub, email, name, role, created_at) VALUES (?,?,?,?,?,?)').run('fed', 'oidc:abc', 'fed@example.com', 'Fed', 'admin', Date.now());

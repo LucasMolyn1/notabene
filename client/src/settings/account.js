@@ -6,6 +6,7 @@ import { session } from '../session.js';
 import { prefs, savePrefs, setTheme } from '../prefs.js';
 import { colorFor } from '../presence.js';
 import { toast, confirmModal } from '../ui.js';
+import { askReauth } from '../provider-settings.js';
 import { securityCard } from '../local-auth.js';
 import { preferencesCard } from '../notifications.js';
 import { markNewsSeen, notifyNewsChange } from '../news.js';
@@ -188,21 +189,47 @@ export async function renderAbout(el) {
   document.querySelectorAll('.set-nav-item .news-dot').forEach((d) => d.remove()); // la pastille du menu des réglages
 
   const DOCS = `${REPO_URL}/blob/main/docs/MISE-A-JOUR.md`;
+
+  // Activer ou couper la vérification : le texte dit exactement ce qui part, et ce qui ne part pas.
+  const setChecking = async (enabled) => {
+    const reauth = await askReauth(enabled ? 'activer la vérification de mise à jour' : 'désactiver la vérification de mise à jour');
+    if (!reauth) return;
+    const status = await A.attempt(() => api.put('/admin/update-check/settings', { enabled, reauth }));
+    if (!status) return;
+    session.update = null;
+    session.refreshUpdate();
+    toast(enabled ? 'Vérification des mises à jour activée' : 'Vérification des mises à jour désactivée');
+    renderAbout(el);
+  };
+  const explanation = h('div', { class: 'stack' },
+    h('p', null, h('strong', null, 'Ce n’est pas une mise à jour automatique. '), 'Notabene vous prévient seulement qu’une nouvelle version existe ; vous décidez si et quand l’installer.'),
+    h('p', null, 'Si vous l’activez, le serveur de cette instance demande à GitHub (api.github.com) quelle est la dernière version publiée, au plus toutes les 12 heures et seulement quand un administrateur ouvre l’application.'),
+    h('ul', { class: 'plain-list' },
+      h('li', null, h('strong', null, 'GitHub voit : '), 'l’adresse IP publique de votre serveur, l’heure de la demande et le numéro de version de Notabene que vous utilisez.'),
+      h('li', null, h('strong', null, 'GitHub ne reçoit pas : '), 'vos pages, vos utilisateurs, le nom ou l’adresse de votre instance, ni aucun identifiant.')),
+    h('p', { class: 'hint' }, 'Désactivée, l’instance n’appelle personne. Dans ce cas, vous pouvez vous abonner aux releases du dépôt sur GitHub pour être prévenu par e-mail.'));
+
   const updateCard = update && card('Mise à jour', null, !update.enabled
     ? h('div', { class: 'stack' },
-      h('p', null, 'La vérification de mise à jour est désactivée : cette instance ne sait pas si une nouvelle version existe.'),
-      h('p', { class: 'hint' }, 'Pour l’activer : UPDATE_CHECK=true dans l’environnement du serveur, puis redémarrage. Elle contacte api.github.com au plus toutes les 12 heures, quand un administrateur ouvre l’application : l’adresse IP du serveur et le numéro de version sont alors visibles de GitHub, aucune donnée de l’instance n’est envoyée.'),
+      h('p', null, 'La vérification est désactivée : cette instance ne sait pas si une nouvelle version existe.'),
+      explanation,
+      update.locked
+        ? h('p', { class: 'hint' }, 'Ce réglage est fixé par l’environnement du serveur (CONFIG_LOCKED, UPDATE_CHECK).')
+        : h('div', null, h('button', { class: 'btn btn-primary btn-sm', type: 'button', onClick: () => setChecking(true) }, icon('sparkle', 14), 'Activer la vérification')),
       h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'Guide de mise à jour ↗'))
-    : update.error ? h('p', { class: 'hint' }, update.error)
-      : update.updateAvailable
-        ? h('div', { class: 'stack' },
-          h('div', { class: 'notice info' }, h('strong', null, `La version ${update.latest.version} est disponible`), ` (vous utilisez la ${update.current}). Lisez ses nouveautés ci-dessous, surtout « Attention à la mise à jour », avant de l’installer.`),
-          h('p', { class: 'muted' }, 'Mise à jour : sauvegardez la base, puis, dans le dossier du déploiement :'),
-          h('pre', { class: 'code-sample', tabindex: '0' }, 'docker compose pull\ndocker compose up -d'),
-          h('p', { class: 'hint' }, 'Si votre fichier compose épingle la version de l’image (NOTABENE_IMAGE), changez d’abord le numéro. ',
-            h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'Guide de mise à jour ↗'), ' ',
-            update.latest.url.startsWith('https://github.com/') && h('a', { href: update.latest.url, target: '_blank', rel: 'noopener' }, 'Notes sur GitHub ↗')))
-        : h('p', null, pill('À jour', 'ok'), ' Vous utilisez la dernière version publiée.'));
+    : h('div', { class: 'stack' },
+      update.error ? h('p', { class: 'hint' }, update.error)
+        : update.updateAvailable
+          ? h('div', { class: 'stack' },
+            h('div', { class: 'notice info' }, h('strong', null, `La version ${update.latest.version} est disponible`), ` (vous utilisez la ${update.current}). Lisez ses nouveautés ci-dessous, surtout « Attention à la mise à jour », avant de l’installer.`),
+            h('p', { class: 'muted' }, 'Mise à jour : sauvegardez la base, puis, dans le dossier du déploiement :'),
+            h('pre', { class: 'code-sample', tabindex: '0' }, 'docker compose pull\ndocker compose up -d'),
+            h('p', { class: 'hint' }, 'Si votre fichier compose épingle la version de l’image (NOTABENE_IMAGE), changez d’abord le numéro. ',
+              h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'Guide de mise à jour ↗'), ' ',
+              update.latest.url.startsWith('https://github.com/') && h('a', { href: update.latest.url, target: '_blank', rel: 'noopener' }, 'Notes sur GitHub ↗')))
+          : h('p', null, pill('À jour', 'ok'), ' Vous utilisez la dernière version publiée.'),
+      h('details', { class: 'hint' }, h('summary', null, 'Qu’est-ce qui est envoyé à GitHub ?'), explanation),
+      !update.locked && h('div', null, h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => setChecking(false) }, 'Désactiver la vérification'))));
 
   // Notes de la version à installer, lues dans sa release GitHub : on les lit avant de mettre à jour.
   const upcoming = update?.updateAvailable ? update.latest.notes : null;

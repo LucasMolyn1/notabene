@@ -4,6 +4,13 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [3.5.0] - 2026-10-30
+
+La vérification de mise à jour s'active depuis l'interface.
+
+### Ajouté
+- **Activer la vérification de mise à jour dans Paramètres, À propos** (administrateur, mot de passe ressaisi, action journalisée), avec l'explication de ce qui part : GitHub voit l'adresse IP publique du serveur, l'heure et le numéro de version ; il ne reçoit ni page, ni utilisateur, ni nom d'instance. Ce n'est pas une mise à jour automatique : on prévient seulement. `UPDATE_CHECK` reste la valeur de départ ; `CONFIG_LOCKED=true` donne le dernier mot à l'environnement.
+
 ## [3.4.0] - 2026-10-30
 
 Blocs de code colorés et éditables comme dans un éditeur de code, et vrai sélecteur d'emojis.
