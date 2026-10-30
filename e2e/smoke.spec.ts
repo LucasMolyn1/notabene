@@ -45,3 +45,16 @@ test('l’arborescence se parcourt au clavier (flèches, menu, Échap)', async (
   await expect(page.getByRole('menu')).toBeHidden();
   await expect(tree.getByRole('treeitem').nth(1)).toBeFocused();
 });
+
+test('l’écran À propos affiche la version et les nouveautés, la pastille s’éteint après lecture', async ({ page }) => {
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  // Simule une mise à jour : une ancienne version a été vue sur ce navigateur.
+  await page.evaluate(() => localStorage.setItem('notabene:seen-version', '0.0.1'));
+  await page.reload();
+  await expect(page.getByRole('img', { name: 'Nouveautés' }).first()).toBeVisible();
+  await page.goto('/#/settings/about');
+  await expect(page.getByRole('heading', { name: 'Nouveautés' })).toBeVisible();
+  await expect(page.getByText('Installée')).toBeVisible();
+  await expect(page.getByText('La vérification de mise à jour est désactivée')).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Nouveautés' })).toHaveCount(0);
+});

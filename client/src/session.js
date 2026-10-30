@@ -1,4 +1,5 @@
 // Session courante : identité, permissions et configuration publique de l'instance.
+import { initNews } from './news.js';
 import { api, request, setCsrf } from './api.js';
 
 export const session = {
@@ -14,6 +15,8 @@ export const session = {
     this.user = me.user;
     this.mfaSetupRequired = !!me.mfaSetupRequired;
     this.provider = me.provider;
+    this.version = me.version;
+    initNews(me.version);
     this.permissions = me.permissions;
     setCsrf(me.csrf);
   },

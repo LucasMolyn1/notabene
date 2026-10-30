@@ -41,6 +41,8 @@ import ssoRoutes from './routes/sso.js';
 import tokenRoutes from './routes/tokens.js';
 import versionRoutes from './routes/versions.js';
 import webhookRoutes from './routes/webhooks.js';
+import aboutRoutes from './routes/about.js';
+import { UpdateChecker } from './lib/update-check.js';
 import { VERSION } from './version.js';
 
 declare module 'fastify' {
@@ -53,6 +55,7 @@ declare module 'fastify' {
     oidc: OidcClient;
     rt: RuntimeSettings;
     mail: Mailer;
+    updates: UpdateChecker;
   }
 }
 
@@ -68,9 +71,11 @@ export interface AppOptions {
   // Injections pour les tests : client LDAP du test de connexion, expéditeur d'e-mails.
   ldapFactory?: import('./auth/ldap.js').ClientFactory;
   mailer?: Mailer;
+  // Vérificateur de mise à jour injectable (tests) ; par défaut construit d'après UPDATE_CHECK.
+  updateChecker?: UpdateChecker;
 }
 
-export async function buildApp({ config, db, logger = false, clientDir, ldap, ldapFactory, mailer }: AppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, db, logger = false, clientDir, ldap, ldapFactory, mailer, updateChecker }: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger === false ? false : {
       ...(typeof logger === 'object' ? logger : {}),
@@ -88,6 +93,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   app.decorate('box', box);
   const rt = new RuntimeSettings(config, db, box);
   app.decorate('rt', rt);
+  app.decorate('updates', updateChecker ?? new UpdateChecker(config.UPDATE_CHECK, config.UPDATE_CHECK_REPO, VERSION));
   app.decorate('mail', mailer ?? new Mailer(() => rt.get()));
   const bus = new EventBus();
   app.decorate('bus', bus);
@@ -253,6 +259,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(webhookRoutes);
     await scope.register(importRoutes);
     await scope.register(v3Routes);
+    await scope.register(aboutRoutes);
   }, { prefix: '/api/v3' });
   await app.register(mcpRoutes);
   await app.register(versionRoutes);

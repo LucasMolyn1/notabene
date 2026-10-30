@@ -11,6 +11,7 @@ import { qrSvg } from './qr.js';
 import { securityCard } from './local-auth.js';
 import { askReauth, embedOriginsCard, providerCard } from './provider-settings.js';
 import { preferencesCard } from './notifications.js';
+import { markNewsSeen, newsPending } from './news.js';
 import { openDrawio, openExcalidraw } from './diagrams.js';
 import { beginView, setView, topbar } from './views.js';
 import * as A from './actions.js';
@@ -209,6 +210,37 @@ function renderApi(el) {
       ['PATCH', '/pages/:id', 'write'], ['POST', '/pages/:id/move', 'write'], ['DELETE', '/pages/:id', 'write'],
       ['GET', '/pages/:id/versions', 'read'], ['GET', '/search?q=', 'read'], ['POST', '/ai/ask', 'ai'], ['GET', '/admin/audit', 'admin'],
     ].map(([m, path, scope]) => h('div', { class: 'table-row' }, h('code', { class: `method ${m.toLowerCase()}` }, m), h('code', { class: 'grow' }, path), pill(scope))))));
+}
+
+// ---- À propos et nouveautés ------------------------------------------------------------
+
+async function renderAbout(el) {
+  el.replaceChildren(loadingEl());
+  const about = await A.attempt(() => api.get('/about'));
+  if (!about) return;
+  const update = session.can('admin') ? await A.attempt(() => api.get('/admin/update-check')) : null;
+  markNewsSeen(about.version);
+  document.querySelectorAll('.set-nav-item .news-dot').forEach((d) => d.remove()); // la pastille du menu des réglages
+
+  const updateCard = update && card('Mise à jour', null, !update.enabled
+    ? h('p', { class: 'hint' }, 'La vérification de mise à jour est désactivée. Pour l’activer : UPDATE_CHECK=true dans l’environnement du serveur. Elle contacte api.github.com : l’adresse IP du serveur et le numéro de version sont alors visibles de GitHub, aucune donnée de l’instance n’est envoyée.')
+    : update.error ? h('p', { class: 'hint' }, update.error)
+      : update.updateAvailable
+        ? h('div', { class: 'notice info' }, `La version ${update.latest.version} est disponible (vous utilisez la ${update.current}). `,
+          update.latest.url.startsWith('https://github.com/') && h('a', { href: update.latest.url, target: '_blank', rel: 'noopener' }, 'Notes de version ↗'))
+        : h('p', null, pill('À jour', 'ok'), ' Vous utilisez la dernière version publiée.'));
+
+  const release = (r) => h('section', { class: 'set-card release' },
+    h('header', { class: 'set-card-head' },
+      h('h3', null, `Version ${r.version} `, h('small', { class: 'muted' }, `· ${r.date}`), r.version === about.version ? ' ' : '', r.version === about.version ? pill('Installée', 'accent') : null),
+      r.summary && h('p', { class: 'muted' }, r.summary)),
+    r.sections.map((s) => h('div', null, h('h4', null, s.title), h('ul', { class: 'plain-list' }, s.items.map((it) => h('li', null, it))))));
+
+  el.replaceChildren(
+    card('Notabene', null, kv([['Version', h('code', null, about.version)], ['Commit de l’image', about.commit ? h('code', null, about.commit) : null]])),
+    updateCard,
+    h('h3', { class: 'set-subtitle' }, 'Nouveautés'),
+    ...(about.releases.length ? about.releases.map(release) : [card(null, null, h('p', { class: 'muted' }, 'Aucune note de version disponible.'))]));
 }
 
 // ---- Recherche IA ------------------------------------------------------------------
@@ -752,6 +784,7 @@ const SECTIONS = [
   { group: 'Compte', id: 'profile', label: 'Profil et sessions', ico: 'users', render: renderProfile },
   { group: 'Compte', id: 'appearance', label: 'Apparence', ico: 'sun', render: renderAppearance },
   { group: 'Compte', id: 'tokens', label: 'Jetons d’API', ico: 'key', render: renderTokens },
+  { group: 'Compte', id: 'about', label: 'À propos', ico: 'sparkle', render: renderAbout },
   { group: 'Fonctionnalités', id: 'ai', label: 'Recherche IA', ico: 'sparkle', render: renderAi },
   { group: 'Fonctionnalités', id: 'diagrams', label: 'Diagrammes', ico: 'diamond', render: renderDiagrams },
   { group: 'Fonctionnalités', id: 'tools', label: 'Outils', ico: 'qrcode', render: renderTools },
@@ -777,7 +810,7 @@ export function showSettings(sectionId) {
   const nav = h('nav', { class: 'set-nav', 'aria-label': 'Sections des paramètres' });
   for (const s of sections) {
     if (s.group !== group) { group = s.group; nav.append(h('div', { class: 'set-nav-group' }, group)); }
-    nav.append(h('a', { class: `set-nav-item${s.id === section.id ? ' active' : ''}`, href: `#/settings/${s.id}` }, h('span', null, icon(s.ico, 16)), s.label));
+    nav.append(h('a', { class: `set-nav-item${s.id === section.id ? ' active' : ''}`, href: `#/settings/${s.id}` }, h('span', null, icon(s.ico, 16)), s.label, s.id === 'about' && newsPending(session.version) ? h('span', { class: 'news-dot', role: 'img', 'aria-label': 'Nouveautés' }) : null));
   }
   const content = h('div', { class: 'set-content' });
   document.getElementById('main').replaceChildren(

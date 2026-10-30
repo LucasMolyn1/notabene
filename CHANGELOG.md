@@ -6,8 +6,15 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## [Non publié]
 
+### Ajouté
+- **À propos et nouveautés** : Paramètres, À propos affiche la version, le commit de l'image et les notes de version (lues dans `CHANGELOG.md`, embarqué dans l'image). Une pastille signale les nouveautés quand la version change.
+- **Vérification de mise à jour** (désactivée par défaut, administrateur) : `UPDATE_CHECK=true` interroge la dernière release sur api.github.com, au plus toutes les 12 heures et seulement quand un administrateur ouvre l'écran. L'adresse IP du serveur et la version sont alors visibles de GitHub ; aucune donnée de l'instance n'est envoyée.
+
 ### Modifié
 - `TRUST_PROXY` accepte un **nombre de sauts de confiance** (`1`, `2`…) ou une **liste de proxys** (adresses ou CIDR) en plus de `true` / `false`. L'adresse du client est alors lue en partant de la droite de `X-Forwarded-For` : un client ne peut plus la falsifier. `TRUST_PROXY=true` reste accepté mais déconseillé (avertissement au démarrage en production). **Attention :** `TRUST_PROXY=1` signifiait « tous les sauts » ; il signifie désormais « un seul proxy ». Paramètres, Instance affiche la valeur retenue.
+
+### Corrigé
+- Les images publiées affichent leur commit (argument de construction `GIT_COMMIT` transmis par la CI).
 
 ## [3.0.0] - 2026-10-30
 
