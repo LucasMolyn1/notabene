@@ -279,7 +279,7 @@ export function renderSidebar() {
   el.replaceChildren(
     brand,
     h('button', { class: 'space-switch', onClick: (e) => spaceMenu(e.currentTarget, space) },
-      h('span', { class: 'space-ico' }, icon(space.icon || 'folder', 18)),
+      h('span', { class: 'space-ico' }, pageIcon(space.icon || 'folder', 18)),
       h('span', { class: 'space-meta' },
         h('strong', null, space.name),
         h('small', null, `${space.visibility === 'public' ? 'Public' : 'Privé'} · ${store.pagesIn(space.id).length} pages`)),

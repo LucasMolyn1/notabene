@@ -93,3 +93,39 @@ test('une mise à jour disponible alerte l’administrateur et mène aux nouveau
   await expect(page.getByText('Disponible', { exact: true })).toBeVisible();
   await expect(page.getByText('docker compose pull')).toBeVisible();
 });
+
+test('un bloc de code se colore, ferme les parenthèses et se quitte au clavier', async ({ page }) => {
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.getByText('Nouvelle page').first().click();
+  await page.locator('.tiptap').click();
+  await page.keyboard.type('```js ');
+  const cm = page.locator('.code-block .cm-content');
+  await expect(cm).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Langage du bloc de code' })).toHaveValue('javascript');
+  await page.keyboard.type('const x = {');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('a: 1');
+  await expect(cm.locator('.tok-keyword').first()).toHaveText('const');
+  await expect(cm).toContainText('}'); // accolade fermée automatiquement
+  await page.keyboard.press('Escape');
+  await page.keyboard.type('Après le bloc');
+  await expect(page.locator('.tiptap > p', { hasText: 'Après le bloc' })).toBeVisible();
+  await page.waitForTimeout(2500);
+  await page.reload();
+  await expect(page.locator('.code-block .cm-content')).toContainText('const x = {');
+});
+
+test('un emoji se cherche en français, s’affiche partout et se retrouve dans les récents', async ({ page }) => {
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.getByText('Nouvelle page').first().click();
+  await page.getByRole('button', { name: /Ajouter une icône/i }).click();
+  const search = page.getByRole('searchbox', { name: 'Rechercher un emoji' });
+  await expect(search).toBeFocused();
+  await search.fill('fusee');
+  await page.getByRole('button', { name: /fusée/i }).first().click();
+  await expect(page.locator('.page-icon .emoji-glyph')).toHaveText('🚀');
+  await expect(page.locator('.crumb.current .emoji-glyph')).toHaveText('🚀'); // fil d'Ariane
+  await page.locator('.page-icon').click();
+  await expect(page.getByText('Récents')).toBeVisible();
+  await expect(page.locator('.emoji-section[data-group="recent"] .emoji-btn').first()).toHaveText('🚀');
+});

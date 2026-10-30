@@ -43,6 +43,25 @@ for (const scheme of ['light', 'dark'] as const) {
       expect(found).toEqual([]);
     });
 
+    test('sélecteur d’emojis', async ({ page }) => {
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.getByText('Nouvelle page').first().click();
+      await page.getByRole('button', { name: /Ajouter une icône/i }).click();
+      await page.locator('.emoji-section[data-group="0"]').waitFor();
+      expect(await violations(page, 'sélecteur d’emojis')).toEqual([]);
+    });
+
+    test('bloc de code coloré', async ({ page }) => {
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.getByText('Nouvelle page').first().click();
+      await page.locator('.tiptap').click();
+      await page.keyboard.type('```js ');
+      // Mots-clés, chaîne, commentaire, nombre : chaque couleur de coloration est mesurée par axe.
+      await page.keyboard.type('// note\nconst nom = "texte" + 42;\nfunction f(a) { return a; }');
+      await page.locator('.code-block .tok-keyword').first().waitFor();
+      expect(await violations(page, 'bloc de code')).toEqual([]);
+    });
+
     test('paramètres : toutes les sections', async ({ page }) => {
       await loginUi(page, ADMIN.email, ADMIN.password);
       const found: string[] = [];

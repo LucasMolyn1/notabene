@@ -90,31 +90,24 @@ export function openMenu(anchor, items, opts) {
   });
 }
 
-const ICON_LABELS = {
+export const ICON_LABELS = {
   file: 'Page', folder: 'Dossier', home: 'Accueil', star: 'Étoile', layers: 'Couches', code: 'Code', settings: 'Réglages', shield: 'Bouclier',
   key: 'Clé', lock: 'Cadenas', globe: 'Globe', eye: 'Œil', search: 'Loupe', link: 'Lien', pencil: 'Crayon', download: 'Téléchargement',
   upload: 'Envoi', users: 'Personnes', sparkle: 'Étincelle', diamond: 'Diamant', hexagon: 'Hexagone', webhook: 'Webhook', pdf: 'PDF', wand: 'Baguette',
 };
 
-const PAGE_ICONS = [
+export const PAGE_ICONS = [
   'file', 'folder', 'home', 'star', 'layers', 'code', 'settings', 'shield',
   'key', 'lock', 'globe', 'eye', 'search', 'link', 'pencil', 'download',
   'upload', 'users', 'sparkle', 'diamond', 'hexagon', 'webhook', 'pdf', 'wand',
 ];
 
+// Icône d'une page ou d'un espace : nom d'une icône de l'interface (« folder ») ou emoji. Un emoji s'affiche en texte (jamais en HTML).
 export function pageIcon(name, size = 16) {
   if (!name) return icon('file', size);
   if (PAGE_ICONS.includes(name)) return icon(name, size);
-  return icon('file', size);
-}
-
-export function iconPicker(anchor, onPick, { allowRemove = true } = {}) {
-  const grid = h('div', { class: 'emoji-grid' }, PAGE_ICONS.map((name) =>
-    h('button', { class: 'emoji-btn', type: 'button', 'aria-label': ICON_LABELS[name] || name, title: ICON_LABELS[name] || name, onClick: () => { closePopover(); onPick(name); } }, icon(name, 20))));
-  const foot = h('div', { class: 'emoji-foot' },
-    h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { closePopover(); onPick(PAGE_ICONS[Math.floor(Math.random() * PAGE_ICONS.length)]); } }, icon('wand', 14), ' Au hasard'),
-    allowRemove && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { closePopover(); onPick(''); } }, 'Retirer'));
-  openPopover(anchor, h('div', { class: 'emoji-picker' }, grid, foot));
+  if (/^[a-z-]+$/i.test(name)) return icon('file', size); // nom inconnu
+  return h('span', { class: 'emoji-glyph', style: { fontSize: `${Math.round(size * 0.95)}px` }, 'aria-hidden': 'true' }, name);
 }
 
 // ---- Modales --------------------------------------------------------------
