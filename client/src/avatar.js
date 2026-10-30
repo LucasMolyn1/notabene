@@ -9,7 +9,11 @@ const SIZE = 256;          // côté de l'image envoyée, en pixels
 const VIEW = 240;          // côté de l'aperçu du recadrage
 const MAX_SOURCE = 12 * 1024 * 1024;
 
-// Pastille d'une personne : sa photo si elle en a une, sinon ses initiales sur une couleur stable.
+/**
+ * Pastille d'une personne : sa photo si elle en a une, sinon ses initiales sur une couleur stable.
+ * @param {{ id: string, name: string }} user
+ * @param {{ cls?: string, title?: string }} [opts]
+ */
 export function avatarEl(user, { cls = '', title } = {}) {
   const el = h('span', { class: `avatar ${cls}`.trim(), style: { '--c': colorFor(user.id) }, title }, initials(user.name));
   const at = session.avatars?.[user.id];
