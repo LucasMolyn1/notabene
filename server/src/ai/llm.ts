@@ -80,7 +80,7 @@ async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: Ab
         messages: [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }],
       }),
     }, s.allowPrivate) as unknown as Response;
-  } catch (err) {
+  } catch {
     if (signal.aborted) return;
     throw new LlmError('Fournisseur injoignable', 504);
   }

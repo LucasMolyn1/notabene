@@ -1,0 +1,16 @@
+{
+  "name": "notabene-lint",
+  "private": true,
+  "description": "Outils de lint isolés : typescript-eslint ne supporte pas encore TypeScript 7 (celui du projet), il tourne donc ici avec TypeScript 6.",
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "eslint-plugin-no-unsanitized": "^4.1.5",
+    "eslint-plugin-security": "^4.2.1",
+    "globals": "^17.13.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}

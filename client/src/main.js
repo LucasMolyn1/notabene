@@ -29,7 +29,7 @@ function openSettings(sectionId) {
 function route() {
   const path = location.hash.slice(1) || '/';
   let m;
-  if ((m = path.match(/^\/settings(?:\/([a-z-]+))?$/))) openSettings(m[1]);
+  if ((m = path.match(/^\/settings$/) || path.match(/^\/settings\/([a-z-]+)$/))) openSettings(m[1]);
   else if (!store.spaces.length) { showNoSpace(); scheduleSidebar(); return; }
   else if ((m = path.match(/^\/p\/([A-Za-z0-9_-]+)/))) showPage(m[1]);
   else if ((m = path.match(/^\/s\/([A-Za-z0-9_-]+)/))) showSpace(m[1]);

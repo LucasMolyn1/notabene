@@ -47,6 +47,7 @@ npm run dev                            # API sur :3000, interface sur http://loc
 
 ```bash
 npm test          # tests unitaires et d'intégration (vitest)
+npm run lint:install && npm run lint   # ESLint (sécurité, erreurs courantes) : dossier isolé tools/lint
 npm run build && npx playwright install chromium && npm run e2e   # parcours complets dans un vrai navigateur
 ```
 

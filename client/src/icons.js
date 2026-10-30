@@ -53,6 +53,7 @@ const PATHS = {
 export function icon(name, size = 16) {
   const span = document.createElement('span');
   span.className = 'ico';
+  // eslint-disable-next-line no-unsanitized/property -- `size` est numérique (appelants internes) et PATHS est constant
   span.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATHS[name] || ''}</svg>`;
   return span;
 }

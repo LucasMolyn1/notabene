@@ -84,7 +84,7 @@ export async function streamAsk(question, { onSources, onDelta, onError, onDone,
       headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
       body: JSON.stringify({ question }),
     });
-  } catch (err) {
+  } catch {
     if (!signal?.aborted) onError?.('Connexion impossible');
     return;
   }

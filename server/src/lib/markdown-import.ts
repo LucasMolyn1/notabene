@@ -40,7 +40,9 @@ const humanize = (segment: string) => {
   const t = segment.replace(/[-_]+/g, ' ').trim();
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Sans titre';
 };
-const LOCALE = /^[a-z]{2}(?:-[A-Za-z]{2})?$/;
+const LOCALE = /^[a-z]{2}$|^[a-z]{2}-[A-Za-z]{2}$/;
+// Retire un premier dossier de langue (« fr/ », « pt-BR/ »).
+const stripLocale = (p: string) => { const i = p.indexOf('/'); return i > 0 && LOCALE.test(p.slice(0, i)) ? p.slice(i + 1) : p; };
 
 function validPath(p: string) {
   const parts = normPath(p).split('/');
@@ -232,7 +234,7 @@ export function importMarkdown(db: DB, input: { spaceId: string; files: ImportFi
       try { target = decodeURIComponent(target); } catch { /* inchangé */ }
       if (!target) return null;
       const abs = target.startsWith('/') ? normPath(target) : normPath(`${from.split('/').slice(0, -1).join('/')}/${target}`);
-      const candidates = [abs, abs.startsWith(prefix) ? abs.slice(prefix.length) : abs, abs.replace(/^[a-z]{2}(?:-[A-Za-z]{2})?\//, '')];
+      const candidates = [abs, abs.startsWith(prefix) ? abs.slice(prefix.length) : abs, stripLocale(abs)];
       for (const c of candidates) { const id = ids.get(key(c)); if (id) return id; }
       return null;
     };

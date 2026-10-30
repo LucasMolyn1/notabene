@@ -48,7 +48,8 @@ async function renderMermaid(code, target) {
   try {
     await mermaid.parse(code);
     const { svg } = await mermaid.render(id, code);
-    target.innerHTML = svg; // SVG assaini par Mermaid (securityLevel « strict »)
+    // eslint-disable-next-line no-unsanitized/property -- SVG assaini par Mermaid (securityLevel « strict »)
+    target.innerHTML = svg;
     target.classList.remove('error');
   } catch (err) {
     target.textContent = `Syntaxe Mermaid invalide : ${String(err?.message || err).split('\n')[0]}`;

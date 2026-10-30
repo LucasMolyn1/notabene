@@ -19,6 +19,8 @@
     "backup": "node dist/server/backup.js backup",
     "create-admin": "node dist/server/cli.js create-admin",
     "typecheck": "tsc -p server/tsconfig.json --noEmit",
+    "lint:install": "npm ci --prefix tools/lint",
+    "lint": "tools/lint/node_modules/.bin/eslint -c tools/lint/eslint.config.mjs .",
     "test": "vitest run",
     "audit:deps": "npm audit --omit=dev --audit-level=high",
     "e2e": "playwright test"
