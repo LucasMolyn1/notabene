@@ -154,7 +154,8 @@ export class CollabHub {
       if (JSON.stringify(clean) !== page.content) {
         const row = updatePage(this.db, room.pageId, { content: clean }, room.lastUser);
         room.contentHash = sha(row.content);
-        this.bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: row.id, version: row.version, by: undefined });
+        const author = room.lastUser ? this.db.prepare('SELECT id, name FROM users WHERE id = ?').get(room.lastUser) as { id: string; name: string } | undefined : undefined;
+        this.bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: row.id, version: row.version, by: author });
       }
       this.#storeState(room);
     } catch (err) {
@@ -248,7 +249,10 @@ export class CollabHub {
   // Ferme toutes les salles (code RELOAD) : les clients se reconnectent et repassent le contrôle d'accès
   // (changement de permissions d'une page).
   evictAll() {
-    for (const room of [...this.#rooms.values()]) this.#close(room, CLOSE.RELOAD, true);
+    for (const room of [...this.#rooms.values()]) {
+      this.#save(room); // les frappes en attente ne sont pas perdues
+      if (this.#rooms.get(room.pageId) === room) this.#close(room, CLOSE.RELOAD, true);
+    }
   }
 
   shutdown() {

@@ -245,6 +245,9 @@ export function openDb(file: string): DB {
 
 function migrate(db: DB) {
   const current = db.pragma('user_version', { simple: true }) as number;
+  if (current > MIGRATIONS.length) {
+    throw new Error(`La base est au schéma v${current}, ce serveur ne connaît que v${MIGRATIONS.length} : mettez Notabene à jour, ou restaurez une sauvegarde compatible avec cette version.`);
+  }
   for (let v = current; v < MIGRATIONS.length; v++) {
     db.transaction(() => {
       db.exec(MIGRATIONS[v]);

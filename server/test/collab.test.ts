@@ -212,6 +212,27 @@ describe('co-édition en temps réel', () => {
     expect(wsC.state.closed).toBe(4403);
   });
 
+  it('ne perd pas les frappes en attente quand les permissions de la page changent, et en nomme l’auteur', async () => {
+    const editor = await login('editor');
+    const admin = await login('admin');
+    const events: { type: string; by?: { id: string; name: string } }[] = [];
+    app.bus.subscribe((e) => { if (e.type === 'page.updated') events.push(e); });
+    const a = await connect(editor.cookie);
+    await until(() => textOf(a.json()).length > 10);
+    const para = a.doc.getXmlFragment('default').toArray().find((n) => n instanceof Y.XmlElement && n.nodeName === 'paragraph') as Y.XmlElement;
+    (para.get(0) as Y.XmlText).insert(0, 'FRAPPE ');
+    await wait(50); // bien avant la sauvegarde différée de 2 s
+    const editorId = (db.prepare("SELECT id FROM users WHERE role = 'editor'").get() as { id: string }).id;
+    const res = await app.inject({
+      method: 'PUT', url: `/api/v3/pages/${pageId}/permissions`, cookies: { nb_session: admin.cookie }, headers: { 'x-csrf-token': admin.csrf },
+      payload: { entries: [{ userId: editorId, level: 'write' }] },
+    });
+    expect(res.statusCode).toBe(200);
+    await until(() => a.state.closed !== null);
+    expect((db.prepare('SELECT content FROM pages WHERE id = ?').get(pageId) as { content: string }).content).toContain('FRAPPE');
+    expect(events.some((e) => e.by?.id === editorId)).toBe(true);
+  });
+
   it('refuse sans session, pour un lecteur, depuis une autre origine et pour une page inconnue', async () => {
     const editor = await login('editor');
     const reader = await login('reader');
