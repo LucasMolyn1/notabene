@@ -192,7 +192,7 @@ Pour publier une version `X.Y.Z` :
 2. Fusionner la PR (CI verte).
 3. Poser le tag sur le commit fusionné : `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`. Le workflow `release.yml` construit alors l'image (amd64 et arm64) et la publie sur `ghcr.io` avec attestation de provenance : **c'est une publication publique**, à ne faire qu'en connaissance de cause.
 
-Déployer en reconstruisant l'image sur place en y inscrivant le commit :
+Déployer en production avec l'image publiée : voir [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md). Pour reconstruire l'image sur place en y inscrivant le commit :
 
 ```bash
 git fetch origin main && git checkout -f FETCH_HEAD

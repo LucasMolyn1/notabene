@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { accessSync, constants, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
@@ -13,7 +13,15 @@ try {
   process.exit(1);
 }
 
-mkdirSync(config.DATA_DIR, { recursive: true, mode: 0o700 });
+// Dossier de données monté depuis l'hôte : il doit appartenir à l'utilisateur du conteneur, sinon l'erreur SQLite est peu parlante.
+try {
+  mkdirSync(config.DATA_DIR, { recursive: true, mode: 0o700 });
+  accessSync(config.DATA_DIR, constants.W_OK);
+} catch (err) {
+  const uid = process.getuid?.() ?? 1000;
+  console.error(`DATA_DIR (${config.DATA_DIR}) n'est pas inscriptible par l'utilisateur ${uid} : sur un dossier monté, exécutez « chown ${uid}:${process.getgid?.() ?? uid} <dossier> » sur l'hôte. (${(err as Error).message})`);
+  process.exit(1);
+}
 const db = openDb(resolve(config.DATA_DIR, 'notabene.db'));
 if (config.SEED_DEMO && seedDemo(db)) console.log('Contenu de démonstration créé.');
 const retention = {
