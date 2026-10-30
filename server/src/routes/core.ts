@@ -7,6 +7,7 @@ import { readableSpaceIds } from '../lib/access.js';
 import { canReadPage, hasAnyAcl } from '../lib/page-acl.js';
 import type { AppEvent } from '../lib/events.js';
 import { idSchema } from '../lib/http.js';
+import { reauthUntil } from '../lib/reauth.js';
 import { VERSION } from '../version.js';
 
 // Origine du compte d'après le préfixe de son identifiant (sub).
@@ -31,6 +32,8 @@ export default async function coreRoutes(app: FastifyInstance) {
       version: auth ? VERSION : null,
       provider: auth ? providerOf((db.prepare('SELECT sub FROM users WHERE id = ?').get(auth.user.id) as { sub: string } | undefined)?.sub ?? '') : null,
       csrf: auth?.via === 'session' ? auth.csrf : null,
+      // Fin de la fenêtre pendant laquelle les actions sensibles ne redemandent pas le mot de passe (null si aucune).
+      reauthUntil: auth?.via === 'session' ? reauthUntil(db, auth.sessionHash) : null,
       permissions: {
         read: can(auth, 'read'),
         write: can(auth, 'write'),

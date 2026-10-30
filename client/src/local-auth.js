@@ -140,10 +140,12 @@ export async function securityCard(card, { onEnabled } = {}) {
 export async function showMfaSetup(main, logout) {
   const card = (title, desc, body) => h('section', { class: 'set-card' }, h('header', { class: 'set-card-head' }, h('h3', null, title), h('p', { class: 'muted' }, desc)), body);
   const sec = await securityCard(card, { onEnabled: () => location.reload() });
-  main.replaceChildren(h('div', { class: 'login' }, h('div', { class: 'settings set-main', style: { width: 'min(520px, 100%)', textAlign: 'left' } },
-    h('div', { class: 'notice warning' }, 'Votre administrateur exige la double authentification. Activez-la pour accéder au wiki.'),
+  main.replaceChildren(h('div', { class: 'login' }, h('div', { class: 'gate' },
+    h('div', { class: 'boot-logo' }),
+    h('h1', null, 'Activez la double authentification'),
+    h('p', { class: 'muted' }, 'Votre administrateur l’exige avant d’ouvrir le wiki. Scannez un QR code avec une application d’authentification : cela prend une minute.'),
     sec,
-    h('div', null, h('button', { class: 'btn btn-ghost btn-sm', onClick: logout }, 'Se déconnecter')))));
+    h('button', { class: 'btn btn-ghost btn-sm', onClick: logout }, 'Se déconnecter'))));
 }
 
 // Connexion LDAP / Active Directory : identifiant de l'annuaire + mot de passe.

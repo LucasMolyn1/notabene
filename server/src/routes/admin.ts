@@ -151,7 +151,7 @@ export default async function adminRoutes(app: FastifyInstance) {
   }, async (req) => {
     const auth = requireSession(req);
     const { id } = req.params as { id: string };
-    await requireReauth(app, req, (req.body as { reauth: z.output<typeof reauthInput> }).reauth);
+    await requireReauth(app, req, (req.body as { reauth: z.output<typeof reauthInput> }).reauth, { strict: true });
     if (id === auth.user.id) throw new HttpError(400, 'Vous ne pouvez pas supprimer votre propre compte ici');
     const target = db.prepare('SELECT role, disabled FROM users WHERE id = ?').get(id) as { role: string; disabled: number } | undefined;
     if (!target) throw new HttpError(404, 'Utilisateur introuvable');

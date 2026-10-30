@@ -29,7 +29,7 @@ Merci de ne pas ouvrir d’issue publique : utilisez les *GitHub Security Adviso
 - **Adresse du client** : `TRUST_PROXY` se règle en nombre de proxys de confiance (ou liste de proxys) ; l'adresse est lue à droite de `X-Forwarded-For`, donc une valeur ajoutée par le client est ignorée. `TRUST_PROXY=true` (tous les sauts) est déconseillé et signalé au démarrage.
 - **Limitation de débit** globale, renforcée sur l’authentification et l’IA.
 - **Validation Zod** de toutes les entrées, taille des requêtes bornée.
-- Les secrets des fournisseurs (LDAP, SMTP, OIDC, clé d'IA) ne suivent **jamais** un changement d'adresse sans être ressaisis ; désactiver une section efface ses secrets ; la clé d'IA exige la ressaisie du mot de passe.
+- Les secrets des fournisseurs (LDAP, SMTP, OIDC, clé d'IA) ne suivent **jamais** un changement d'adresse sans être ressaisis ; désactiver une section efface ses secrets ; la clé d'IA exige la ressaisie du mot de passe. Pour les comptes locaux, une preuve d'identité réussie ouvre une fenêtre fixe de 10 minutes, propre à la session, pendant laquelle les réglages sensibles ordinaires ne la redemandent pas ; la suppression d'un compte et la clé d'IA l'exigent toujours.
 - Les requêtes sortantes vers le fournisseur d'IA passent par la garde réseau (adresses internes refusées, adresse vérifiée à la connexion). Pour un LLM local (Ollama, LM Studio), `AI_ALLOW_PRIVATE=true` est une variable d'environnement, jamais modifiable depuis l'interface.
 
 ### Contenu

@@ -316,7 +316,7 @@ async function renderAi(el) {
     const payload = { enabled: enabled.checked, provider: provider.value, baseUrl: provider.value === 'openai' ? baseUrl.value.trim() : '', model: model.value.trim() };
     if (removeKey.checked) payload.apiKey = '';
     else if (apiKey.value.trim()) payload.apiKey = apiKey.value.trim();
-    const reauth = await askReauth('modifier le fournisseur IA (la clé d’API est un secret)');
+    const reauth = await askReauth('modifier le fournisseur IA (la clé d’API est un secret)', { strict: true });
     if (!reauth) return false;
     payload.reauth = reauth;
     const saved = await A.attempt(() => api.put('/admin/ai', payload));
@@ -509,7 +509,7 @@ async function renderUsers(el) {
       danger: true,
     });
     if (!ok) return;
-    const reauth = await askReauth('supprimer définitivement un compte');
+    const reauth = await askReauth('supprimer définitivement un compte', { strict: true });
     if (!reauth) return;
     if (await A.attempt(() => api.post(`/admin/users/${u.id}/erase`, { reauth }))) { toast('Compte supprimé'); refresh(); }
   };
@@ -757,7 +757,8 @@ function renderImport(el) {
       summary.replaceChildren(h('div', { class: 'notice success stack' },
         h('strong', null, 'Import terminé'),
         h('p', null, `${r.pages} page(s) et ${r.folders} dossier(s) créés. Liens internes : ${r.links.resolved} résolus, ${r.links.unresolved} introuvables (laissés en texte).`),
-        r.images ? h('p', null, `${r.images} image(s) référencée(s) par chemin n’ont pas été importées (remplacées par « [Image : nom] »).`) : null,
+        r.skipped?.length ? h('div', null, h('strong', null, `${r.skipped.length} fichier(s) non importé(s)`), h('ul', { class: 'perm-list' }, r.skipped.slice(0, 50).map((s) => h('li', null, `${s.path} : ${s.reason}`)))) : null,
+        r.notes?.length ? h('div', null, h('strong', null, `${r.notes.length} page(s) à vérifier`), h('ul', { class: 'perm-list' }, r.notes.slice(0, 50).map((n) => h('li', null, `${n.path} : ${n.notes.join(' ; ')}`)))) : null,
         h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => A.go(`/s/${spaceId}`) }, 'Ouvrir l’espace')));
     } catch (err) {
       summary.replaceChildren(h('div', { class: 'notice warning' }, err.message || 'Import impossible.'));
@@ -773,9 +774,9 @@ function renderImport(el) {
       h('label', { class: 'field' }, h('span', null, 'ou fichiers .md individuels'), files),
       go, summary)),
     card('Limites', null, h('ul', { class: 'perm-list' },
-      h('li', null, '2000 fichiers, 1 Mo par fichier et 25 Mo au total par import.'),
+      h('li', null, '2000 fichiers, 4 Mo par fichier et 25 Mo au total par import. Un fichier trop gros est écarté et signalé, les autres sont importés.'),
       h('li', null, 'Les images référencées par chemin relatif ne sont pas importées ; seules les images en https ou intégrées (data) le sont.'),
-      h('li', null, 'Le HTML brut est ignoré. Un import crée toujours de nouvelles pages : il ne remplace rien.'))));
+      h('li', null, 'Le HTML est converti en texte simple (titres, paragraphes, listes, code, diagrammes) ; sa mise en forme est perdue. Un import crée toujours de nouvelles pages : il ne remplace rien.'))));
 }
 
 // ---- Page -----------------------------------------------------------------------------

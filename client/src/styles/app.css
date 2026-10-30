@@ -528,6 +528,13 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
 .pal-input { flex: 1; height: 52px; border: 0; outline: none; background: none; font-size: 16px; color: var(--text); }
 .pal-list { overflow-y: auto; padding: 6px; }
 .pal-section { padding: 8px 10px 4px; font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
+.pal-spaces { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 4px; }
+.pal-spaces .chip.active { background: var(--accent-soft, var(--hover)); color: var(--text); border-color: var(--accent); }
+.pal-group { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 10px; margin-top: 4px; font-size: 12.5px; font-weight: 600; color: var(--text-2); text-align: left; border-radius: 6px; }
+.pal-group:hover { background: var(--hover); }
+.pal-group svg { transition: transform .12s; }
+.pal-group[aria-expanded='true'] svg { transform: rotate(90deg); }
+.pal-group small { color: var(--text-3); font-weight: 500; }
 .pal-item { display: flex; gap: 12px; width: 100%; padding: 9px 10px; border-radius: 8px; text-align: left; }
 .pal-item.active { background: var(--active); }
 .pal-icon { font-size: 18px; width: 24px; text-align: center; flex: none; }
@@ -867,3 +874,23 @@ select.input { height: 36px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Blocs redimensionnables (images et diagrammes) */
+.resizable { position: relative; max-width: 100%; }
+.img-block { margin: 1.2em 0; width: fit-content; }
+.img-block img { margin: 0; }
+.img-block.selected img { outline: 3px solid var(--accent); outline-offset: 2px; }
+.resize-handle { position: absolute; right: 6px; bottom: 6px; width: 16px; height: 16px; padding: 0; border: 2px solid var(--accent); border-top: 0; border-left: 0; border-radius: 0 0 4px 0; background: transparent; cursor: ew-resize; opacity: 0; touch-action: none; }
+.resizable:hover .resize-handle, .resizable.selected .resize-handle, .resizable.resizing .resize-handle, .resize-handle:focus-visible { opacity: 1; }
+.resizable.resizing { user-select: none; }
+.resize-handle[hidden] { display: none; }
+@media (hover: none) { .resize-handle { opacity: 1; } }
+
+/* Connexion : séparateur « ou » et écran d'activation obligatoire de la double authentification */
+.login-card { width: min(420px, 100%); }
+.or { display: flex; align-items: center; gap: 10px; width: 100%; margin: 2px 0; font-size: 12.5px; color: var(--text-3); }
+.or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.gate { width: min(520px, 100%); display: grid; gap: 16px; justify-items: center; text-align: center; }
+.gate h1 { margin: 0; font-size: 24px; letter-spacing: -.02em; }
+.gate p { margin: 0; }
+.gate .set-card { width: 100%; text-align: left; }

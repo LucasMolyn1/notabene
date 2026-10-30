@@ -204,6 +204,40 @@ describe('réglages modifiables à chaud', () => {
   });
 });
 
+describe('fenêtre de réauthentification', () => {
+  const embed = (origins: string[], r: object) => ({ config: { enabled: true, origins }, reauth: r });
+
+  it('ne redemande pas le mot de passe pendant 10 minutes après une saisie réussie', async () => {
+    await addUser('a@example.com', 'admin');
+    const s = await login('a@example.com');
+    expect((await api(s, 'PUT', '/admin/settings/embed', embed(['https://a.example.com'], {}))).statusCode).toBe(401);
+    expect((await api(s, 'PUT', '/admin/settings/embed', embed(['https://a.example.com'], reauth))).statusCode).toBe(200);
+    expect((await api(s, 'GET', '/me')).json().reauthUntil).toBeGreaterThan(Date.now());
+    expect((await api(s, 'PUT', '/admin/settings/embed', embed(['https://b.example.com'], {}))).statusCode).toBe(200);
+  });
+
+  it('se referme après 10 minutes et reste propre à chaque session', async () => {
+    await addUser('a@example.com', 'admin');
+    const s = await login('a@example.com');
+    await api(s, 'PUT', '/admin/settings/embed', embed(['https://a.example.com'], reauth));
+    const other = await login('a@example.com');
+    expect((await api(other, 'PUT', '/admin/settings/embed', embed(['https://c.example.com'], {}))).statusCode).toBe(401);
+    db.prepare('UPDATE sessions SET reauth_at = ?').run(Date.now() - 11 * 60_000);
+    expect((await api(s, 'PUT', '/admin/settings/embed', embed(['https://d.example.com'], {}))).statusCode).toBe(401);
+    expect((await api(s, 'GET', '/me')).json().reauthUntil).toBeNull();
+  });
+
+  it('exige toujours le mot de passe pour supprimer un compte', async () => {
+    await addUser('a@example.com', 'admin');
+    const victim = 'victime';
+    db.prepare('INSERT INTO users (id, sub, email, name, role, created_at, password_hash) VALUES (?,?,?,?,?,?,?)').run(victim, 'local:v@example.com', 'v@example.com', 'v', 'editor', Date.now(), '-');
+    const s = await login('a@example.com');
+    await api(s, 'PUT', '/admin/settings/embed', embed(['https://a.example.com'], reauth));
+    expect((await api(s, 'POST', `/admin/users/${victim}/erase`, { reauth: {} })).statusCode).toBe(401);
+    expect((await api(s, 'POST', `/admin/users/${victim}/erase`, { reauth })).statusCode).toBe(200);
+  });
+});
+
 describe('mot de passe oublié et invitations', () => {
   const tokenFrom = (mail: Mail) => /#\/reset\/([\w-]+)/.exec(mail.text)![1]!;
 

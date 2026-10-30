@@ -7,6 +7,7 @@ import { icon } from './icons.js';
 import { currentTheme } from './prefs.js';
 import { session } from './session.js';
 import { toast } from './ui.js';
+import { makeResizable } from './resize.js';
 
 export const DEFAULT_MERMAID = 'flowchart LR\n  A[Idée] --> B{Validée ?}\n  B -->|oui| C[Documenter]\n  B -->|non| D[Archiver]';
 
@@ -52,7 +53,8 @@ async function renderMermaid(code, target) {
     target.innerHTML = svg;
     target.classList.remove('error');
   } catch (err) {
-    target.textContent = `Syntaxe Mermaid invalide : ${String(err?.message || err).split('\n')[0]}`;
+    // Les lignes suivantes du message montrent la ligne fautive et ce que Mermaid attendait.
+    target.textContent = `Syntaxe Mermaid invalide : ${String(err?.message || err).split('\n').slice(0, 5).join('\n')}`;
     target.classList.add('error');
   } finally {
     document.getElementById(`d${id}`)?.remove();
@@ -69,7 +71,7 @@ function textDiagramNode({ name, label, defaultCode, renderer: renderDiagram }) 
     draggable: true,
 
     addAttributes() {
-      return { code: { default: defaultCode } };
+      return { code: { default: defaultCode }, width: { default: null } };
     },
 
     parseHTML() {
@@ -89,6 +91,8 @@ function textDiagramNode({ name, label, defaultCode, renderer: renderDiagram }) 
         const editBtn = h('button', { class: 'btn btn-ghost btn-sm', type: 'button' });
         const body = h('div', { class: 'mermaid-split' }, textarea, preview);
         const dom = frame(label, body, editBtn);
+        const resizer = makeResizable(dom, { editor, label, commit: (width) => updateAttrs(editor, getPos, { width }) });
+        resizer.apply(node.attrs.width);
 
         const render = debounce(() => renderDiagram(textarea.value, preview), 250);
         const setEditing = (on) => {
@@ -96,7 +100,7 @@ function textDiagramNode({ name, label, defaultCode, renderer: renderDiagram }) 
           editBtn.replaceChildren(icon(on ? 'check' : 'edit', 14), on ? 'Terminer' : 'Modifier');
           if (on) textarea.focus();
         };
-        const paintEditable = () => { editBtn.hidden = !editor.isEditable; if (!editor.isEditable) setEditing(false); };
+        const paintEditable = () => { editBtn.hidden = !editor.isEditable; resizer.apply(current.attrs.width); if (!editor.isEditable) setEditing(false); };
 
         editBtn.addEventListener('click', () => setEditing(!dom.classList.contains('editing')));
         preview.addEventListener('dblclick', () => editor.isEditable && setEditing(true));
@@ -121,6 +125,7 @@ function textDiagramNode({ name, label, defaultCode, renderer: renderDiagram }) 
             if (updated.type !== current.type) return false;
             const changed = updated.attrs.code !== current.attrs.code;
             current = updated;
+            resizer.apply(updated.attrs.width);
             if (changed && document.activeElement !== textarea) {
               textarea.value = updated.attrs.code;
               renderDiagram(updated.attrs.code, preview);
@@ -195,8 +200,10 @@ function imageDiagramView({ label, emptyText, open }) {
     const editBtn = h('button', { class: 'btn btn-ghost btn-sm', type: 'button' }, icon('edit', 14), 'Modifier');
     const preview = h('div', { class: 'diagram-preview' }, img, empty);
     const dom = frame(label, preview, editBtn);
+    const resizer = makeResizable(dom, { editor, label, commit: (width) => updateAttrs(editor, getPos, { width }) });
 
     const paint = () => {
+      resizer.apply(current.attrs.width);
       const svg = current.attrs.svg;
       img.hidden = !svg;
       empty.hidden = !!svg;
@@ -311,7 +318,7 @@ export const Excalidraw = Node.create({
   atom: true,
   draggable: true,
   addAttributes() {
-    return { scene: { default: '' }, svg: { default: '' } };
+    return { scene: { default: '' }, svg: { default: '' }, width: { default: null } };
   },
   parseHTML() {
     return [{ tag: 'figure[data-excalidraw]' }];
@@ -365,7 +372,7 @@ export const DrawIo = Node.create({
   atom: true,
   draggable: true,
   addAttributes() {
-    return { xml: { default: '' }, svg: { default: '' } };
+    return { xml: { default: '' }, svg: { default: '' }, width: { default: null } };
   },
   parseHTML() {
     return [{ tag: 'figure[data-drawio]' }];

@@ -58,3 +58,22 @@ test('l’écran À propos affiche la version et les nouveautés, la pastille s�
   await expect(page.getByText('La vérification de mise à jour est désactivée')).toBeVisible();
   await expect(page.getByRole('img', { name: 'Nouveautés' })).toHaveCount(0);
 });
+
+test('un diagramme se redimensionne au clavier et garde sa largeur', async ({ page }) => {
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.getByText('Nouvelle page').first().click();
+  const editor = page.locator('.tiptap');
+  await editor.click();
+  await page.keyboard.type('/mermaid');
+  await page.keyboard.press('Enter');
+  const block = page.locator('.diagram').first();
+  await expect(block).toBeVisible();
+  const before = (await block.boundingBox())!.width;
+  const handle = block.getByRole('slider', { name: /Largeur/ });
+  await handle.focus();
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(async () => (await block.boundingBox())!.width).toBeLessThan(before);
+  await page.reload();
+  await expect.poll(async () => (await page.locator('.diagram').first().boundingBox())!.width).toBeLessThan(before);
+});

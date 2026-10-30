@@ -231,6 +231,10 @@ const MIGRATIONS: string[] = [
   -- Tentative de connexion SSO liée au navigateur (empreinte du cookie posé au départ).
   ALTER TABLE login_states ADD COLUMN binding_hash TEXT;
   `,
+  `
+  -- Dernière preuve d'identité (mot de passe) donnée dans cette session : ouvre une fenêtre de réauthentification.
+  ALTER TABLE sessions ADD COLUMN reauth_at INTEGER;
+  `,
 ];
 
 export function openDb(file: string): DB {

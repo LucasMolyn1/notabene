@@ -4,6 +4,27 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [3.2.0] - 2026-10-30
+
+Confort d'usage remonté par un premier déploiement : réauthentification moins répétitive, recherche par espace, blocs redimensionnables et import Wiki.js plus tolérant.
+
+### Attention à la mise à jour
+- **Base de données :** migration v9 (colonne `sessions.reauth_at`) appliquée au démarrage. Comme toujours, ne revenez pas à une image plus ancienne sans restaurer une sauvegarde.
+
+### Ajouté
+- **Fenêtre de réauthentification de 10 minutes** (comptes locaux) : après une saisie réussie du mot de passe, les réglages sensibles (fournisseurs d'identité, SMTP, intégrations) ne le redemandent plus pendant 10 minutes. La fenêtre est propre à la session, fixe (elle ne se prolonge pas à l'usage) et ne s'applique pas à la suppression d'un compte ni à la clé d'API de l'IA, qui exigent toujours le mot de passe.
+- **Recherche par espace** : les résultats sont groupés par espace (repliables) avec un filtre « Tous les espaces » / un espace ; l'API accepte `spaceId` sur `GET /api/v3/search`.
+- **Images et diagrammes redimensionnables** (Mermaid, PlantUML, Excalidraw, Draw.io) : poignée au pointeur ou au clavier (flèches, Début pour revenir à la taille d'origine), largeur conservée dans la page.
+- **Rapport d'import** : fichiers écartés avec la raison, pages à vérifier (HTML converti, diagramme retrouvé, images non importées).
+
+### Modifié
+- Page de connexion : le fournisseur d'identité en premier, puis le mot de passe, séparés par « ou » ; l'écran d'activation obligatoire de la double authentification est mis en page.
+- Import Markdown : limite portée à 4 Mo par fichier ; un fichier trop gros n'annule plus l'import des autres ; le HTML (page entière ou bloc) est converti en texte au lieu d'être ignoré.
+- Les erreurs de syntaxe Mermaid affichent la ligne fautive et ce qui était attendu.
+
+### Corrigé
+- Import Wiki.js : un diagramme Mermaid dont la balise ``` a été perdue est retrouvé et reste un diagramme au lieu de devenir du texte.
+
 ## [3.1.1] - 2026-10-30
 
 Correctif de la connexion OIDC (Authentik) et des sondes de répartiteur, remontés par un premier déploiement en production.

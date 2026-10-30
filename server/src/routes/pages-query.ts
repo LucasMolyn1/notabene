@@ -80,12 +80,12 @@ export default async function pageQueryRoutes(app: FastifyInstance) {
   });
 
   app.get('/search', {
-    schema: { tags: ['search'], summary: 'Recherche plein texte paginée', querystring: pageQuery.extend({ q: z.string().trim().min(1).max(200) }) },
+    schema: { tags: ['search'], summary: 'Recherche plein texte paginée', querystring: pageQuery.extend({ q: z.string().trim().min(1).max(200), spaceId: idSchema.optional() }) },
   }, async (req) => {
-    const { q, limit, cursor } = req.query as { q: string; limit: number; cursor?: string };
+    const { q, limit, cursor, spaceId } = req.query as { q: string; limit: number; cursor?: string; spaceId?: string };
     const { o: offset } = decodeCursor(cursor, z.object({ o: z.number().int().min(0).max(1000) })) ?? { o: 0 };
     // Le classement est recalculé à chaque appel : le curseur est un décalage dans la liste filtrée (limité à 500 résultats).
-    const all = filterReadable(db, req.auth, searchPages(db, q, readableSpaceIds(db, req), 500))
+    const all = filterReadable(db, req.auth, searchPages(db, q, readableSpaceIds(db, req).filter((id) => !spaceId || id === spaceId), 500))
       .map(({ text: _text, rank: _rank, ...r }) => r);
     const items = all.slice(offset, offset + limit);
     return { items, nextCursor: offset + limit < all.length ? encodeCursor({ o: offset + limit }) : null };
