@@ -38,27 +38,26 @@ export function pageLevel(db: DB, auth: Auth | null, pageId: string): Level {
 export const canReadPage = (db: DB, auth: Auth | null, pageId: string) => pageLevel(db, auth, pageId) !== 'none';
 export const canWritePage = (db: DB, auth: Auth | null, pageId: string) => pageLevel(db, auth, pageId) === 'write';
 
-// Filtre une liste de pages (ou résultats de recherche) : un seul passage, sans coût si aucune restriction n'existe.
+// Filtre une liste de pages (ou résultats de recherche) : sans coût si aucune restriction n'existe, et sinon
+// proportionnel aux pages demandées (et à leur profondeur), jamais à la taille totale du wiki.
 export function filterReadable<T extends { id: string }>(db: DB, auth: Auth | null, items: T[]): T[] {
-  if (!hasAnyAcl(db)) return items;
+  if (!items.length || !hasAnyAcl(db)) return items;
   if (auth?.user.role === 'admin') return items;
-  const parents = new Map((db.prepare('SELECT id, parent_id FROM pages').all() as { id: string; parent_id: string | null }[]).map((r) => [r.id, r.parent_id]));
-  const acl = new Map<string, Map<string, string>>();
-  for (const r of db.prepare('SELECT page_id, user_id, level FROM page_acl').all() as { page_id: string; user_id: string; level: string }[]) {
-    if (!acl.has(r.page_id)) acl.set(r.page_id, new Map());
-    acl.get(r.page_id)!.set(r.user_id, r.level);
+  // Pour chaque page demandée : la page restreinte la plus proche (elle-même ou un ancêtre).
+  const rows = db.prepare(
+    `WITH RECURSIVE up(orig, id, parent_id, depth) AS (
+       SELECT id, id, parent_id, 0 FROM pages WHERE id IN (SELECT value FROM json_each(?))
+       UNION ALL SELECT up.orig, p.id, p.parent_id, up.depth + 1 FROM pages p JOIN up ON p.id = up.parent_id WHERE up.depth < 100)
+     SELECT orig, id FROM up WHERE id IN (SELECT page_id FROM page_acl) ORDER BY orig, depth`,
+  ).all(JSON.stringify([...new Set(items.map((i) => i.id))])) as { orig: string; id: string }[];
+  const governing = new Map<string, string>();
+  for (const r of rows) if (!governing.has(r.orig)) governing.set(r.orig, r.id);
+  if (!governing.size) return items;
+  const allowed = new Set<string>();
+  if (auth) {
+    for (const r of db.prepare('SELECT page_id FROM page_acl WHERE user_id = ?').all(auth.user.id) as { page_id: string }[]) allowed.add(r.page_id);
   }
-  const memo = new Map<string, boolean>();
-  const readable = (id: string): boolean => {
-    let cur: string | null | undefined = id;
-    for (let depth = 0; cur && depth < 100; depth++) {
-      const entries = acl.get(cur);
-      if (entries) return !!auth && entries.has(auth.user.id);
-      cur = parents.get(cur);
-    }
-    return true;
-  };
-  return items.filter((i) => { if (!memo.has(i.id)) memo.set(i.id, readable(i.id)); return memo.get(i.id)!; });
+  return items.filter((i) => { const g = governing.get(i.id); return !g || allowed.has(g); });
 }
 
 // Un déplacement ne doit ni lever ni changer la restriction qui protège une page : sinon un rédacteur
