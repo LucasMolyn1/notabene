@@ -201,6 +201,50 @@ export async function renderAbout(el) {
     toast(enabled ? 'Vérification des mises à jour activée' : 'Vérification des mises à jour désactivée');
     renderAbout(el);
   };
+  // Mise à jour depuis l'interface : Notabene dépose une demande, le service de l'hôte décide et exécute (docs/MISE-A-JOUR.md).
+  const applyUpdate = async () => {
+    const target = update.latest.version;
+    const ok = await confirmModal({
+      title: `Mettre à jour vers la version ${target} ?`,
+      message: 'Le service de l’hôte va sauvegarder la base, télécharger la nouvelle image et redémarrer Notabene : l’application sera indisponible une à deux minutes. Si la nouvelle version ne démarre pas, l’ancienne est remise en place. Avez-vous lu les nouveautés, surtout « Attention à la mise à jour » ?',
+      confirm: 'Mettre à jour',
+    });
+    if (!ok) return;
+    const reauth = await askReauth('lancer la mise à jour de l’instance', { strict: true });
+    if (!reauth) return;
+    if (!(await A.attempt(() => api.post('/admin/update/apply', { version: target, reauth })))) return;
+    followUpdate(target);
+  };
+  const progress = h('p', { class: 'hint', role: 'status', 'aria-live': 'polite' });
+  const followUpdate = (target) => {
+    progress.textContent = 'Demande envoyée au service de l’hôte (jusqu’à 30 secondes avant le début)…';
+    const started = Date.now();
+    const tick = async () => {
+      if (Date.now() - started > 15 * 60_000) { progress.textContent = 'Pas de réponse après 15 minutes : consultez le journal du service sur l’hôte (journalctl -u notabene-updater).'; return; }
+      try {
+        const s = await api.get('/admin/update-check');
+        if (s.current === target) { toast(`Notabene est à jour (${target})`); location.reload(); return; }
+        const u = s.updater;
+        if (u?.state === 'failed') { progress.textContent = `Échec : ${u.message || 'voir le journal du service sur l’hôte'}`; return; }
+        progress.textContent = u?.state === 'running' ? `${u.message || 'Mise à jour en cours…'}` : 'En attente du service de l’hôte…';
+      } catch { progress.textContent = 'Redémarrage de Notabene en cours… la page se rechargera toute seule.'; }
+      setTimeout(tick, 5000);
+    };
+    setTimeout(tick, 5000);
+  };
+  const updaterPart = () => {
+    const u = update.updater;
+    if (!update.updateAvailable) return null;
+    if (!u?.available) {
+      return h('p', { class: 'hint' }, 'Pour mettre à jour depuis cette page, installez le service de mise à jour sur l’hôte. ', h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'Guide ↗'));
+    }
+    return h('div', { class: 'stack' },
+      u.state === 'failed' && u.message ? h('div', { class: 'notice warning' }, `Dernière tentative : ${u.message}`) : null,
+      h('div', null, h('button', { class: 'btn btn-primary', type: 'button', disabled: u.state === 'running', onClick: applyUpdate }, icon('sparkle', 14), `Mettre à jour vers la ${update.latest.version}`)),
+      progress,
+      h('p', { class: 'hint' }, 'Le service de l’hôte vérifie que cette version est bien la dernière publiée, sauvegarde la base, puis redémarre Notabene. Notabene lui-même n’a aucun accès à Docker.'));
+  };
+
   const explanation = h('div', { class: 'stack' },
     h('p', null, h('strong', null, 'Ce n’est pas une mise à jour automatique. '), 'Notabene vous prévient seulement qu’une nouvelle version existe ; vous décidez si et quand l’installer.'),
     h('p', null, 'Si vous l’activez, le serveur de cette instance demande à GitHub (api.github.com) quelle est la dernière version publiée, au plus toutes les 12 heures et seulement quand un administrateur ouvre l’application.'),
@@ -222,7 +266,8 @@ export async function renderAbout(el) {
         : update.updateAvailable
           ? h('div', { class: 'stack' },
             h('div', { class: 'notice info' }, h('strong', null, `La version ${update.latest.version} est disponible`), ` (vous utilisez la ${update.current}). Lisez ses nouveautés ci-dessous, surtout « Attention à la mise à jour », avant de l’installer.`),
-            h('p', { class: 'muted' }, 'Mise à jour : sauvegardez la base, puis, dans le dossier du déploiement :'),
+            updaterPart(),
+            h('p', { class: 'muted' }, 'À la main : sauvegardez la base, puis, dans le dossier du déploiement :'),
             h('pre', { class: 'code-sample', tabindex: '0' }, 'docker compose pull\ndocker compose up -d'),
             h('p', { class: 'hint' }, 'Si votre fichier compose épingle la version de l’image (NOTABENE_IMAGE), changez d’abord le numéro. ',
               h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'Guide de mise à jour ↗'), ' ',

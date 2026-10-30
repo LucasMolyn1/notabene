@@ -1,0 +1,21 @@
+# /etc/notabene-updater.conf (root:root, 0600)
+
+# Dossier du docker-compose.yml de Notabene (celui qui contient aussi le .env avec NOTABENE_IMAGE).
+COMPOSE_DIR=/opt/notabene
+
+# Dossier d'échange avec le conteneur : créé et possédé par root, accessible en écriture au groupe 1000
+# (voir docs/MISE-A-JOUR.md). Hors du dossier de données : le conteneur ne peut pas le déplacer.
+EXCHANGE_DIR=/srv/appdata/notabene-updater
+
+# Valeurs par défaut, à changer seulement si besoin.
+#IMAGE_REPO=ghcr.io/lucasmolyn1/notabene
+#GITHUB_REPO=LucasMolyn1/notabene
+#SERVICE=notabene
+#HEALTH_URL=http://127.0.0.1:3000/healthz
+#HEALTH_TIMEOUT=120
+
+# true (défaut) : pas de mise à jour sans sauvegarde réussie. Ne mettre false que sur une instance de test.
+#REQUIRE_BACKUP=true
+
+# true : vérifie la provenance de l'image avec « gh attestation verify » (la CLI gh doit être installée et connectée).
+#VERIFY_ATTESTATION=false

@@ -159,3 +159,29 @@ test('le modèle de l’IA se choisit dans une liste déroulante une fois la cl�
   await model.selectOption('__custom');
   await expect(page.getByRole('textbox', { name: 'Nom du modèle' })).toBeVisible();
 });
+
+test('le bouton de mise à jour demande confirmation et le mot de passe, puis dépose la demande', async ({ page }) => {
+  const check = (updater: object) => ({ enabled: true, source: 'env', locked: false, current: '3.5.0', updateAvailable: true, checkedAt: Date.now(), error: null,
+    latest: { version: '9.9.9', url: 'https://github.com/LucasMolyn1/notabene/releases/tag/v9.9.9', publishedAt: null, notes: null }, updater });
+  let asked: unknown = null;
+  await page.route('**/api/v3/admin/update-check', (route) => route.fulfill({ json: check({ available: true, state: 'idle', version: null, message: null, at: null }) }));
+  await page.route('**/api/v3/admin/update/apply', async (route) => { asked = route.request().postDataJSON(); await route.fulfill({ json: { requested: true, version: '9.9.9' } }); });
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto('/#/settings/about');
+  await page.getByRole('button', { name: 'Mettre à jour vers la 9.9.9' }).click();
+  await expect(page.getByText('sauvegarder la base, télécharger la nouvelle image')).toBeVisible();
+  await page.getByRole('button', { name: 'Mettre à jour', exact: true }).click();
+  await page.getByLabel('Mot de passe', { exact: true }).fill(ADMIN.password);
+  await page.getByRole('button', { name: 'Confirmer' }).click();
+  await expect(page.getByText('Demande envoyée au service de l’hôte')).toBeVisible();
+  expect(asked).toMatchObject({ version: '9.9.9', reauth: { password: ADMIN.password } });
+});
+
+test('sans service sur l’hôte, la page explique comment l’installer au lieu d’un bouton', async ({ page }) => {
+  await page.route('**/api/v3/admin/update-check', (route) => route.fulfill({ json: { enabled: true, source: 'env', locked: false, current: '3.5.0', updateAvailable: true, checkedAt: Date.now(), error: null,
+    latest: { version: '9.9.9', url: 'https://github.com/LucasMolyn1/notabene/releases/tag/v9.9.9', publishedAt: null, notes: null }, updater: { available: false, state: null, version: null, message: null, at: null } } }));
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto('/#/settings/about');
+  await expect(page.getByText('installez le service de mise à jour sur l’hôte')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Mettre à jour vers/ })).toHaveCount(0);
+});
