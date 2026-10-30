@@ -3,5 +3,5 @@
 useDefault = true
 
 [allowlist]
-description = "Fixtures de test : valeurs factices"
-paths = ['''server/test/.*''']
+description = "Fixtures de test (vitest, Playwright) : valeurs factices, base temporaire"
+paths = ['''server/test/.*''', '''e2e/.*''', '''playwright\.config\.ts''']
