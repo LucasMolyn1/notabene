@@ -469,13 +469,14 @@ export function showLogin() {
     h('h1', null, 'Notabene'),
     h('p', { class: 'muted' }, 'Le wiki de votre équipe. Connectez-vous pour continuer.'),
     error && h('div', { class: 'notice warning' }, AUTH_ERRORS[error] || 'Connexion impossible.'),
+    // Le fournisseur d'identité d'abord (un clic), puis les formulaires à mot de passe ; l'installation initiale passe avant tout.
+    !setupRequired && oidc && h('a', { class: 'btn btn-primary btn-lg', href: session.loginUrl() }, icon('users', 16), 'Se connecter avec Authentik'),
+    !setupRequired && saml && h('a', { class: oidc ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: `/auth/saml/login?returnTo=${encodeURIComponent(`/${location.hash}`)}` }, icon('key', 16), 'Se connecter avec le SSO (SAML)'),
+    !setupRequired && (oidc || saml) && (local || ldap) && h('p', { class: 'or' }, h('span', null, 'ou avec un mot de passe')),
     local && localLoginForm(setupRequired),
     local && !setupRequired && session.config.auth.mail && forgotPasswordForm(),
-    local && ldap && h('p', { class: 'hint' }, 'ou'),
+    local && ldap && h('p', { class: 'or' }, h('span', null, 'ou')),
     ldap && ldapLoginForm(),
-    (local || ldap) && (oidc || saml) && h('p', { class: 'hint' }, 'ou'),
-    oidc && h('a', { class: local || ldap ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: session.loginUrl() }, icon('users', 16), 'Se connecter avec Authentik'),
-    saml && h('a', { class: local || ldap || oidc ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: `/auth/saml/login?returnTo=${encodeURIComponent(`/${location.hash}`)}` }, icon('key', 16), 'Se connecter avec le SSO (SAML)'),
     devLogin && h('div', { class: 'dev-login stack' },
       h('p', { class: 'hint' }, 'Mode développement : connexion sans fournisseur d’identité.'),
       h('div', { class: 'row center' }, ['admin', 'editor', 'reader'].map((role) =>

@@ -96,3 +96,36 @@ describe('route d’import', () => {
     await app.close();
   });
 });
+
+describe('import tolérant (HTML, diagrammes sans balise, gros fichiers)', () => {
+  const notes = new Set<string>();
+  const ctx = () => ({ ...stats(), notes });
+
+  it('retrouve un diagramme Mermaid dont la balise a été perdue, lignes vides comprises', () => {
+    const md = '## Topologie\n\n%%{init: {\'theme\': \'dark\'}}%%\ngraph TB\n  subgraph HOST["Hôte"]\n  direction TB\n\n  subgraph DMZ["DMZ"]\n  GW --- R\n  end\n  end\n\n## Suite\n\ntexte';
+    const doc = markdownToDoc(md, ctx());
+    expect(doc.content!.map((n) => n.type)).toEqual(['heading', 'mermaid', 'heading', 'paragraph']);
+    expect(String(doc.content![1]!.attrs!.code)).toContain('subgraph DMZ');
+    expect(notes.size).toBeGreaterThan(0);
+  });
+
+  it('ne prend pas une phrase ordinaire pour un diagramme', () => {
+    expect(markdownToDoc('graph theory is fun\nand so is this', ctx()).content!.map((n) => n.type)).toEqual(['paragraph']);
+  });
+
+  it('convertit une page HTML complète sans conserver de balise ni de script', () => {
+    const html = '<!DOCTYPE html><html><head><title>t</title><style>p{}</style></head><body><h1>Architecture</h1><p>Texte &amp; <b>gras</b></p><script>alert(1)</script><ul><li>un</li><li>deux</li></ul><pre><code class="language-bash">ls -l\n</code></pre><div class="mermaid">graph TD\n A--&gt;B</div></body></html>';
+    const doc = markdownToDoc(html, ctx());
+    expect(doc.content!.map((n) => n.type)).toEqual(['heading', 'paragraph', 'bulletList', 'codeBlock', 'mermaid']);
+    expect(JSON.stringify(doc)).not.toContain('alert');
+    expect(doc.content![1]!.content![0]!.text).toBe('Texte & gras');
+    expect(doc.content![4]!.attrs!.code).toBe('graph TD\n A-->B');
+  });
+
+  it('écarte un fichier trop gros sans annuler les autres et le signale', () => {
+    const big = `# Gros\n\n${'x'.repeat(4_100_000)}`;
+    const result = importMarkdown(db, { spaceId, files: [{ path: 'a/gros.md', content: big }, { path: 'a/petit.md', content: '# Petit' }], userId: null });
+    expect(result.pages).toBe(1);
+    expect(result.skipped).toEqual([{ path: 'a/gros.md', reason: expect.stringContaining('découpez') }]);
+  });
+});

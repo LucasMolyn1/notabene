@@ -140,6 +140,14 @@ describe('contenu', () => {
     const weird = await app.inject({ method: 'GET', url: `/api/v3/search?q=${encodeURIComponent('"x" OR NEAR( * ^ -')}` });
     expect(weird.statusCode).toBe(200);
   });
+  it('limite la recherche à un espace lisible', async () => {
+    const all = (await app.inject({ method: 'GET', url: '/api/v3/search?q=editeur' })).json().items as { spaceId: string }[];
+    const target = all[0].spaceId;
+    const only = (await app.inject({ method: 'GET', url: `/api/v3/search?q=editeur&spaceId=${target}` })).json().items as { spaceId: string }[];
+    expect(only.length).toBeGreaterThan(0);
+    expect(only.every((r) => r.spaceId === target)).toBe(true);
+    expect((await app.inject({ method: 'GET', url: '/api/v3/search?q=editeur&spaceId=inconnu' })).json().items).toEqual([]);
+  });
 });
 
 describe('jetons d’API', () => {

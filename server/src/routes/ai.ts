@@ -68,7 +68,7 @@ export default async function aiRoutes(app: FastifyInstance) {
     const auth = requireScope(req, 'admin');
     const body = req.body as z.output<typeof aiSettingsInput>;
     // Session navigateur et preuve d'identité récente, comme pour les autres fournisseurs : la clé d'API est un secret.
-    await requireReauth(app, req, body.reauth);
+    await requireReauth(app, req, body.reauth, { strict: true });
     await checkUrl(body.baseUrl);
     const result = saveAiSettings(db, box, body, auth.user.id);
     audit(db, req, 'settings.ai', null, { provider: body.provider, model: body.model, keyChanged: body.apiKey !== undefined });

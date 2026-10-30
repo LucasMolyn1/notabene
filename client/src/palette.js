@@ -77,6 +77,8 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
   let query = '';
   let requestSeq = 0;
   let askController = null;
+  let spaceFilter = null; // null : tous les espaces
+  const collapsed = new Set(); // espaces repliés dans les résultats
 
   const opener = /** @type {HTMLElement | null} */ (document.activeElement); // le focus y revient à la fermeture
   const input = h('input', {
@@ -117,9 +119,9 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
 
   const runSearch = debounce(async (q, seq) => {
     try {
-      const found = await store.search(q);
+      const found = await store.search(q, spaceFilter);
       if (seq !== requestSeq) return;
-      results = found.filter((r) => r.id !== exclude).map((r) => ({ page: store.page(r.id) || r, snippet: r.snippet }));
+      results = groupBySpace(found.filter((r) => r.id !== exclude).map((r) => ({ page: store.page(r.id) || r, snippet: r.snippet })));
     } catch {
       results = [];
     }
@@ -139,14 +141,50 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
     runSearch(query, seq);
   }
 
+  // Regroupe par espace (dans l'ordre du meilleur résultat de chacun) ; les pages d'un même espace restent classées par pertinence.
+  function groupBySpace(items) {
+    const order = [];
+    for (const r of items) if (!order.includes(r.page.spaceId)) order.push(r.page.spaceId);
+    return order.flatMap((id) => items.filter((r) => r.page.spaceId === id));
+  }
+
+  // Résultats navigables au clavier : ceux des espaces repliés sont exclus.
+  const visible = () => results.filter((r) => !query || !collapsed.has(r.page.spaceId));
+
+  function spaceFilters() {
+    if (!query || store.spaces.length < 2) return null;
+    const chip = (id, label) => h('button', {
+      class: `chip${spaceFilter === id ? ' active' : ''}`, type: 'button', 'aria-pressed': String(spaceFilter === id),
+      onClick: () => { spaceFilter = id; input.focus(); run(); },
+    }, label);
+    return h('div', { class: 'pal-spaces', role: 'group', 'aria-label': 'Limiter à un espace' },
+      chip(null, 'Tous les espaces'), ...store.spaces.map((s) => chip(s.id, s.name)));
+  }
+
   function render() {
     list.replaceChildren();
+    const filters = spaceFilters();
+    if (filters) list.append(filters);
     if (!results.length) {
       list.append(h('div', { class: 'pal-empty' }, query ? `Aucun résultat pour « ${query} »` : 'Aucune page pour le moment.'));
       return;
     }
+    const shown = visible();
     list.append(h('div', { class: 'pal-section' }, query ? `${results.length} résultat${results.length > 1 ? 's' : ''}` : 'Modifiées récemment'));
-    results.forEach((r, i) => {
+    let lastSpace = null;
+    results.forEach((r) => {
+      const spaceId = r.page.spaceId;
+      if (query && spaceId !== lastSpace) {
+        lastSpace = spaceId;
+        const open = !collapsed.has(spaceId);
+        const count = results.filter((x) => x.page.spaceId === spaceId).length;
+        list.append(h('button', {
+          class: 'pal-group', type: 'button', 'aria-expanded': String(open),
+          onClick: () => { if (open) collapsed.add(spaceId); else collapsed.delete(spaceId); active = 0; render(); },
+        }, icon('chevron', 14), h('span', { class: 'grow' }, store.space(spaceId)?.name || 'Espace'), h('small', null, String(count))));
+      }
+      if (query && collapsed.has(spaceId)) return;
+      const i = shown.indexOf(r);
       list.append(h('button', {
         class: `pal-item${i === active ? ' active' : ''}`,
         type: 'button',
@@ -164,11 +202,12 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
         r.snippet ? h('span', { class: 'pal-snippet', html: snippetHTML(r.snippet) }) : null)));
     });
     list.querySelector('.pal-item.active')?.scrollIntoView({ block: 'nearest' });
-    input.setAttribute('aria-activedescendant', `pal-opt-${active}`);
+    if (shown.length) input.setAttribute('aria-activedescendant', `pal-opt-${active}`);
+    else input.removeAttribute('aria-activedescendant');
   }
 
   function choose(i) {
-    const r = results[i];
+    const r = visible()[i];
     if (!r) return;
     close();
     if (mode === 'pick') onPick?.(r.page);
@@ -225,7 +264,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
       if (e.key === 'Enter') { e.preventDefault(); ask(); }
       return;
     }
-    if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, results.length - 1); render(); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, visible().length - 1); render(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); render(); }
     else if (e.key === 'Enter') { e.preventDefault(); choose(active); }
   });

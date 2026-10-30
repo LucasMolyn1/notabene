@@ -30,3 +30,15 @@ describe('export Markdown : cellules de tableau', () => {
     expect(md(table('x\\|', [{ type: 'code' }]))).toContain('`x\\|`');
   });
 });
+
+describe('largeur des blocs redimensionnés', () => {
+  const block = (type: string, width: unknown) => sanitizeDoc({ type: 'doc', content: [{ type, attrs: { code: 'graph TD', width } }] }).content?.[0]?.attrs;
+  it('conserve une largeur valide et écarte le reste', () => {
+    expect(block('mermaid', 480)).toMatchObject({ width: 480 });
+    expect(block('mermaid', null)).toMatchObject({ width: null });
+    expect(block('mermaid', 10)).not.toHaveProperty('width');
+    expect(block('mermaid', '480px')).not.toHaveProperty('width');
+    expect(block('plantuml', 99_999)).not.toHaveProperty('width');
+  });
+});
+

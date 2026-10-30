@@ -78,8 +78,10 @@ const FORMS = {
 const field = (label, control, hint) => h('label', { class: 'field' }, h('span', null, label), control, hint && h('small', null, hint));
 
 // Demande la preuve d'identité. Renvoie l'objet `reauth` à joindre à la requête, ou null si annulé.
-export function askReauth(what) {
+// Dans la fenêtre de 10 minutes ouverte par une saisie précédente, rien n'est redemandé sauf si `strict`.
+export function askReauth(what, { strict = false } = {}) {
   if (session.provider !== 'local') return Promise.resolve({});
+  if (!strict && session.reauthUntil > Date.now()) return Promise.resolve({});
   return new Promise((resolve) => {
     let value = null;
     const pwd = h('input', { class: 'input', type: 'password', autocomplete: 'current-password', maxlength: '256' });
@@ -104,8 +106,11 @@ async function call(method, path, body, what) {
   const reauth = await askReauth(what);
   if (!reauth) return undefined;
   try {
-    return await api[method](path, { ...body, reauth });
+    const result = await api[method](path, { ...body, reauth });
+    if (reauth.password) session.reauthUntil = Date.now() + 10 * 60_000;
+    return result;
   } catch (err) {
+    session.reauthUntil = 0;
     toast(err.message, { kind: 'error' });
     return undefined;
   }

@@ -148,7 +148,7 @@ export const store = {
     return meta;
   },
 
-  search: async (q) => (await api.get(`/search?q=${encodeURIComponent(q)}&limit=20`)).items,
+  search: async (q, spaceId) => (await api.get(`/search?q=${encodeURIComponent(q)}&limit=40${spaceId ? `&spaceId=${encodeURIComponent(spaceId)}` : ''}`)).items,
 
   // ---- Espaces ----------------------------------------------------------
   async createSpace(input) {

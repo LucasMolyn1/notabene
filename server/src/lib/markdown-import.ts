@@ -3,13 +3,21 @@
 import { type Token, type Tokens, marked } from 'marked';
 import type { DB } from '../db.js';
 import { type DocNode, sanitizeDoc } from './content.js';
+import { htmlToBlocks } from './html-import.js';
 import { HttpError } from './http.js';
 import { createPage, updatePage } from './pages.js';
 
 export interface ImportFile { path: string; content: string }
-export interface ImportResult { pages: number; folders: number; links: { resolved: number; unresolved: number }; images: number }
+export interface ImportNote { path: string; notes: string[] }
+export interface ImportResult {
+  pages: number; folders: number; links: { resolved: number; unresolved: number }; images: number;
+  /** Fichiers non importés (trop gros), avec la raison. */
+  skipped?: { path: string; reason: string }[];
+  /** Conversions appliquées page par page (HTML converti, diagramme retrouvé…). */
+  notes?: ImportNote[];
+}
 
-export const IMPORT_LIMITS = { files: 2000, fileBytes: 1_000_000, totalBytes: 25_000_000 };
+export const IMPORT_LIMITS = { files: 2000, fileBytes: 4_000_000, totalBytes: 25_000_000 };
 
 // ---- En-tête YAML minimal (clé: valeur) ----------------------------------------------------
 
@@ -51,7 +59,7 @@ function validPath(p: string) {
 
 // ---- Markdown -> TipTap ----------------------------------------------------------------------
 
-interface Ctx { resolveLink: (href: string, from: string) => string | null; from: string; stats: ImportResult }
+interface Ctx { resolveLink: (href: string, from: string) => string | null; from: string; stats: ImportResult; notes?: Set<string> }
 type Mark = { type: string; attrs?: Record<string, unknown> };
 
 const para = (content: DocNode[] = []): DocNode => (content.length ? { type: 'paragraph', content } : { type: 'paragraph' });
@@ -92,7 +100,7 @@ function inline(tokens: Token[] = [], ctx: Ctx, marks: Mark[] = []): DocNode[] {
         else { ctx.stats.images++; out.push(text(`[Image : ${alt || href.split('/').pop() || 'non importée'}]`, marks)); }
         break;
       }
-      default: break; // html brut : ignoré
+      default: break;
     }
   }
   return out;
@@ -101,9 +109,25 @@ function inline(tokens: Token[] = [], ctx: Ctx, marks: Mark[] = []): DocNode[] {
 const CALLOUT_CLASS: Record<string, string> = { 'is-info': 'info', 'is-warning': 'warning', 'is-success': 'success', 'is-danger': 'danger' };
 const CALLOUT_ALERT: Record<string, string> = { NOTE: 'info', TIP: 'success', IMPORTANT: 'info', WARNING: 'warning', CAUTION: 'danger' };
 
+// Début d'un diagramme Mermaid dont la balise ```mermaid a été perdue (conversion HTML, copier-coller).
+const MERMAID_START = /^(?:%%\{init|(?:graph|flowchart)[ \t]+(?:TB|TD|BT|RL|LR)\b|sequenceDiagram\b|classDiagram\b|stateDiagram(?:-v2)?\b|erDiagram\b|gantt\b|journey\b|gitGraph\b|mindmap\b|timeline\b)/;
+const FOLLOWS_MERMAID = new Set(['paragraph', 'text', 'space']);
+
 function blocks(tokens: Token[] = [], ctx: Ctx): DocNode[] {
   const out: DocNode[] = [];
-  for (const t of tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if ((t.type === 'paragraph' || t.type === 'text') && MERMAID_START.test(t.raw.trimStart())) {
+      let raw = t.raw;
+      let j = i + 1;
+      while (j < tokens.length && (FOLLOWS_MERMAID.has(tokens[j]!.type) || (tokens[j]!.type === 'code' && (tokens[j] as Tokens.Code).codeBlockStyle === 'indented'))) raw += tokens[j++]!.raw;
+      if (raw.split('\n').filter((l) => l.trim()).length >= 2) {
+        out.push({ type: 'mermaid', attrs: { code: raw.trim() } });
+        ctx.notes?.add('diagramme Mermaid retrouvé sans balise ```mermaid : vérifiez son rendu');
+        i = j - 1;
+        continue;
+      }
+    }
     switch (t.type) {
       case 'heading': {
         const h = t as Tokens.Heading;
@@ -131,7 +155,12 @@ function blocks(tokens: Token[] = [], ctx: Ctx): DocNode[] {
         ] });
         break;
       }
-      default: break; // space, html…
+      case 'html': {
+        const converted = htmlToBlocks((t as Tokens.HTML).raw);
+        if (converted.length) { out.push(...converted); ctx.notes?.add('HTML converti en texte (mise en forme simplifiée)'); }
+        break;
+      }
+      default: break; // space…
     }
   }
   return out;
@@ -172,7 +201,17 @@ function list(t: Tokens.List, ctx: Ctx): DocNode {
   return t.ordered ? { type: 'orderedList', attrs: { start: typeof t.start === 'number' ? t.start : 1 }, content: items } : { type: 'bulletList', content: items };
 }
 
+// Page entière en HTML (éditeur HTML de Wiki.js) : convertie d'un bloc, car ses balises traversent les lignes vides.
+const HTML_PAGE = /^\s*<(?:!doctype|html|head|body|div|section|article|h[1-6]|p|table|ul|ol|pre|style)\b/i;
+
 export function markdownToDoc(md: string, ctx: Ctx): DocNode {
+  if (HTML_PAGE.test(md)) {
+    const converted = htmlToBlocks(md);
+    if (converted.length) {
+      ctx.notes?.add('page HTML convertie en texte (mise en forme simplifiée)');
+      return { type: 'doc', content: converted };
+    }
+  }
   const content = blocks(marked.lexer(md, { gfm: true }), ctx);
   return { type: 'doc', content: content.length ? content : [para()] };
 }
@@ -180,13 +219,19 @@ export function markdownToDoc(md: string, ctx: Ctx): DocNode {
 // ---- Import ----------------------------------------------------------------------------------
 
 export function importMarkdown(db: DB, input: { spaceId: string; files: ImportFile[]; userId: string | null }): ImportResult {
-  const { files } = input;
-  if (!files.length) throw new HttpError(400, 'Aucun fichier à importer');
-  if (files.length > IMPORT_LIMITS.files) throw new HttpError(413, `Trop de fichiers (maximum ${IMPORT_LIMITS.files})`);
+  if (!input.files.length) throw new HttpError(400, 'Aucun fichier à importer');
+  if (input.files.length > IMPORT_LIMITS.files) throw new HttpError(413, `Trop de fichiers (maximum ${IMPORT_LIMITS.files})`);
+  // Un fichier trop gros est écarté et signalé : il n'annule pas l'import des autres.
+  const skipped: { path: string; reason: string }[] = [];
+  const files = input.files.filter((f) => {
+    if (f.content.length <= IMPORT_LIMITS.fileBytes) return true;
+    skipped.push({ path: f.path.slice(0, 200), reason: `plus de ${IMPORT_LIMITS.fileBytes / 1_000_000} Mo : découpez-le en plusieurs fichiers` });
+    return false;
+  });
+  if (!files.length) throw new HttpError(413, `Fichiers trop volumineux (maximum ${IMPORT_LIMITS.fileBytes / 1_000_000} Mo chacun)`);
   let total = 0;
   for (const f of files) {
     if (!validPath(f.path)) throw new HttpError(400, `Chemin invalide : ${f.path.slice(0, 120)}`);
-    if (f.content.length > IMPORT_LIMITS.fileBytes) throw new HttpError(413, `Fichier trop volumineux : ${f.path.slice(0, 120)}`);
     total += f.content.length;
   }
   if (total > IMPORT_LIMITS.totalBytes) throw new HttpError(413, 'Volume total trop important');
@@ -205,7 +250,7 @@ export function importMarkdown(db: DB, input: { spaceId: string; files: ImportFi
     seen.add(key(p.path));
   }
 
-  const stats: ImportResult = { pages: 0, folders: 0, links: { resolved: 0, unresolved: 0 }, images: 0 };
+  const stats: ImportResult = { pages: 0, folders: 0, links: { resolved: 0, unresolved: 0 }, images: 0, skipped, notes: [] };
   const ids = new Map<string, string>(); // chemin normalisé (minuscules) -> id de page
   const ensure = (path: string, title: string, parentId: string | null, folder: boolean) => {
     const row = createPage(db, { spaceId: input.spaceId, parentId, title: title.slice(0, 300) }, input.userId);
@@ -241,7 +286,13 @@ export function importMarkdown(db: DB, input: { spaceId: string; files: ImportFi
 
     for (const p of parsed) {
       const id = ids.get(key(p.path))!;
-      const doc = sanitizeDoc(markdownToDoc(p.body, { resolveLink, from: p.path, stats }));
+      const notes = new Set<string>();
+      const imagesBefore = stats.images;
+      const raw = markdownToDoc(p.body, { resolveLink, from: p.path, stats, notes });
+      const doc = sanitizeDoc(raw);
+      if (stats.images > imagesBefore) notes.add(`${stats.images - imagesBefore} image(s) par chemin non importée(s)`);
+      if (p.body.trim() && (doc.content ?? []).every((n) => n.type === 'paragraph' && !n.content?.length)) notes.add('page vide après conversion : contenu non reconnu');
+      if (notes.size) stats.notes!.push({ path: p.path, notes: [...notes] });
       updatePage(db, id, { content: doc, title: p.meta.title || undefined }, input.userId);
     }
   })();

@@ -16,6 +16,7 @@ export const session = {
     this.mfaSetupRequired = !!me.mfaSetupRequired;
     this.provider = me.provider;
     this.version = me.version;
+    this.reauthUntil = me.reauthUntil || 0;
     initNews(me.version);
     this.permissions = me.permissions;
     setCsrf(me.csrf);

@@ -73,10 +73,10 @@ const NODES: Record<string, AttrRules> = {
   tableCell: cell,
   callout: { type: oneOf('info', 'warning', 'success', 'danger') },
   pageLink: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined) },
-  mermaid: { code: str(50_000) },
-  plantuml: { code: str(50_000) },
-  excalidraw: { scene: str(MAX_DIAGRAM), svg: isSvgDataUrl },
-  drawio: { xml: str(MAX_DIAGRAM), svg: isSvgDataUrl },
+  mermaid: { code: str(50_000), width: nullable(int(120, 4000)) },
+  plantuml: { code: str(50_000), width: nullable(int(120, 4000)) },
+  excalidraw: { scene: str(MAX_DIAGRAM), svg: isSvgDataUrl, width: nullable(int(120, 4000)) },
+  drawio: { xml: str(MAX_DIAGRAM), svg: isSvgDataUrl, width: nullable(int(120, 4000)) },
 };
 
 const MARKS: Record<string, AttrRules> = {

@@ -14,8 +14,16 @@ export type Reauth = z.output<typeof reauthInput>;
 const MAX_FAILURES = 5;
 const LOCK_MS = 15 * 60_000;
 const FRESH_SESSION_MS = 15 * 60_000;
+// Après une preuve d'identité réussie, les actions sensibles ordinaires ne la redemandent pas pendant cette durée (fixe, non prolongée à l'usage).
+export const REAUTH_WINDOW_MS = 10 * 60_000;
 
-export async function requireReauth(app: FastifyInstance, req: FastifyRequest, input: Reauth): Promise<void> {
+export function reauthUntil(db: FastifyInstance['db'], sessionHash: string | undefined): number | null {
+  const s = db.prepare('SELECT reauth_at FROM sessions WHERE id_hash = ?').get(sessionHash ?? '') as { reauth_at: number | null } | undefined;
+  return s?.reauth_at && Date.now() - s.reauth_at < REAUTH_WINDOW_MS ? s.reauth_at + REAUTH_WINDOW_MS : null;
+}
+
+// `strict` : toujours ressaisir le mot de passe (suppression de compte, clé d'API), même dans la fenêtre.
+export async function requireReauth(app: FastifyInstance, req: FastifyRequest, input: Reauth, opts: { strict?: boolean } = {}): Promise<void> {
   const { db, box } = app;
   const auth = requireAuth(req);
   if (auth.via !== 'session') throw new HttpError(403, 'Disponible uniquement depuis l’interface web');
@@ -32,6 +40,10 @@ export async function requireReauth(app: FastifyInstance, req: FastifyRequest, i
   }
 
   const now = Date.now();
+  if (!opts.strict && !input.password) {
+    const s = db.prepare('SELECT reauth_at FROM sessions WHERE id_hash = ?').get(auth.sessionHash ?? '') as { reauth_at: number | null } | undefined;
+    if (s?.reauth_at && now - s.reauth_at < REAUTH_WINDOW_MS) return;
+  }
   if (user.locked_until && user.locked_until > now) throw new HttpError(429, 'Compte temporairement verrouillé : réessayez dans quelques minutes');
   const fail = (message: string): never => {
     const failures = user.failed_logins + 1;
@@ -47,4 +59,5 @@ export async function requireReauth(app: FastifyInstance, req: FastifyRequest, i
     db.prepare('UPDATE users SET totp_last_step = ? WHERE id = ?').run(step, user.id);
   }
   if (user.failed_logins) db.prepare('UPDATE users SET failed_logins = 0 WHERE id = ?').run(user.id);
+  db.prepare('UPDATE sessions SET reauth_at = ? WHERE id_hash = ?').run(now, auth.sessionHash ?? '');
 }
