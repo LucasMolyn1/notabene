@@ -99,7 +99,7 @@ export function showEmbed(id) {
   const page = store.page(id);
   const isPublic = store.space(page?.spaceId)?.visibility === 'public';
   const code = `<iframe src="${pageUrl(id, { embed: true })}" width="100%" height="640" style="border:0;border-radius:12px" loading="lazy" title="Notabene"></iframe>`;
-  const area = h('textarea', { class: 'code-area', readonly: true, rows: 4 });
+  const area = h('textarea', { class: 'code-area', readonly: true, rows: 4, 'aria-label': 'Code d’intégration à copier' });
   area.value = code;
   openModal({
     title: 'Intégrer cette page',

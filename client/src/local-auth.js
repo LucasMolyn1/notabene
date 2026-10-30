@@ -88,7 +88,7 @@ export async function securityCard(card, { onEnabled } = {}) {
   const showCodes = (codes) => body.replaceChildren(
     h('div', { class: 'notice success stack' },
       h('strong', null, 'Double authentification activée. Conservez ces codes de secours : chacun ne sert qu’une fois et ils ne seront plus affichés.'),
-      h('pre', { class: 'code-sample' }, codes.join('\n')),
+      h('pre', { class: 'code-sample', tabindex: '0' }, codes.join('\n')),
       h('div', { class: 'row' },
         h('button', { class: 'btn btn-ghost btn-sm', onClick: () => navigator.clipboard.writeText(codes.join('\n')).then(() => toast('Codes copiés')) }, icon('copy', 14), 'Copier'),
         h('button', { class: 'btn btn-primary btn-sm', onClick: () => (onEnabled ? onEnabled() : render()) }, 'J’ai enregistré ces codes'))));

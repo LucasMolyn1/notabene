@@ -4,6 +4,14 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [Non publié]
+
+### Ajouté
+- **Audit d'accessibilité automatisé** (axe-core, WCAG 2.1 AA) dans la CI, en clair et en sombre, sur la connexion, les pages et toutes les sections des paramètres ; [docs/ACCESSIBILITE.md](docs/ACCESSIBILITE.md) décrit le test au lecteur d'écran à faire à la main.
+
+### Corrigé
+- Contrastes (couleurs des avatars, chemin de la palette en thème sombre), noms manquants (éditeur, sélecteur de rôle, zones de code) et blocs de code défilables au clavier.
+
 ## [3.2.0] - 2026-10-30
 
 Confort d'usage remonté par un premier déploiement : réauthentification moins répétitive, recherche par espace, blocs redimensionnables et import Wiki.js plus tolérant.

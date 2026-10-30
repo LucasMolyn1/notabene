@@ -577,7 +577,7 @@ export function createEditor({ element, content, editable = true, onChange, cont
       }),
     ],
     editorProps: {
-      attributes: { class: 'prose', spellcheck: 'true' },
+      attributes: { class: 'prose', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Contenu de la page' },
       handleKeyDown: (_view, event) => slash?.onKeyDown(event) || false,
       handlePaste: (_view, event) => {
         const file = [...(event.clipboardData?.files || [])].find((f) => f.type.startsWith('image/'));

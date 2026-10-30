@@ -2,7 +2,7 @@
 import { api } from './api.js';
 import { uid } from './util.js';
 
-const COLORS = ['#e8590c', '#2f9e44', '#1971c2', '#c2255c', '#7048e8', '#0c8599', '#e67700', '#5c940d'];
+const COLORS = ['#c74c0a', '#278439', '#1971c2', '#c2255c', '#7048e8', '#0b7f92', '#b35c00', '#50820b'];
 const tabId = uid() + uid();
 const listeners = new Set();
 let peers = [];

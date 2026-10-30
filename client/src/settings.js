@@ -145,7 +145,7 @@ async function renderTokens(el, created = null) {
       h('div', { class: 'row' },
         h('code', { class: 'token-value' }, created.token),
         h('button', { class: 'btn btn-ghost btn-sm', onClick: () => navigator.clipboard.writeText(created.token).then(() => toast('Jeton copié')) }, icon('copy', 14), 'Copier')),
-      h('pre', { class: 'code-sample' }, `curl -H "Authorization: Bearer $NOTABENE_TOKEN" \\\n  ${location.origin}/api/v3/spaces`)),
+      h('pre', { class: 'code-sample', tabindex: '0' }, `curl -H "Authorization: Bearer $NOTABENE_TOKEN" \\\n  ${location.origin}/api/v3/spaces`)),
     card('Nouveau jeton', 'Les portées sont limitées par votre rôle. Un jeton ne peut jamais en créer un autre.',
       h('div', { class: 'stack' },
         h('label', { class: 'field' }, h('span', null, 'Nom'), name),
@@ -188,8 +188,8 @@ function renderApi(el) {
     ]), h('button', { class: 'btn btn-primary btn-sm', onClick: () => A.go('/settings/tokens') }, icon('code', 14), 'Gérer mes jetons')),
     card('Serveur MCP', 'Connectez un assistant IA (Claude, etc.) au wiki via le Model Context Protocol. Les droits sont ceux du jeton : une portée read suffit pour chercher et lire, write permet de créer des pages.', h('div', { class: 'stack' },
       kv([['Point d’accès', copyable(`${location.origin}/mcp`)], ['Transport', 'HTTP (POST, JSON-RPC 2.0), jeton Bearer obligatoire'], ['Outils', 'list_spaces, list_pages, search_pages, get_page, create_page']]),
-      h('pre', { class: 'code-sample' }, `claude mcp add --transport http notabene ${location.origin}/mcp \\\n  --header "Authorization: Bearer nb_…"`))),
-    card('Exemples', null, h('pre', { class: 'code-sample' }, [
+      h('pre', { class: 'code-sample', tabindex: '0' }, `claude mcp add --transport http notabene ${location.origin}/mcp \\\n  --header "Authorization: Bearer nb_…"`))),
+    card('Exemples', null, h('pre', { class: 'code-sample', tabindex: '0' }, [
       'export NOTABENE_TOKEN="nb_…"',
       '',
       '# Lister les espaces',
@@ -382,7 +382,7 @@ async function renderEmbed(el) {
   const pages = store.recent(null, 500).filter((p) => publicSpaces.some((s) => s.id === p.spaceId));
   const select = h('select', { class: 'input' }, pages.map((p) => h('option', { value: p.id }, `${p.title || 'Sans titre'}`)));
   const height = h('input', { class: 'input', type: 'number', min: '200', max: '2000', value: '640' });
-  const code = h('textarea', { class: 'code-area', readonly: true, rows: 4 });
+  const code = h('textarea', { class: 'code-area', readonly: true, rows: 4, 'aria-label': 'Code d’intégration à copier' });
   const open = h('a', { class: 'btn btn-ghost btn-sm', target: '_blank', rel: 'noopener' }, 'Aperçu ↗');
   const paint = () => {
     const id = select.value;
@@ -538,7 +538,7 @@ async function renderUsers(el) {
   invite.checked = mailOn;
   invite.addEventListener('change', () => { pass.hidden = invite.checked; });
   pass.hidden = mailOn;
-  const roleSel = h('select', { class: 'input' }, Object.entries(ROLE_LABELS).map(([value, label]) => h('option', { value, selected: value === 'editor' }, label)));
+  const roleSel = h('select', { class: 'input', 'aria-label': 'Rôle du nouveau compte' }, Object.entries(ROLE_LABELS).map(([value, label]) => h('option', { value, selected: value === 'editor' }, label)));
 
   el.replaceChildren(...[
     card(`Utilisateurs (${users.length})`, local ? 'Comptes locaux (gérés ici) et comptes fédérés (rôles issus d’Authentik).' : 'Les comptes sont créés à la première connexion ; les rôles se gèrent dans Authentik.',
