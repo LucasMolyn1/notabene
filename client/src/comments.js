@@ -41,7 +41,7 @@ const anchorEl = (editor, id) => (editor && /^[A-Za-z0-9_-]{1,64}$/.test(id) ? e
 // Retrouve la plage du texte commenté : à sa place d'origine si le texte n'a pas bougé, sinon sa première occurrence dans un même paragraphe.
 function locate(editor, anchor) {
   const { doc } = editor.state;
-  if (anchor.to <= doc.content.size && doc.textBetween(anchor.from, anchor.to, ' ') === anchor.text) return { from: anchor.from, to: anchor.to };
+  if (anchor.to <= doc.content.size && doc.textBetween(anchor.from, anchor.to, ' ').trim() === anchor.text) return { from: anchor.from, to: anchor.to };
   let found = null;
   doc.descendants((node, pos) => {
     if (found || !node.isTextblock) return !found;

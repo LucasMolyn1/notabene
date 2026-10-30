@@ -10,7 +10,7 @@ import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
 import { getPrefs, watch } from '../lib/notifications.js';
 import { entriesOf, filterReadable, governingPage, pageLevel } from '../lib/page-acl.js';
 import { mentionIds } from '../lib/content.js';
-import { MAX_MENTIONS, mentionableUsers, namesOf, validMentions } from '../lib/mentions.js';
+import { MAX_MENTIONS, mentionableUsers, readersAmong, validMentions } from '../lib/mentions.js';
 
 interface CommentRow {
   id: string; page_id: string; parent_id: string | null; author_id: string | null; author_name: string | null; body: string;
@@ -78,6 +78,7 @@ export default async function v3Routes(app: FastifyInstance) {
 
   app.post('/pages/:id/comments', {
     preHandler: guard('write'),
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
     schema: { tags: ['comments'], summary: 'Commenter une page (ou répondre à un commentaire)', params: idParams, body: z.object({
       body: text,
       parentId: idSchema.nullable().optional(),
@@ -156,9 +157,10 @@ export default async function v3Routes(app: FastifyInstance) {
   });
 
   // Noms des personnes mentionnées dans le contenu de la page (le nom enregistré dans la page n'est qu'un repli).
-  app.get('/pages/:id/mentioned', { schema: { tags: ['comments'], summary: 'Noms des personnes mentionnées dans la page', params: idParams } }, async (req) => {
+  // Réservé aux personnes connectées ; ne nomme que les personnes actives qui peuvent lire la page.
+  app.get('/pages/:id/mentioned', { preHandler: guard('read'), schema: { tags: ['comments'], summary: 'Noms des personnes mentionnées dans la page', params: idParams } }, async (req) => {
     const page = loadReadablePage(db, req, (req.params as { id: string }).id);
-    return { items: namesOf(db, mentionIds(JSON.parse(page.content))) };
+    return { items: readersAmong(db, page.id, mentionIds(JSON.parse(page.content)), 200) };
   });
 
   // ---- Permissions par page --------------------------------------------------------------

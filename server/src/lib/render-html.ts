@@ -5,13 +5,14 @@ import { type DocNode, isSafeHref, isSafeImageSrc } from './content.js';
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 type TitleOf = (id: string) => string | null;
+type MentionName = (id: string) => string | null;
 
 const MARK: Record<string, string> = { bold: 'strong', italic: 'em', strike: 's', code: 'code', underline: 'u', highlight: 'mark' };
 
-export function renderHtml(doc: DocNode, titleOf: TitleOf): string {
+export function renderHtml(doc: DocNode, titleOf: TitleOf, mentionName: MentionName = () => null): string {
   const inline = (nodes: DocNode[] = []): string => nodes.map((n) => {
     if (n.type === 'hardBreak') return '<br>';
-    if (n.type === 'mention') return `<span>@${escapeHtml(String(n.attrs?.label ?? 'utilisateur'))}</span>`;
+    if (n.type === 'mention') return `<span>@${escapeHtml(mentionName(String(n.attrs?.id)) ?? 'utilisateur')}</span>`;
     if (n.type === 'pageLink') return `<a href="/p/${escapeHtml(String(n.attrs?.id ?? ''))}">${escapeHtml(titleOf(String(n.attrs?.id)) ?? 'Sans titre')}</a>`;
     if (n.type !== 'text') return '';
     let html = escapeHtml(n.text ?? '');

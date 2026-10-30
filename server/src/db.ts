@@ -281,6 +281,7 @@ export const MIGRATIONS: string[] = [
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     PRIMARY KEY (comment_id, user_id)
   );
+  CREATE INDEX comment_mentions_user ON comment_mentions(user_id);
 
   -- Personnes déjà notifiées d'une mention dans le contenu d'une page : une seule notification par page et par personne.
   CREATE TABLE page_mentions (
@@ -289,6 +290,7 @@ export const MIGRATIONS: string[] = [
     notified_at INTEGER NOT NULL,
     PRIMARY KEY (page_id, user_id)
   );
+  CREATE INDEX page_mentions_user ON page_mentions(user_id);
 
   CREATE TABLE notifications_v13 (
     id         TEXT PRIMARY KEY,

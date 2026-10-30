@@ -44,6 +44,7 @@ Adaptez ces durées à votre finalité et documentez-les dans votre registre des
 
 La suppression est une **anonymisation** : le compte et ce qui lui est propre disparaissent (sessions, jetons, favoris, suivis, notifications, permissions, préférences). Les pages, versions, commentaires, libellés et modèles restent, **sans nom d'auteur**, pour que le wiki reste cohérent. Les adresses IP et la cible des entrées du journal qui le concernent sont effacées. L'effacement lui-même est journalisé, sans l'identité de la personne.
 
+- **Mentions** : une mention dans une page ne conserve que l'identifiant de la personne, jamais son nom, et une mention dans un commentaire est supprimée avec le compte. Le texte d'un commentaire est en revanche un texte libre : si quelqu'un y a tapé le nom de la personne, ce texte reste (comme tout texte écrit par un tiers) ; un administrateur peut supprimer le commentaire.
 - Un compte fédéré (SSO, LDAP) est **recréé** à sa prochaine connexion s'il reste autorisé par l'annuaire : retirez-le d'abord des groupes.
 - Le texte d'un commentaire peut contenir des données personnelles écrites par la personne ; un administrateur peut le supprimer à part si la demande le justifie.
 - **Sauvegardes** : une personne effacée reste présente dans les sauvegardes existantes jusqu'à leur rotation (`BACKUP_KEEP`, 14 par défaut). Indiquez ce délai dans votre politique ; en cas de restauration, rejouez les effacements demandés depuis la sauvegarde.

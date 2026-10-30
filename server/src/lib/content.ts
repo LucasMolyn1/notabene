@@ -73,8 +73,8 @@ const NODES: Record<string, AttrRules> = {
   tableCell: cell,
   callout: { type: oneOf('info', 'warning', 'success', 'danger') },
   pageLink: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined) },
-  // Mention d'une personne : seul `id` compte (c'est lui qui désigne et notifie) ; `label` n'est qu'un repli d'affichage (exports).
-  mention: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined), label: str(80) },
+  // Mention d'une personne : seul l'identifiant est enregistré. Le nom n'entre jamais dans la page (il vient de la table des utilisateurs).
+  mention: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined) },
   mermaid: { code: str(50_000), width: nullable(int(120, 4000)) },
   plantuml: { code: str(50_000), width: nullable(int(120, 4000)) },
   excalidraw: { scene: str(MAX_DIAGRAM), svg: isSvgDataUrl, width: nullable(int(120, 4000)) },

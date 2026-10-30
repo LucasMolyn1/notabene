@@ -78,7 +78,7 @@ export function suggestList({ search, onPick, host = () => document.body }) {
  * @param {HTMLTextAreaElement} textarea
  */
 export function attachMentions(textarea, pageId) {
-  const picked = new Map(); // nom -> identifiant
+  const picked = new Map(); // identifiant -> nom (deux personnes de même nom restent distinctes)
   let range = null;
   const list = suggestList({
     host: () => textarea.closest('dialog') || document.body,
@@ -87,7 +87,7 @@ export function attachMentions(textarea, pageId) {
       if (!range) return;
       const text = `@${user.name} `;
       textarea.setRangeText(text, range.from, range.to, 'end');
-      picked.set(user.name, user.id);
+      picked.set(user.id, user.name);
       textarea.focus();
       range = null;
     },
@@ -108,7 +108,7 @@ export function attachMentions(textarea, pageId) {
   textarea.addEventListener('keydown', (e) => { if (list.onKeyDown(e)) e.stopPropagation(); });
   textarea.addEventListener('blur', () => setTimeout(list.close, 120));
   return {
-    ids: () => [...new Set([...picked].filter(([name]) => textarea.value.includes(`@${name}`)).map(([, id]) => id))],
+    ids: () => [...picked].filter(([, name]) => textarea.value.includes(`@${name}`)).map(([id]) => id),
     destroy: list.destroy,
   };
 }

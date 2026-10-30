@@ -1,7 +1,9 @@
 // Pages : CRUD, arborescence, corbeille, favoris, versions, export et recherche.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { guard, requireAuth } from '../auth/context.js';
+import { can, guard, requireAuth } from '../auth/context.js';
+import { mentionIds } from '../lib/content.js';
+import { readersAmong } from '../lib/mentions.js';
 import { loadReadablePage, loadWritablePage, readableSpaceIds } from '../lib/access.js';
 import { assertMoveKeepsRestriction, canReadPage, canWritePage, filterReadable, governingPage } from '../lib/page-acl.js';
 import { audit } from '../lib/audit.js';
@@ -61,7 +63,10 @@ export default async function pageRoutes(app: FastifyInstance) {
       const p = getPageRow(db, id);
       return p && visible.has(p.space_id) && !p.deleted_at && canReadPage(db, req.auth, id) ? p.title || 'Sans titre' : null;
     };
-    return reply.type('text/markdown; charset=utf-8').send(toMarkdown(row.title, row.icon, JSON.parse(row.content), titleOf));
+    // Les personnes mentionnées ne sont nommées qu'à une personne connectée, et seulement si elles peuvent lire la page.
+    const doc = JSON.parse(row.content);
+    const names = can(req.auth, 'read') ? new Map(readersAmong(db, row.id, mentionIds(doc), 200).map((u) => [u.id, u.name])) : new Map<string, string>();
+    return reply.type('text/markdown; charset=utf-8').send(toMarkdown(row.title, row.icon, doc, titleOf, (id) => names.get(id) ?? null));
   });
 
   app.post('/pages/:id/move', {

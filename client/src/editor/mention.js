@@ -1,5 +1,5 @@
-// Mention d'une personne dans la page (« @nom »). Le nœud ne garde que l'identifiant (qui désigne et notifie) et un nom de repli ;
-// le nom affiché est celui que le serveur renvoie pour cet identifiant.
+// Mention d'une personne dans la page (« @nom »). Le nœud ne garde que l'identifiant (qui désigne et notifie) : le nom affiché
+// est celui que le serveur renvoie pour cet identifiant, jamais un texte écrit dans la page.
 import { Node, mergeAttributes } from '@tiptap/core';
 import { session } from '../session.js';
 import { h } from '../util.js';
@@ -15,7 +15,7 @@ export function rememberMentionNames(users) {
   notify();
 }
 
-const nameOf = (attrs) => names.get(attrs.id) || attrs.label || 'utilisateur';
+const nameOf = (attrs) => names.get(attrs.id) || 'utilisateur';
 
 export const Mention = Node.create({
   name: 'mention',
@@ -27,7 +27,6 @@ export const Mention = Node.create({
   addAttributes() {
     return {
       id: { default: null, parseHTML: (el) => el.getAttribute('data-mention-id') },
-      label: { default: '', parseHTML: (el) => (el.textContent || '').replace(/^@/, '').slice(0, 80) },
     };
   },
 
@@ -59,7 +58,7 @@ export function createMentionMenu(editor, getPageId) {
     onPick: (user) => {
       if (!range) return;
       rememberMentionNames([user]);
-      editor.chain().focus().deleteRange(range).insertContent([{ type: 'mention', attrs: { id: user.id, label: user.name } }, { type: 'text', text: ' ' }]).run();
+      editor.chain().focus().deleteRange(range).insertContent([{ type: 'mention', attrs: { id: user.id } }, { type: 'text', text: ' ' }]).run();
       range = null;
     },
   });

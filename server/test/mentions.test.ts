@@ -41,7 +41,7 @@ const call = (s: S | null, method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', 
 const PAGE = 'pagelibre001';
 const notifs = (userId: string) => db.prepare('SELECT type, page_id AS pageId, actor_id AS actor FROM notifications WHERE user_id = ? ORDER BY created_at').all(userId);
 const comment = (s: S, body: object, page = PAGE) => call(s, 'POST', `/api/v3/pages/${page}/comments`, body);
-const mentionDoc = (...ids: string[]) => ({ type: 'doc', content: [{ type: 'paragraph', content: ids.flatMap((id) => [{ type: 'text', text: 'Salut ' }, { type: 'mention', attrs: { id, label: `Nom ${id}` } }]) }] });
+const mentionDoc = (...ids: string[]) => ({ type: 'doc', content: [{ type: 'paragraph', content: ids.flatMap((id) => [{ type: 'text', text: 'Salut ' }, { type: 'mention', attrs: { id } }]) }] });
 async function restrictTo(...ids: string[]) {
   const admin = await login('admin@example.com');
   const res = await call(admin, 'PUT', `/api/v3/pages/${PAGE}/permissions`, { entries: ids.map((userId) => ({ userId, level: 'write' })) });
@@ -54,14 +54,15 @@ describe('contenu : marque et nœud autorisés', () => {
     const doc = sanitizeDoc({ type: 'doc', content: [{ type: 'paragraph', content: [
       { type: 'text', text: 'a', marks: [{ type: 'commentAnchor', attrs: { id: 'fil1' } }] },
       { type: 'text', text: 'b', marks: [{ type: 'commentAnchor', attrs: { id: '<x>' } }] },
-      { type: 'mention', attrs: { id: 'ed1', label: 'Nom' } },
+      { type: 'mention', attrs: { id: 'ed1', label: 'Nom copié dans la page' } },
       { type: 'mention', attrs: { id: '../x', label: 'Piège' } },
-      { type: 'mention', attrs: { id: 'ed2', label: 'x'.repeat(81) } },
+      { type: 'mention', attrs: { id: 'ed2' } },
     ] }] });
     const [a, b, m1, m2] = doc.content![0]!.content!;
     expect(a!.marks).toEqual([{ type: 'commentAnchor', attrs: { id: 'fil1' } }]);
     expect(b!.marks).toBeUndefined();
-    expect(m1).toEqual({ type: 'mention', attrs: { id: 'ed1', label: 'Nom' } });
+    // Le nom n'est jamais enregistré dans la page : il disparaît avec le compte.
+    expect(m1).toEqual({ type: 'mention', attrs: { id: 'ed1' } });
     expect(m2).toEqual({ type: 'mention', attrs: { id: 'ed2' } });
     expect(doc.content![0]!.content).toHaveLength(4);
   });
@@ -154,6 +155,14 @@ describe('personnes mentionnables', () => {
     expect((await call(ed1, 'GET', `/api/v3/pages/${PAGE}/mentionable`)).json().items.map((u: { id: string }) => u.id).sort()).toEqual(['admin', 'ed1']);
   });
 
+  it('ne se limite pas aux 200 premiers comptes sur une page restreinte', async () => {
+    const insert = db.prepare("INSERT INTO users (id, sub, name, role, created_at) VALUES (?, ?, ?, 'editor', 0)");
+    for (let i = 0; i < 250; i++) insert.run(`aaa${i}`, `sub:aaa${i}`, `Aaa ${String(i).padStart(3, '0')}`);
+    await restrictTo('ed1');
+    const ed1 = await login('ed1@example.com');
+    expect((await call(ed1, 'GET', `/api/v3/pages/${PAGE}/mentionable`)).json().items.map((u: { id: string }) => u.id).sort()).toEqual(['admin', 'ed1']);
+  });
+
   it('est refusé aux lecteurs, aux anonymes et pour une page invisible', async () => {
     expect((await call(await login('rd@example.com'), 'GET', `/api/v3/pages/${PAGE}/mentionable`)).statusCode).toBe(403);
     expect([401, 403]).toContain((await call(null, 'GET', `/api/v3/pages/${PAGE}/mentionable`)).statusCode);
@@ -202,7 +211,69 @@ describe('mentions dans une page', () => {
     const ed1 = await login('ed1@example.com');
     const etag = (await call(ed1, 'GET', `/api/v3/pages/${PAGE}`)).headers.etag as string;
     await call(ed1, 'PATCH', `/api/v3/pages/${PAGE}`, { content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'mention', attrs: { id: 'ed2', label: 'Ann <b>' } }] }] } }, { 'if-match': etag });
-    expect((await call(ed1, 'GET', `/api/v3/pages/${PAGE}/export`)).body).toContain('@Ann <b>');
+    expect((db.prepare('SELECT content FROM pages WHERE id = ?').get(PAGE) as { content: string }).content).not.toContain('Ann');
+    // Connecté : nom actuel, comme texte. Visiteur : jamais de nom.
+    expect((await call(ed1, 'GET', `/api/v3/pages/${PAGE}/export`)).body).toContain('@Nom ed2');
+    const publicPage = (db.prepare("SELECT p.id FROM pages p JOIN spaces s ON s.id = p.space_id WHERE s.visibility = 'public' LIMIT 1").get() as { id: string }).id;
+    const pubEtag = (await call(ed1, 'GET', `/api/v3/pages/${publicPage}`)).headers.etag as string;
+    await call(ed1, 'PATCH', `/api/v3/pages/${publicPage}`, { content: mentionDoc('ed2') }, { 'if-match': pubEtag });
+    const anon = (await call(null, 'GET', `/api/v3/pages/${publicPage}/export`)).body;
+    expect(anon).toContain('@utilisateur');
+    expect(anon).not.toContain('ed2');
+    expect(anon).not.toContain('Nom ');
+  });
+
+  it('GET /mentioned : refusé aux visiteurs, et ne nomme ni un compte désactivé ni une personne sans accès', async () => {
+    const ed1 = await login('ed1@example.com');
+    const etag = (await call(ed1, 'GET', `/api/v3/pages/${PAGE}`)).headers.etag as string;
+    await call(ed1, 'PATCH', `/api/v3/pages/${PAGE}`, { content: mentionDoc('ed2', 'ed3', 'rd', 'fantome') }, { 'if-match': etag });
+    db.prepare("UPDATE users SET disabled = 1 WHERE id = 'rd'").run();
+    await restrictTo('ed1', 'ed2');
+    expect((await call(ed1, 'GET', `/api/v3/pages/${PAGE}/mentioned`)).json().items).toEqual([{ id: 'ed2', name: 'Nom ed2' }]);
+    const publicPage = (db.prepare("SELECT p.id FROM pages p JOIN spaces s ON s.id = p.space_id WHERE s.visibility = 'public' LIMIT 1").get() as { id: string }).id;
+    expect([401, 403]).toContain((await call(null, 'GET', `/api/v3/pages/${publicPage}/mentioned`)).statusCode);
+  });
+
+  it('une page copiée ou créée avec des mentions ne les notifie pas, même quand on la modifie ensuite', async () => {
+    const ed1 = await login('ed1@example.com');
+    const etag = (await call(ed1, 'GET', `/api/v3/pages/${PAGE}`)).headers.etag as string;
+    await call(ed1, 'PATCH', `/api/v3/pages/${PAGE}`, { content: mentionDoc('ed2') }, { 'if-match': etag });
+    expect(notifs('ed2')).toHaveLength(1);
+    const space = (db.prepare("SELECT space_id AS s FROM pages WHERE id = ?").get(PAGE) as { s: string }).s;
+    for (let i = 0; i < 3; i++) expect((await call(ed1, 'POST', `/api/v3/pages/${PAGE}/duplicate`)).statusCode).toBeLessThan(300);
+    const fromApi = (await call(ed1, 'POST', '/api/v3/pages', { spaceId: space, title: 'Modèle', content: mentionDoc('ed3') })).json().id;
+    const e2 = (await call(ed1, 'GET', `/api/v3/pages/${fromApi}`)).headers.etag as string;
+    await call(ed1, 'PATCH', `/api/v3/pages/${fromApi}`, { title: 'Modèle 2', content: mentionDoc('ed3') }, { 'if-match': e2 });
+    expect(notifs('ed2')).toHaveLength(1);
+    expect(notifs('ed3')).toEqual([]);
+  });
+
+  it('une personne qui suit la page et est mentionnée ne reçoit que « mention »', async () => {
+    const ed1 = await login('ed1@example.com');
+    db.prepare("INSERT INTO page_watch (user_id, page_id, created_at) VALUES ('ed2', ?, 0)").run(PAGE);
+    const etag = (await call(ed1, 'GET', `/api/v3/pages/${PAGE}`)).headers.etag as string;
+    await call(ed1, 'PATCH', `/api/v3/pages/${PAGE}`, { content: mentionDoc('ed2') }, { 'if-match': etag });
+    expect(notifs('ed2')).toEqual([{ type: 'mention', pageId: PAGE, actor: 'ed1' }]);
+  });
+
+  it('une personne mentionnée avant d’avoir accès est notifiée quand l’accès lui est donné', async () => {
+    await restrictTo('ed1');
+    const ed1 = await login('ed1@example.com');
+    const etag = (await call(ed1, 'GET', `/api/v3/pages/${PAGE}`)).headers.etag as string;
+    const first = await call(ed1, 'PATCH', `/api/v3/pages/${PAGE}`, { content: mentionDoc('ed3') }, { 'if-match': etag });
+    expect(notifs('ed3')).toEqual([]);
+    await restrictTo('ed1', 'ed3');
+    await call(ed1, 'PATCH', `/api/v3/pages/${PAGE}`, { content: mentionDoc('ed3', 'ed1') }, { 'if-match': first.headers.etag as string });
+    expect(notifs('ed3')).toEqual([{ type: 'mention', pageId: PAGE, actor: 'ed1' }]);
+  });
+
+  it('modifier un commentaire ne notifie personne de plus', async () => {
+    const ed1 = await login('ed1@example.com');
+    const id = (await comment(ed1, { body: 'v1', mentions: ['ed2'] })).json().id;
+    expect(notifs('ed2')).toHaveLength(1);
+    await call(ed1, 'PATCH', `/api/v3/pages/${PAGE}/comments/${id}`, { body: 'v2 @Nom ed3' });
+    expect(notifs('ed2')).toHaveLength(1);
+    expect(notifs('ed3')).toEqual([]);
   });
 });
 
