@@ -12,6 +12,8 @@
   .label-x { width: 40px; height: 40px; }
   .tpl-item { min-height: 48px; }
   .mention-item { min-height: 44px; }
+  .swatch { width: 36px; height: 36px; }
+  .details-toggle { width: 40px; height: 40px; }
   .label-input { width: 100%; font-size: 16px; }
   .sb-btn, .tree-row { height: 42px; }
   .tree-rename { height: 34px; }
