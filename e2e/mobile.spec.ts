@@ -39,8 +39,8 @@ test('la barre du haut se limite à l’essentiel ; le reste est dans le menu «
 
 test('la barre de mise en forme apparaît dans l’éditeur, met en gras et ouvre le menu d’insertion', async ({ page }) => {
   await loginUi(page, ADMIN.email, ADMIN.password);
-  await page.getByText('Nouvelle page').first().click({ force: true });
-  await page.getByRole('button', { name: /Barre latérale/ }).isVisible();
+  await page.getByRole('button', { name: /Barre latérale/ }).click(); // le tiroir de navigation est fermé au départ
+  await page.getByRole('button', { name: /Nouvelle page/ }).first().click();
   const toolbar = page.getByRole('toolbar', { name: 'Mise en forme' });
   await page.locator('.tiptap').click();
   await expect(toolbar).toBeVisible();
