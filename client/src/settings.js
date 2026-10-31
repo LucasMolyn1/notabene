@@ -11,6 +11,7 @@ import { renderAi } from './settings/ai.js';
 import { renderDiagrams, renderEmbed, renderEmbeds, renderTools, renderWebhooks } from './settings/features.js';
 import { renderImport, renderInstance } from './settings/instance.js';
 import { renderGroups } from './settings/groups.js';
+import { renderShares } from './settings/shares.js';
 import { store } from './store.js';
 
 // ---- Page -----------------------------------------------------------------------------
@@ -20,6 +21,7 @@ const SECTIONS = [
   { group: 'Compte', id: 'appearance', label: 'Apparence', ico: 'sun', render: renderAppearance },
   { group: 'Compte', id: 'tokens', label: 'Jetons d’API', ico: 'key', render: renderTokens },
   { group: 'Compte', id: 'about', label: 'À propos', ico: 'sparkle', render: renderAbout },
+  { group: 'Fonctionnalités', id: 'shares', label: 'Pages partagées', ico: 'globe', write: true, render: renderShares },
   { group: 'Fonctionnalités', id: 'ai', label: 'Recherche IA', ico: 'sparkle', sensitive: true, render: renderAi },
   { group: 'Fonctionnalités', id: 'diagrams', label: 'Diagrammes', ico: 'diamond', render: renderDiagrams },
   { group: 'Fonctionnalités', id: 'tools', label: 'Outils', ico: 'qrcode', render: renderTools },
@@ -41,7 +43,7 @@ export function showSettings(sectionId) {
   beginView();
   // Un gestionnaire d'espace (rôle « full ») accède aux espaces qu'il gère, sans le reste de l'administration.
   const manager = store.spaces.some((s) => s.role === 'full');
-  const sections = SECTIONS.filter((s) => !s.admin || session.can('admin')).filter((s) => !s.manager || session.can('admin') || manager);
+  const sections = SECTIONS.filter((s) => !s.admin || session.can('admin')).filter((s) => !s.manager || session.can('admin') || manager).filter((s) => !s.write || session.can('write'));
   const section = sections.find((s) => s.id === sectionId) || sections[0];
   document.title = `${section.label} · Paramètres · Notabene`;
 

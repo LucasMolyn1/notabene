@@ -316,12 +316,14 @@ export function spaceForm(space = null) {
   visibility.value = space?.visibility || 'private';
   // Seul un administrateur change la visibilité publique ; un gestionnaire d'espace règle le nom, l'icône et la description.
   const isAdmin = session.can('admin') && space?.kind !== 'personal'; // un espace personnel est toujours privé
+  const sharing = h('input', { type: 'checkbox', 'aria-label': 'Autoriser le partage public par lien dans cet espace' });
+  sharing.checked = space ? space.sharing !== false : true;
   const access = h('select', { class: 'input', 'aria-label': 'Qui y a accès au départ' },
     h('option', { value: 'admins' }, 'Les administrateurs seulement (j’ajoute ensuite des membres)'),
     h('option', { value: 'everyone' }, 'Tout le monde, en édition'));
 
   const submit = async () => {
-    const values = { name: name.value.trim() || 'Nouvel espace', icon: spaceIcon, description: desc.value.trim(), ...(isAdmin ? { visibility: visibility.value } : {}), ...(space ? {} : { access: access.value }) };
+    const values = { name: name.value.trim() || 'Nouvel espace', icon: spaceIcon, description: desc.value.trim(), ...(isAdmin ? { visibility: visibility.value, sharing: sharing.checked } : {}), ...(space ? {} : { access: access.value }) };
     if (space) return (await attempt(() => store.updateSpace(space.id, values).then(() => true))) ? undefined : false;
     const id = await attempt(() => store.createSpace(values));
     if (!id) return false;
@@ -337,6 +339,7 @@ export function spaceForm(space = null) {
       h('label', { class: 'field' }, h('span', null, 'Nom'), h('div', { class: 'row' }, iconBtn, name)),
       h('label', { class: 'field' }, h('span', null, 'Description'), desc),
       isAdmin && h('label', { class: 'field' }, h('span', null, 'Visibilité'), visibility),
+      isAdmin && h('label', { class: 'check-row' }, sharing, h('span', null, 'Autoriser le partage public par lien', h('small', { class: 'hint' }, 'Décocher retire les liens publics existants de cet espace.'))),
       !space && h('label', { class: 'field' }, h('span', null, 'Accès au départ'), access)),
     actions: [{ label: 'Annuler' }, { label: space ? 'Enregistrer' : 'Créer l’espace', primary: true, onClick: submit }],
   });

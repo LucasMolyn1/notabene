@@ -371,6 +371,23 @@ export const MIGRATIONS: string[] = [
   CREATE TRIGGER spaces_personal_private_update BEFORE UPDATE ON spaces WHEN NEW.kind = 'personal' AND NEW.visibility != 'private'
     BEGIN SELECT RAISE(ABORT, 'un espace personnel est toujours privé'); END;
   `,
+  // v16 : partage public d'une page par lien. Le jeton (192 bits) est le seul secret du lien ; le partage se vérifie à CHAQUE lecture
+  // (réglage d'instance, réglage de l'espace, page hors corbeille, restriction de page), il n'a donc rien de définitif.
+  `
+  CREATE TABLE page_shares (
+    id               TEXT PRIMARY KEY,
+    page_id          TEXT NOT NULL UNIQUE REFERENCES pages(id) ON DELETE CASCADE,
+    token            TEXT NOT NULL UNIQUE,
+    include_children INTEGER NOT NULL DEFAULT 0,
+    indexing         INTEGER NOT NULL DEFAULT 0,
+    -- Page à permissions restreintes partagée en connaissance de cause (confirmation explicite à la création).
+    allow_restricted INTEGER NOT NULL DEFAULT 0,
+    created_by       TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL
+  );
+  ALTER TABLE spaces ADD COLUMN sharing_enabled INTEGER NOT NULL DEFAULT 1;
+  `,
 ];
 
 export function openDb(file: string): DB {
