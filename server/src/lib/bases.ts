@@ -195,8 +195,8 @@ export function removeProperty(db: DB, baseId: string, id: string): void {
       const c = v.config;
       // Un Kanban dont la colonne de rangement disparaît redevient un tableau.
       const lost = c.groupBy === id;
-      const { groupBy: _g, ...rest } = c;
-      const next: ViewConfig = { ...rest, ...(lost ? { type: 'table' as const } : c.groupBy ? { groupBy: c.groupBy } : {}), sort: c.sort.filter((s) => s.propertyId !== id), filters: c.filters.filter((f) => f.propertyId !== id), hidden: c.hidden.filter((h) => h !== id) };
+      // Clés dans l'ordre du schéma : la comparaison ci-dessous ne réécrit que les vues qui changent vraiment.
+      const next: ViewConfig = { type: lost ? 'table' : c.type, ...(!lost && c.groupBy ? { groupBy: c.groupBy } : {}), sort: c.sort.filter((s) => s.propertyId !== id), filters: c.filters.filter((f) => f.propertyId !== id), hidden: c.hidden.filter((h) => h !== id) };
       if (JSON.stringify(next) !== JSON.stringify(c)) db.prepare('UPDATE base_views SET config = ? WHERE id = ?').run(JSON.stringify(next), v.id);
     }
   })();

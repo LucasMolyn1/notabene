@@ -207,6 +207,26 @@ test('Kanban : cartes par statut, déplacement par glisser-déposer et au clavie
   await page.keyboard.press('Enter');
   await page.getByRole('menuitem', { name: 'Terminé' }).press('Enter');
   await expect(lane('Terminé').getByText('Carte B')).toBeVisible();
+  // Le focus suit la carte déplacée et le déplacement est annoncé.
+  await expect(lane('Terminé').locator('li.bt-card', { hasText: 'Carte B' }).getByRole('button', { name: /modifier le titre/ })).toBeFocused();
+  await expect(page.getByRole('status')).toContainText('Carte « Carte B » déplacée vers Terminé');
+
+  // Modifier le titre d'une carte : le champ se laisse cliquer et saisir.
+  await lane('Terminé').getByRole('button', { name: 'Carte A (modifier le titre)' }).click();
+  const field = page.getByRole('textbox', { name: /Nom/ });
+  await field.click();
+  await field.fill('Carte A renommée');
+  await page.keyboard.press('Enter');
+  await expect(lane('Terminé').getByText('Carte A renommée')).toBeVisible();
+
+  // Un texte glissé depuis ailleurs n'est pas pris pour une carte.
+  await page.evaluate(() => {
+    const target = document.querySelector('section.bt-lane[data-lane=""]') ?? document.querySelector('section.bt-lane');
+    const dt = new DataTransfer();
+    dt.setData('text/plain', 'identifiant-de-ligne-forge');
+    target!.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  });
+  await expect(lane('Terminé').locator('li.bt-card')).toHaveCount(2);
 
   // Nouvelle carte dans une colonne.
   await lane('En cours').getByRole('button', { name: /Nouvelle carte/ }).click();

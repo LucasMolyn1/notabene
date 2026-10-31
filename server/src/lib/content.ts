@@ -139,7 +139,11 @@ function checkStructure(node: DocNode, parent: string) {
   }
 }
 
+// Au plus 20 blocs « base » par page : chacun demande la base entière au serveur à chaque affichage.
+export const MAX_BASE_BLOCKS = 20;
+
 export function sanitizeDoc(input: unknown): DocNode {
+  let baseBlocks = 0;
   let count = 0;
   let textLength = 0;
 
@@ -178,7 +182,7 @@ export function sanitizeDoc(input: unknown): DocNode {
     if (type === 'pageLink' && !attrs?.id) return null;
     if (type === 'mention' && !attrs?.id) return null;
     if (type === 'embed' && !attrs?.url) return null;
-    if (type === 'baseBlock' && !attrs?.id) return null;
+    if (type === 'baseBlock' && (!attrs?.id || ++baseBlocks > MAX_BASE_BLOCKS)) return null;
     if (Array.isArray(node.content)) {
       out.content = node.content.map((c) => walk(c, depth + 1, type)).filter((c): c is DocNode => c !== null);
     }

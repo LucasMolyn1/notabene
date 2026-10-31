@@ -13,6 +13,7 @@ import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
 const PAGE_SIZE = 300;
+const CARD_TYPE = 'application/x-notabene-card';
 
 export const TYPE_LABELS = {
   text: 'Texte', number: 'Nombre', date: 'Date', select: 'Sélection', multi_select: 'Multi-sélection',
@@ -39,6 +40,7 @@ export async function showBase(initial) {
   let activeView = null;
   let shown = PAGE_SIZE;
   let editing = false;
+  const laneShown = new Map(); // cartes affichées par colonne (Kanban)
   let pendingFocus = null; // cellule à refocaliser après le rendu qui suit une saisie
   let destroyed = false;
   let lastOwnWrite = 0; // les écritures de cet écran reviennent aussi par le flux : on n'y réagit pas
@@ -46,7 +48,10 @@ export async function showBase(initial) {
 
   const body = h('div', { class: 'bt-body' });
   const crumbsEl = h('nav', { class: 'crumbs', 'aria-label': 'Fil d’Ariane' });
-  const root = h('div', { class: 'scroller' }, h('div', { class: 'page-wrap bt-wrap' }, body));
+  // Annonce aux lecteurs d'écran (déplacement d'une carte) : la région vit hors du tableau, que chaque rendu reconstruit.
+  const live = h('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite' });
+  const announce = (text) => { live.textContent = ''; setTimeout(() => { live.textContent = text; }, 50); };
+  const root = h('div', { class: 'scroller' }, h('div', { class: 'page-wrap bt-wrap' }, body, live));
   main().replaceChildren(topbar(crumbsEl, []), root);
   document.title = `${initial.title || 'Base'} · Notabene`;
 
@@ -348,9 +353,10 @@ export async function showBase(initial) {
     try {
       const row = await api.post(`/bases/${id}/rows`, { values });
       data.rows.push(row);
+      pendingFocus = { rowId: row.id, card: config().type === 'kanban' };
       render();
-      const first = body.querySelector(`tr[data-row="${row.id}"] .bt-cell-btn`);
-      first?.focus();
+      if (config().type !== 'kanban') body.querySelector(`tr[data-row="${row.id}"] .bt-cell-btn`)?.focus();
+      else announce('Carte ajoutée');
     } catch (err) { fail(err); }
   }
   async function removeRow(row) {
@@ -368,15 +374,19 @@ export async function showBase(initial) {
     const titleProp = props()[0];
     const fields = props().filter((p) => p.id !== titleProp.id && p.id !== g.id && !c.hidden.includes(p.id)).slice(0, 3);
     const lanes = [...g.options.map((o) => ({ id: o.id, label: o.name, color: o.color })), { id: null, label: 'Sans valeur', color: 'gray' }];
-    const move = (row, laneId) => { if ((row.values[g.id] ?? null) !== laneId) commit(row, g, laneId); };
+    const move = (row, laneId) => {
+      if ((row.values[g.id] ?? null) === laneId) return;
+      pendingFocus = { rowId: row.id, card: true };
+      const name = textOf(titleProp, row.values[titleProp.id]) || 'Sans titre';
+      announce(`Carte « ${name} » déplacée vers ${lanes.find((l) => l.id === laneId)?.label ?? 'Sans valeur'}`);
+      commit(row, g, laneId);
+    };
 
     const card = (row, lane) => {
       const title = textOf(titleProp, row.values[titleProp.id]) || 'Sans titre';
+      const head = h('div', { class: 'bt-card-head' });
       const titleEl = h('div', { class: 'bt-card-title' }, title);
-      const el = h('li', { class: 'bt-card', 'data-row': row.id, draggable: canWrite() ? 'true' : null },
-        canWrite() && titleProp.type === 'text'
-          ? h('button', { class: 'bt-card-name', 'aria-label': `${title} (modifier le titre)`, onClick: () => editCell(titleEl, row, titleProp) }, titleEl)
-          : titleEl,
+      const el = h('li', { class: 'bt-card', 'data-row': row.id, draggable: canWrite() ? 'true' : null }, head,
         fields.map((p) => {
           const shown = display(p, row.values[p.id]);
           return shown && h('div', { class: 'bt-card-field' }, h('span', { class: 'muted' }, `${p.name} : `), shown);
@@ -390,8 +400,13 @@ export async function showBase(initial) {
             { label: 'Supprimer la carte', icon: 'trash', danger: true, onClick: () => removeRow(row) },
           ]),
         }, icon('more', 15)));
+      // Le titre se modifie dans son propre conteneur ; pendant la saisie la carte n'est plus déplaçable (on peut alors cliquer et sélectionner dans le champ).
+      if (canWrite() && titleProp.type === 'text') {
+        head.append(h('button', { class: 'bt-card-name', 'aria-label': `${title} (modifier le titre)`, onClick: () => { el.removeAttribute('draggable'); editCell(head, row, titleProp); } }, titleEl));
+      } else head.append(titleEl);
       if (canWrite()) {
-        el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', row.id); e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); });
+        // Type propre à cette application, avec la base : un texte glissé depuis ailleurs n'est jamais pris pour une carte.
+        el.addEventListener('dragstart', (e) => { e.dataTransfer.setData(CARD_TYPE, JSON.stringify({ baseId: id, rowId: row.id })); e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); });
         el.addEventListener('dragend', () => el.classList.remove('dragging'));
       }
       return el;
@@ -400,18 +415,23 @@ export async function showBase(initial) {
     return h('div', { class: 'bt-board', role: 'group', 'aria-label': `Kanban, rangé par ${g.name}` }, lanes.map((lane) => {
       const inLane = rows.filter((r) => (r.values[g.id] ?? null) === lane.id);
       if (lane.id === null && !inLane.length && canWrite() === false) return null;
-      const list = h('ul', { class: 'bt-lane-list', 'aria-label': `${lane.label}, ${inLane.length} carte${inLane.length > 1 ? 's' : ''}` }, inLane.slice(0, shown).map((r) => card(r, lane)));
+      const cap = laneShown.get(lane.id) ?? PAGE_SIZE;
+      const list = h('ul', { class: 'bt-lane-list', 'aria-label': `${lane.label}, ${inLane.length} carte${inLane.length > 1 ? 's' : ''}` }, inLane.slice(0, cap).map((r) => card(r, lane)));
       const laneEl = h('section', { class: 'bt-lane', 'data-lane': lane.id ?? '' },
         h('header', { class: 'bt-lane-head' }, h('span', { class: `bt-dot c-${lane.color}` }), h('strong', null, lane.label), h('span', { class: 'muted' }, String(inLane.length))),
         list,
+        inLane.length > cap && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { laneShown.set(lane.id, cap + PAGE_SIZE); render(); } }, `Afficher ${Math.min(PAGE_SIZE, inLane.length - cap)} cartes de plus (${cap} sur ${inLane.length})`),
         canWrite() && h('button', { class: 'btn btn-ghost btn-sm bt-lane-add', disabled: data.rows.length >= data.limits.rows, onClick: () => addRow(lane.id ? { [g.id]: lane.id } : {}) }, icon('plus', 14), `Nouvelle carte (${lane.label})`));
       if (canWrite()) {
-        laneEl.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; laneEl.classList.add('over'); });
+        laneEl.addEventListener('dragover', (e) => { if (!e.dataTransfer.types.includes(CARD_TYPE)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; laneEl.classList.add('over'); });
         laneEl.addEventListener('dragleave', (e) => { if (!laneEl.contains(e.relatedTarget)) laneEl.classList.remove('over'); });
         laneEl.addEventListener('drop', (e) => {
-          e.preventDefault();
           laneEl.classList.remove('over');
-          const row = data.rows.find((r) => r.id === e.dataTransfer.getData('text/plain'));
+          if (!e.dataTransfer.types.includes(CARD_TYPE)) return;
+          e.preventDefault();
+          let drop = null;
+          try { drop = JSON.parse(e.dataTransfer.getData(CARD_TYPE)); } catch { /* donnée étrangère */ }
+          const row = drop?.baseId === id ? data.rows.find((r) => r.id === drop.rowId) : null;
           if (row) move(row, lane.id);
         });
       }
@@ -603,7 +623,11 @@ export async function showBase(initial) {
         canWrite() && c.type !== 'kanban' && h('button', { class: 'btn btn-ghost btn-sm', disabled: data.rows.length >= data.limits.rows, onClick: () => addRow() }, icon('plus', 14), 'Nouvelle ligne'),
         h('span', { class: 'muted' }, `${data.rows.length} ${data.rows.length > 1 ? 'lignes' : 'ligne'}${rows.length !== data.rows.length ? `, ${rows.length} affichées` : ''}`)),
     ].filter(Boolean));
-    if (pendingFocus && !editing) {
+    if (pendingFocus?.card && !editing) {
+      const card = body.querySelector(`li[data-row="${pendingFocus.rowId}"]`);
+      pendingFocus = null;
+      (card?.querySelector('.bt-card-name') ?? card?.querySelector('.bt-card-menu'))?.focus();
+    } else if (pendingFocus && !editing) {
       const target = [...body.querySelectorAll(`tr[data-row="${pendingFocus.rowId}"] .bt-cell-btn, li[data-row="${pendingFocus.rowId}"] .bt-card-name`)].find((b) => !b.dataset.prop || b.dataset.prop === pendingFocus.propId);
       pendingFocus = null;
       target?.focus();

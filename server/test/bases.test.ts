@@ -716,6 +716,31 @@ describe('Kanban et bloc intégré', () => {
     expect(JSON.stringify(JSON.parse((db.prepare('SELECT content FROM pages WHERE id = ?').get('pagehote0001') as { content: string }).content))).not.toContain('baseBlock');
   });
 
+
+  it('au plus 20 blocs base par page', async () => {
+    const ed = await login('ed1@example.com');
+    const b = await newBase(ed);
+    insertPage('pageblocs0001', teamSpace(), 'Beaucoup de blocs');
+    const version = (db.prepare('SELECT version FROM pages WHERE id = ?').get('pageblocs0001') as { version: number }).version;
+    const content = { type: 'doc', content: [...Array.from({ length: 30 }, () => ({ type: 'baseBlock', attrs: { id: b.page.id } })), { type: 'paragraph' }] };
+    expect((await app.inject({ method: 'PATCH', url: '/api/v3/pages/pageblocs0001', payload: { content }, cookies: ed.cookies, headers: { ...ed.headers, 'if-match': `"${version}"` } })).statusCode).toBe(200);
+    const stored = JSON.parse((db.prepare('SELECT content FROM pages WHERE id = ?').get('pageblocs0001') as { content: string }).content);
+    expect(stored.content.filter((n: { type: string }) => n.type === 'baseBlock')).toHaveLength(20);
+  });
+
+  it('supprimer une colonne ne réécrit pas les vues qui n’en dépendent pas', async () => {
+    const { ed, id, status, multi } = await board();
+    await post(ed, id, { type: 'kanban', groupBy: status.id, sort: [], filters: [], hidden: [] });
+    const before = (db.prepare('SELECT id, config FROM base_views WHERE base_id = ? ORDER BY id').all(id) as { id: string; config: string }[]);
+    const watch = db.prepare('SELECT config FROM base_views WHERE id = ?');
+    // Un déclencheur compte les réécritures de vues.
+    db.exec('CREATE TEMP TABLE rewrites (n INTEGER)');
+    db.exec('CREATE TEMP TRIGGER count_view_rewrites AFTER UPDATE ON base_views BEGIN INSERT INTO rewrites VALUES (1); END');
+    expect((await call(ed, 'DELETE', `/api/v3/bases/${id}/properties/${multi.id}`)).statusCode).toBe(204);
+    expect((db.prepare('SELECT COUNT(*) AS n FROM rewrites').get() as { n: number }).n).toBe(0);
+    for (const v of before) expect((watch.get(v.id) as { config: string }).config).toBe(v.config);
+  });
+
   it('une page partagée publiquement ne montre ni le bloc ni l’identifiant de la base', async () => {
     const ed = await login('ed1@example.com');
     await call(await login('admin@example.com'), 'PUT', '/api/v3/admin/sharing', { enabled: true });

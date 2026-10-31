@@ -12,6 +12,21 @@ import { pagePath } from '../urls.js';
 import { openModal, toast } from '../ui.js';
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+// Un seul chargement par base, partagé par tous les blocs de la page (et réutilisé quelques secondes) : N blocs de la même base ne font pas N requêtes.
+const FRESH_MS = 3000;
+const loads = new Map();
+const fetchBase = (baseId) => {
+  const hit = loads.get(baseId);
+  if (hit && Date.now() - hit.at < FRESH_MS) return hit.promise;
+  const promise = api.get(`/bases/${baseId}`);
+  const entry = { at: Date.now(), promise };
+  loads.set(baseId, entry);
+  promise.catch(() => { if (loads.get(baseId) === entry) loads.delete(baseId); });
+  return promise;
+};
+// Une modification annoncée par le serveur invalide le cache (un seul écouteur pour tous les blocs).
+window.addEventListener('notabene:base', (e) => { const pageId = /** @type {CustomEvent} */ (e).detail?.pageId; if (pageId) loads.delete(pageId); });
 const MAX_ROWS_SHOWN = 8;
 const MAX_COLS_SHOWN = 6;
 
@@ -57,8 +72,8 @@ export const BaseBlock = Node.create({
 
   addAttributes() {
     return {
-      id: { default: null, parseHTML: (el) => (ID.test(el.getAttribute('data-base') ?? '') ? el.getAttribute('data-base') : null) },
-      view: { default: null, parseHTML: (el) => (ID.test(el.getAttribute('data-view') ?? '') ? el.getAttribute('data-view') : null) },
+      id: { default: null, renderHTML: () => ({}), parseHTML: (el) => (ID.test(el.getAttribute('data-base') ?? '') ? el.getAttribute('data-base') : null) },
+      view: { default: null, renderHTML: () => ({}), parseHTML: (el) => (ID.test(el.getAttribute('data-view') ?? '') ? el.getAttribute('data-view') : null) },
     };
   },
   parseHTML() { return [{ tag: 'div[data-base-block]', getAttrs: (el) => (ID.test(el.getAttribute('data-base') ?? '') ? null : false) }]; },
@@ -79,7 +94,7 @@ export const BaseBlock = Node.create({
       async function paint() {
         if (!baseId || !session.user) { neutral('Base non affichée : connexion requise.'); return; }
         try {
-          const data = await api.get(`/bases/${baseId}`);
+          const data = await fetchBase(baseId);
           if (!alive) return;
           dom.replaceChildren(
             h('div', { class: 'embed-bar' },
