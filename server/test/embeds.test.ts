@@ -74,6 +74,20 @@ describe('contenu de page', () => {
     }
   });
 
+  it('l’export Markdown garde un bloc intégré, une image ou un schéma placé dans une cellule de tableau', () => {
+    const cell = (...content: object[]) => ({ type: 'tableCell', content });
+    const table = { type: 'table', content: [{ type: 'tableRow', content: [
+      cell({ type: 'embed', attrs: { url: 'https://player.vimeo.com/video/1' } }),
+      cell({ type: 'paragraph', content: [{ type: 'text', text: 'texte simple' }] }),
+      cell({ type: 'mermaid', attrs: { code: 'graph TD;A-->B' } }),
+    ] }] };
+    const md = toMarkdown('P', '', { type: 'doc', content: [table] } as never, () => null);
+    expect(md).toContain('https://player.vimeo.com/video/1');
+    expect(md).toContain('texte simple');
+    expect(md).toContain('graph TD;A--&gt;B'.replace('&gt;', '>'));
+    expect(md.split('\n').filter((l) => l.startsWith('|'))).toHaveLength(2); // une ligne de cellules et sa ligne de séparation
+  });
+
   it('les exports affichent un lien, jamais une iframe', () => {
     const d = sanitizeDoc(doc('https://player.vimeo.com/video/1?a=1&b=<x>'));
     const md = toMarkdown('P', '', d, () => null);

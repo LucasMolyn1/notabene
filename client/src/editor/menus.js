@@ -36,14 +36,19 @@ export function createBubbleMenu(editor, ctx = {}) {
       h('span', { class: 'bubble-sep' }),
       btn('↗', 'Lien', () => editor.isActive('link'), () => { linkMode = true; renderLink(); }),
       btn('A', 'Couleurs et alignement', () => editor.isActive('textColor') || editor.isActive('highlight'), () => { colorMode = true; renderColors(); }, 'color-btn'),
+      ...(ctx.onComment || ctx.onAssist ? [h('span', { class: 'bubble-sep' })] : []),
       ...(ctx.onComment ? [
-        h('span', { class: 'bubble-sep' }),
         btn(icon('comment', 15), 'Commenter la sélection', () => false, () => {
           const { from, to } = editor.state.selection;
           const text = editor.state.doc.textBetween(from, to, ' ').trim().slice(0, 200);
           if (text) ctx.onComment({ from, to, text });
         }),
       ] : []),
+      ...(ctx.onAssist ? [btn(icon('sparkle', 15), 'Assistant de rédaction', () => false, () => {
+        const { from, to } = editor.state.selection;
+        hide();
+        ctx.onAssist({ from, to });
+      })] : []),
     );
   }
 

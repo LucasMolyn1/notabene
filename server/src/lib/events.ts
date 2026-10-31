@@ -7,6 +7,8 @@ export interface AppEvent {
   pageId?: string;
   version?: number;
   by?: { id: string; name: string };
+  /** Enregistrement qui regroupe les modifications de plusieurs personnes (co-édition) : `by` n'est alors que le dernier auteur. */
+  shared?: boolean;
   data?: unknown;
 }
 

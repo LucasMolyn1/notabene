@@ -2,10 +2,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard, requireScope } from '../auth/context.js';
+import { assistInput, buildAssistPrompt, type AssistInput } from '../ai/assist.js';
 import { buildContext, SYSTEM_PROMPT } from '../ai/rag.js';
 import { LlmError, listModels, streamCompletion } from '../ai/llm.js';
 import { aiDestination, aiSettingsInput, isAiReady, loadAiSettings, publicAiSettings, saveAiSettings } from '../ai/settings.js';
-import { readableSpaceIds } from '../lib/access.js';
+import { loadWritablePage, readableSpaceIds } from '../lib/access.js';
 import { filterReadable } from '../lib/page-acl.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/http.js';
@@ -54,6 +55,47 @@ export default async function aiRoutes(app: FastifyInstance) {
     } catch (err) {
       req.log.warn({ err: err instanceof LlmError ? err.message : err }, 'échec de la requête LLM');
       send('error', { message: err instanceof LlmError ? err.message : 'Erreur lors de la génération de la réponse' });
+    } finally {
+      res.end();
+    }
+  });
+
+  // Assistant de rédaction : agit sur un texte sélectionné dans une page que l'on peut MODIFIER. Rien n'est écrit dans la page
+  // ici : la réponse n'est qu'un flux de texte, que le navigateur n'insère qu'après un clic de l'utilisateur.
+  app.post('/ai/assist', {
+    // Portée ia ET portée écriture : le droit sur la page (loadWritablePage) ne regarde pas le rôle, un lecteur n'a pas à écrire.
+    preHandler: [guard('ai'), guard('write')],
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    schema: {
+      tags: ['ai'],
+      summary: 'Assistant de rédaction sur un texte sélectionné (réponse en SSE : delta, done, error)',
+      body: assistInput,
+    },
+  }, async (req, reply) => {
+    const input = req.body as AssistInput;
+    loadWritablePage(db, req, input.pageId); // 404 sans accès à la page, 403 en lecture seule : avant toute sortie vers le fournisseur
+    if (!isAiReady(db)) throw new HttpError(503, 'L’assistant IA n’est pas configuré');
+    const settings = loadAiSettings(db, box, allowPrivate);
+    // Longueur, action et fournisseur seulement : ni le texte envoyé ni la réponse ne sont journalisés.
+    audit(db, req, 'ai.assist', input.pageId, { action: input.action, chars: input.text.length, provider: settings.provider });
+
+    const controller = new AbortController();
+    req.raw.on('close', () => controller.abort());
+    reply.hijack();
+    const res = reply.raw;
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'X-Accel-Buffering': 'no',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    const send = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    try {
+      for await (const text of streamCompletion(settings, buildAssistPrompt(input), controller.signal)) send('delta', { text });
+      send('done', {});
+    } catch (err) {
+      req.log.warn({ err: err instanceof LlmError ? err.message : err }, 'échec de l’assistant de rédaction');
+      send('error', { message: err instanceof LlmError ? err.message : 'Erreur lors de la génération' });
     } finally {
       res.end();
     }

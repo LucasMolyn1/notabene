@@ -93,6 +93,14 @@ export function createEditor({ element, content, editable = true, onChange, cont
     editorProps: {
       attributes: { class: 'prose', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Contenu de la page' },
       handleKeyDown: (_view, event) => slash?.onKeyDown(event) || mention?.onKeyDown(event) || false,
+      // Une mention collée depuis un autre site ne doit pas notifier : seule la copie d'une page Notabene (marqueur de
+      // ProseMirror) garde ses mentions. Le serveur revérifie de toute façon l'accès de la personne avant d'envoyer.
+      transformPastedHTML: (html) => {
+        if (!html.includes('data-mention-id') || html.includes('data-pm-slice')) return html;
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        for (const el of doc.querySelectorAll('[data-mention-id]')) el.removeAttribute('data-mention-id');
+        return doc.body.innerHTML;
+      },
       handlePaste: (_view, event) => {
         const file = [...(event.clipboardData?.files || [])].find((f) => f.type.startsWith('image/'));
         if (!file) return false;
@@ -114,7 +122,7 @@ export function createEditor({ element, content, editable = true, onChange, cont
   mention = createMentionMenu(editor, () => context.pageId);
   const bubble = createBubbleMenu(editor, context);
   const tableMenu = createTableMenu(editor);
-  const mobileToolbar = createMobileToolbar(editor);
+  const mobileToolbar = createMobileToolbar(editor, context);
 
   // Liens : navigation interne au clic, liens externes avec ⌘/Ctrl (ou en mode lecture).
   const onClick = (e) => {

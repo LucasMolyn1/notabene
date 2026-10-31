@@ -1077,3 +1077,11 @@ select.input { height: 36px; }
 .crop-canvas { width: 240px; height: 240px; max-width: 100%; border-radius: 50%; background: var(--sunken, var(--border)); cursor: grab; touch-action: none; outline-offset: 3px; }
 .crop-canvas:active { cursor: grabbing; }
 .crop-zoom-row { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; width: min(280px, 100%); font-size: 13px; color: var(--text-2); }
+
+/* Assistant de rédaction et actions sur la sélection (écran tactile) */
+.assist-source { margin: 0; padding: 8px 12px; border-left: 3px solid var(--border); color: var(--text-2); max-height: 8em; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.assist-actions, .assist-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.assist-inline .input { flex: 1; min-width: 8em; }
+.assist-preview { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm, 6px); background: var(--surface-2, var(--hover)); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 16em; overflow: auto; }
+.sheet-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sheet-row .swatch { width: 36px; height: 36px; }

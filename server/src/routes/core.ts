@@ -3,7 +3,7 @@ import { effectiveEmbedHosts } from '../lib/embed.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { can, requireAuth } from '../auth/context.js';
-import { isAiReady } from '../ai/settings.js';
+import { aiProviderLabel, isAiReady } from '../ai/settings.js';
 import { readableSpaceIds } from '../lib/access.js';
 import { canReadPage, hasAnyAcl } from '../lib/page-acl.js';
 import type { AppEvent } from '../lib/events.js';
@@ -43,6 +43,8 @@ export default async function coreRoutes(app: FastifyInstance) {
         ai: can(auth, 'ai') && isAiReady(db),
         admin: can(auth, 'admin'),
       },
+      // Destinataire du texte envoyé à l'assistant de rédaction (null si l'IA n'est pas prête ou pas permise).
+      aiProvider: auth && can(auth, 'ai') && isAiReady(db) ? aiProviderLabel(db) : null,
     };
   });
 

@@ -14,6 +14,7 @@ import { openPalette } from './palette.js';
 import { forgotPasswordForm, ldapLoginForm, localLoginForm } from './local-auth.js';
 import { bellButton, watchButton } from './notifications.js';
 import { bindAnchors, commentsButton, openComments } from './comments.js';
+import { openAssistant } from './assistant.js';
 import { rememberMentionNames } from './editor/mention.js';
 import { labelBar } from './labels.js';
 import { api, listAll } from './api.js';
@@ -245,6 +246,7 @@ function mountPage(page) {
       pickPage: (cb) => openPalette({ mode: 'pick', onPick: cb, exclude: id }),
       pageId: id,
       onComment: canWrite && !app.embed ? (selection) => openComments(id, { getEditor: () => editor, anchor: selection }) : null,
+      onAssist: canWrite && session.permissions.ai && !app.embed ? (selection) => openAssistant(editor, { pageId: id, selection }) : null,
       onAnchorClick: (commentId) => openComments(id, { getEditor: () => editor, focus: commentId }),
     },
   });

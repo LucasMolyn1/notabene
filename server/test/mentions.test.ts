@@ -92,6 +92,24 @@ describe('commentaires ancrés', () => {
   });
 });
 
+describe('mentions écrites en co-édition', () => {
+  const save = (shared: boolean) => {
+    const space = (db.prepare('SELECT space_id AS s FROM pages WHERE id = ?').get(PAGE) as { s: string }).s;
+    db.prepare('UPDATE pages SET content = ? WHERE id = ?').run(JSON.stringify(mentionDoc('ed2')), PAGE);
+    app.bus.publish({ type: 'page.updated', spaceId: space, pageId: PAGE, version: 2, by: { id: 'ed1', name: 'Nom ed1' }, shared });
+  };
+
+  it('enregistrement d’une seule personne : la mention lui est attribuée', () => {
+    save(false);
+    expect(notifs('ed2')).toEqual([{ type: 'mention', pageId: PAGE, actor: 'ed1' }]);
+  });
+
+  it('enregistrement regroupant plusieurs personnes : l’auteur n’est pas deviné (« quelqu’un »)', () => {
+    save(true);
+    expect(notifs('ed2')).toEqual([{ type: 'mention', pageId: PAGE, actor: null }]);
+  });
+});
+
 describe('mentions dans les commentaires', () => {
   it('notifient la personne mentionnée (« mention », pas « comment »), pas l’auteur', async () => {
     const ed1 = await login('ed1@example.com');

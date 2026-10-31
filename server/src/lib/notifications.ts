@@ -96,7 +96,9 @@ export function startNotifications(db: DB, bus: EventBus, mailer: Mailer, config
       const actorId = e.by?.id ?? null;
       if (e.type === 'page.created' && actorId) watch(db, actorId, e.pageId);
       if (e.type === 'page.created') pageMentions(e.pageId, actorId, true);
-      const mentioned = e.type === 'page.updated' ? pageMentions(e.pageId, actorId, false) : new Set<string>();
+      // Co-édition : plusieurs personnes ont écrit depuis le dernier enregistrement, on ne sait pas laquelle a inséré la mention.
+      // Elle est alors attribuée à « quelqu'un » plutôt qu'à la dernière personne qui a écrit.
+      const mentioned = e.type === 'page.updated' ? pageMentions(e.pageId, e.shared ? null : actorId, false) : new Set<string>();
       if (e.type === 'comment.created') {
         const commentId = (e.data as { commentId?: string } | undefined)?.commentId;
         const c = commentId ? db.prepare('SELECT parent_id, author_id FROM page_comments WHERE id = ?').get(commentId) as { parent_id: string | null; author_id: string | null } | undefined : undefined;

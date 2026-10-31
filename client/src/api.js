@@ -73,16 +73,19 @@ export function openEvents(onEvent) {
   return () => source.close();
 }
 
-// Question à l'IA : réponse diffusée en SSE sur une requête POST.
-export async function streamAsk(question, { onSources, onDelta, onError, onDone, signal }) {
+// Réponse de l'IA diffusée en SSE sur une requête POST (questions, assistant de rédaction).
+export const streamAsk = (question, handlers) => streamSse('/ai/ask', { question }, handlers);
+export const streamAssist = (body, handlers) => streamSse('/ai/assist', body, handlers);
+
+async function streamSse(path, body, { onSources, onDelta, onError, onDone, signal }) {
   let res;
   try {
-    res = await fetch(v3('/ai/ask'), {
+    res = await fetch(v3(path), {
       method: 'POST',
       signal,
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify(body),
     });
   } catch {
     if (!signal?.aborted) onError?.('Connexion impossible');

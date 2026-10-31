@@ -60,7 +60,7 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
       case 'taskList': return list(node, (item) => `- [${item.attrs?.checked ? 'x' : ' '}] `);
       case 'table': {
         const rows = (node.content ?? []).map((r) => (r.content ?? []).map((c) =>
-          (c.content ?? []).map((b) => inline(b.content)).join(' ').replace(/(\\*)\|/g, (_m, bs: string) => (bs.length % 2 ? `${bs}|` : `${bs}\\|`)).replace(/\n/g, ' ')));
+          (c.content ?? []).map((b) => (b.type === 'paragraph' || b.type === 'heading' ? inline(b.content) : block(b))).join(' ').replace(/(\\*)\|/g, (_m, bs: string) => (bs.length % 2 ? `${bs}|` : `${bs}\\|`)).replace(/\n/g, ' ')));
         if (!rows.length) return '';
         const line = (cells: string[]) => `| ${cells.join(' | ')} |`;
         return [line(rows[0]), line(rows[0].map(() => '---')), ...rows.slice(1).map(line)].join('\n');

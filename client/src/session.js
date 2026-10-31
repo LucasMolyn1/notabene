@@ -7,6 +7,7 @@ export const session = {
   mfaSetupRequired: false,
   provider: null,
   permissions: { read: false, write: false, ai: false, admin: false },
+  aiProvider: null,
   config: { auth: { oidc: false, devLogin: false, local: false, setupRequired: false, ldap: false, saml: false }, drawioUrl: null, embedHosts: [], ai: false },
 
   async load() {
@@ -20,6 +21,7 @@ export const session = {
     this.reauthUntil = me.reauthUntil || 0;
     initNews(me.version);
     this.permissions = me.permissions;
+    this.aiProvider = me.aiProvider || null; // destinataire du texte envoyé à l'assistant de rédaction
     setCsrf(me.csrf);
     if (!this.permissions.admin) this.update = null;
     else if (this.update === undefined) this.refreshUpdate();

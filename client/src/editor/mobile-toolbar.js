@@ -1,10 +1,11 @@
 // Barre d'outils de l'éditeur pour écran tactile : sans clavier physique, ni raccourcis (⌘B) ni sélection précise pour la bulle de mise en forme.
 // Elle se pose au-dessus du clavier virtuel (visualViewport) tant que l'éditeur a le focus.
 import { h } from '../util.js';
+import { openSelectionSheet } from './selection-sheet.js';
 
 const touch = () => window.matchMedia('(pointer: coarse)').matches;
 
-export function createMobileToolbar(editor) {
+export function createMobileToolbar(editor, ctx = {}) {
   if (!touch()) return { destroy() {} };
 
   const c = () => editor.chain().focus();
@@ -26,6 +27,7 @@ export function createMobileToolbar(editor) {
     ['☐', 'Liste de tâches', () => editor.isActive('taskList'), () => c().toggleTaskList().run()],
     ['❝', 'Citation', () => editor.isActive('blockquote'), () => c().toggleBlockquote().run()],
     ['</>', 'Code', () => editor.isActive('code'), () => c().toggleCode().run(), 'mono'],
+    ['Aa', 'Texte sélectionné : couleur, alignement, commentaire, assistant', () => false, () => openSelectionSheet(editor, ctx), 'small'],
     ['↶', 'Annuler', () => false, () => c().undo().run()],
     ['↷', 'Rétablir', () => false, () => c().redo().run()],
   ];

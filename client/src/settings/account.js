@@ -180,7 +180,7 @@ export function renderApi(el) {
     card('Routes principales', null, h('div', { class: 'table' }, [
       ['GET', '/spaces', 'read'], ['GET', '/pages', 'read'], ['GET', '/pages/:id', 'read'], ['POST', '/pages', 'write'],
       ['PATCH', '/pages/:id', 'write'], ['POST', '/pages/:id/move', 'write'], ['DELETE', '/pages/:id', 'write'],
-      ['GET', '/pages/:id/versions', 'read'], ['GET', '/search?q=', 'read'], ['POST', '/ai/ask', 'ai'], ['GET', '/admin/audit', 'admin'],
+      ['GET', '/pages/:id/versions', 'read'], ['GET', '/search?q=', 'read'], ['POST', '/ai/ask', 'ai'], ['POST', '/ai/assist', 'ai'], ['GET', '/admin/audit', 'admin'],
     ].map(([m, path, scope]) => h('div', { class: 'table-row' }, h('code', { class: `method ${m.toLowerCase()}` }, m), h('code', { class: 'grow' }, path), pill(scope))))));
 }
 

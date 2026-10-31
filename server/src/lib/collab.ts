@@ -41,6 +41,8 @@ class Room {
   epoch = '';
   contentHash = '';
   lastUser: string | null = null;
+  /** Personnes ayant modifié le document depuis le dernier enregistrement. */
+  editors = new Set<string>();
   dirty = false;
   saveTimer: NodeJS.Timeout | null = null;
   idleTimer: NodeJS.Timeout | null = null;
@@ -106,7 +108,7 @@ export class CollabHub {
       syncProtocol.writeUpdate(encoder, update);
       const msg = encoding.toUint8Array(encoder);
       for (const ws of room.conns.keys()) if (ws !== origin) this.#send(ws, msg);
-      if (typeof origin === 'object' && origin && room.conns.has(origin as WebSocket)) room.lastUser = room.conns.get(origin as WebSocket)!.userId;
+      if (typeof origin === 'object' && origin && room.conns.has(origin as WebSocket)) { room.lastUser = room.conns.get(origin as WebSocket)!.userId; room.editors.add(room.lastUser); }
       this.#markDirty(room);
     });
     room.awareness.on('update', ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
@@ -155,8 +157,9 @@ export class CollabHub {
         const row = updatePage(this.db, room.pageId, { content: clean }, room.lastUser);
         room.contentHash = sha(row.content);
         const author = room.lastUser ? this.db.prepare('SELECT id, name FROM users WHERE id = ?').get(room.lastUser) as { id: string; name: string } | undefined : undefined;
-        this.bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: row.id, version: row.version, by: author });
+        this.bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: row.id, version: row.version, by: author, shared: room.editors.size > 1 });
       }
+      room.editors.clear();
       this.#storeState(room);
     } catch (err) {
       room.dirty = true; // nouvelle tentative au prochain changement
