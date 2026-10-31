@@ -432,6 +432,25 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX base_views_base ON base_views(base_id, position);
   `,
+  // v18 : colonnes calculées (formules). La table des colonnes est refaite pour accepter le type `formula` (SQLite ne modifie pas un CHECK).
+  // La formule est du texte analysé à la main au moment de la lecture (formula.ts) : jamais exécutée comme du code.
+  `
+  CREATE TABLE base_properties_v18 (
+    id         TEXT PRIMARY KEY,
+    base_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    type       TEXT NOT NULL CHECK (type IN ('text', 'number', 'date', 'select', 'multi_select', 'status', 'checkbox', 'person', 'page_link', 'formula')),
+    options    TEXT NOT NULL DEFAULT '[]',
+    position   REAL NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    formula    TEXT,
+    CHECK ((type = 'formula') = (formula IS NOT NULL))
+  );
+  INSERT INTO base_properties_v18 (id, base_id, name, type, options, position, created_at) SELECT id, base_id, name, type, options, position, created_at FROM base_properties;
+  DROP TABLE base_properties;
+  ALTER TABLE base_properties_v18 RENAME TO base_properties;
+  CREATE INDEX base_properties_base ON base_properties(base_id, position);
+  `,
 ];
 
 export function openDb(file: string): DB {
