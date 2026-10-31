@@ -39,7 +39,23 @@ const TASKS: Record<Exclude<AssistInput['action'], 'translate' | 'custom'>, stri
 };
 
 // Une balise de fermeture glissée dans le texte ne doit pas pouvoir sortir de la zone de données.
-const fence = (text: string) => text.replace(/<\s*(\/?)\s*texte/gi, '< $1texte');
+// Parcours linéaire plutôt qu'une expression régulière : `<\s*\/?\s*texte` est polynomiale sur « < » suivi de milliers d'espaces.
+const isSpace = (c: string | undefined) => c !== undefined && /\s/.test(c);
+function fence(text: string): string {
+  let out = '';
+  let i = 0;
+  for (;;) {
+    const lt = text.indexOf('<', i);
+    if (lt < 0) return out + text.slice(i);
+    out += text.slice(i, lt);
+    let j = lt + 1;
+    while (isSpace(text[j])) j++;
+    const closing = text[j] === '/';
+    if (closing) j++;
+    while (isSpace(text[j])) j++;
+    if (text.slice(j, j + 5).toLowerCase() === 'texte') { out += `< ${closing ? '/' : ''}`; i = j; } else { out += '<'; i = lt + 1; }
+  }
+}
 
 export function buildAssistPrompt(input: AssistInput): Prompt {
   const task = input.action === 'translate'

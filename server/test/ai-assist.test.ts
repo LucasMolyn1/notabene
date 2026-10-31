@@ -211,6 +211,14 @@ describe('assistant de rédaction : texte envoyé et journal', () => {
     expect(prompt.user.endsWith('</texte>')).toBe(true);
   });
 
+  it('traite en temps linéaire un texte hostile fait de « < » et d’espaces', () => {
+    const start = Date.now();
+    const prompt = buildAssistPrompt(input(`${'<'.repeat(2000)}${' '.repeat(6000)}`));
+    buildAssistPrompt(input(`${'< '.repeat(3000)}`));
+    expect(Date.now() - start).toBeLessThan(500);
+    expect(prompt.user).toContain('<<<<');
+  });
+
   it('n’envoie que le texte et la consigne : ni titre, ni contenu de la page, ni identité', async () => {
     await configure();
     const res = await assist(await login('ed1@example.com'), { text: 'Seule cette phrase.' });
