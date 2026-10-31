@@ -77,7 +77,7 @@ export function openEvents(onEvent) {
 export const streamAsk = (question, handlers) => streamSse('/ai/ask', { question }, handlers);
 export const streamAssist = (body, handlers) => streamSse('/ai/assist', body, handlers);
 
-async function streamSse(path, body, { onSources, onDelta, onError, onDone, signal }) {
+async function streamSse(path, body, { onSources, onDelta, onNotice, onError, onDone, signal }) {
   let res;
   try {
     res = await fetch(v3(path), {
@@ -114,6 +114,7 @@ async function streamSse(path, body, { onSources, onDelta, onError, onDone, sign
         const payload = JSON.parse(data);
         if (event === 'sources') onSources?.(payload);
         else if (event === 'delta') onDelta?.(payload.text);
+        else if (event === 'notice') onNotice?.(payload.message);
         else if (event === 'error') onError?.(payload.message);
         else if (event === 'done') onDone?.();
       }

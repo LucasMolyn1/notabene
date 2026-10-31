@@ -3,6 +3,7 @@
 import { h } from './util.js';
 import { streamAssist } from './api.js';
 import { session } from './session.js';
+import { TextSelection } from '@tiptap/pm/state';
 import { openModal, toast } from './ui.js';
 
 const MAX_SELECTION = 8000;
@@ -16,12 +17,15 @@ export function textToNodes(text) {
 
 export function openAssistant(editor, { pageId, selection }) {
   const { from, to } = selection;
+  // Sélection de cellules ou de tout le document : l'intervalle couvre plus que le texte choisi, on n'y touche pas.
+  if (!(editor.state.selection instanceof TextSelection)) { toast('Sélectionnez du texte dans un seul paragraphe ou bloc de texte.', { kind: 'error' }); return; }
   const original = editor.state.doc.textBetween(from, to, '\n').trim();
   if (!original) { toast('Sélectionnez d’abord du texte.', { kind: 'error' }); return; }
   if (original.length > MAX_SELECTION) { toast(`Sélection trop longue (${MAX_SELECTION} caractères au plus).`, { kind: 'error' }); return; }
 
   let controller = null;
   let result = '';
+  let partial = false; // erreur, refus ou troncature : le texte reçu est incomplet, on ne propose pas de l'écrire
   const status = h('p', { class: 'muted', role: 'status' });
   const preview = h('div', { class: 'assist-preview', 'aria-live': 'polite', tabindex: '0', 'aria-label': 'Texte proposé' });
   preview.hidden = true;
@@ -41,14 +45,15 @@ export function openAssistant(editor, { pageId, selection }) {
   const setBusy = (busy) => {
     for (const b of actionButtons) b.disabled = busy;
     stop.hidden = !busy;
-    apply.disabled = busy || !result;
-    after.disabled = busy || !result;
+    apply.disabled = busy || !result || partial;
+    after.disabled = busy || !result || partial;
   };
 
   async function run(body) {
     controller?.abort();
     controller = new AbortController();
     result = '';
+    partial = false;
     preview.hidden = false;
     preview.textContent = '';
     status.textContent = 'Rédaction en cours…';
@@ -56,10 +61,11 @@ export function openAssistant(editor, { pageId, selection }) {
     await streamAssist({ pageId, text: original, ...body }, {
       signal: controller.signal,
       onDelta: (t) => { result += t; preview.textContent = result; }, // textContent : le texte ne devient jamais du HTML
-      onError: (message) => { status.textContent = ''; toast(message, { kind: 'error' }); },
-      onDone: () => { status.textContent = result.trim() ? 'Relisez le texte proposé, puis choisissez.' : 'Aucune proposition.'; },
+      onNotice: (message) => { partial = true; status.textContent = `${message} Le texte est incomplet : relancez ou reformulez.`; },
+      onError: (message) => { partial = true; status.textContent = ''; toast(message, { kind: 'error' }); },
+      onDone: () => { if (!partial) status.textContent = result.trim() ? 'Relisez le texte proposé, puis choisissez.' : 'Aucune proposition.'; },
     });
-    if (controller.signal.aborted) status.textContent = result.trim() ? 'Interrompu : texte partiel.' : '';
+    if (controller.signal.aborted) { partial = true; status.textContent = result.trim() ? 'Interrompu : texte partiel, rien ne sera écrit.' : ''; }
     result = result.trim();
     setBusy(false);
   }
@@ -77,7 +83,8 @@ export function openAssistant(editor, { pageId, selection }) {
       // Une seule ligne : texte en place dans le paragraphe ; sinon des paragraphes.
       editor.chain().focus().insertContentAt({ from, to }, nodes.length === 1 ? nodes[0].content : nodes).run();
     } else {
-      editor.chain().focus().insertContentAt(editor.state.doc.resolve(to).after(), nodes).run();
+      const $to = editor.state.doc.resolve(to);
+      editor.chain().focus().insertContentAt($to.depth ? $to.after() : editor.state.doc.content.size, nodes).run();
     }
     return true;
   };

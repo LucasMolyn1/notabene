@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { guard, requireScope } from '../auth/context.js';
 import { assistInput, buildAssistPrompt, type AssistInput } from '../ai/assist.js';
 import { buildContext, SYSTEM_PROMPT } from '../ai/rag.js';
-import { LlmError, listModels, streamCompletion } from '../ai/llm.js';
+import { LlmError, listModels, REFUSAL_NOTICE, streamCompletion, TRUNCATED_NOTICE } from '../ai/llm.js';
 import { aiDestination, aiSettingsInput, isAiReady, loadAiSettings, publicAiSettings, saveAiSettings } from '../ai/settings.js';
 import { loadWritablePage, readableSpaceIds } from '../lib/access.js';
 import { filterReadable } from '../lib/page-acl.js';
@@ -38,7 +38,8 @@ export default async function aiRoutes(app: FastifyInstance) {
     audit(db, req, 'ai.ask', null, { chars: question.length, sources: sources.length, provider: settings.provider });
 
     const controller = new AbortController();
-    req.raw.on('close', () => controller.abort());
+    // `req.raw` est déjà détruit quand le gestionnaire s'exécute : c'est la fermeture de la réponse qui signale le départ du client.
+    reply.raw.on('close', () => { if (!reply.raw.writableFinished) controller.abort(); });
     reply.hijack();
     const res = reply.raw;
     res.writeHead(200, {
@@ -80,7 +81,8 @@ export default async function aiRoutes(app: FastifyInstance) {
     audit(db, req, 'ai.assist', input.pageId, { action: input.action, chars: input.text.length, provider: settings.provider });
 
     const controller = new AbortController();
-    req.raw.on('close', () => controller.abort());
+    // `req.raw` est déjà détruit quand le gestionnaire s'exécute : c'est la fermeture de la réponse qui signale le départ du client.
+    reply.raw.on('close', () => { if (!reply.raw.writableFinished) controller.abort(); });
     reply.hijack();
     const res = reply.raw;
     res.writeHead(200, {
@@ -91,7 +93,11 @@ export default async function aiRoutes(app: FastifyInstance) {
     });
     const send = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     try {
-      for await (const text of streamCompletion(settings, buildAssistPrompt(input), controller.signal)) send('delta', { text });
+      for await (const text of streamCompletion(settings, buildAssistPrompt(input), controller.signal)) {
+        // Refus ou troncature : un avis à part, pour que le client ne propose pas d'écrire un texte incomplet dans la page.
+        if (text === REFUSAL_NOTICE || text === TRUNCATED_NOTICE) send('notice', { message: text.trim().replace(/^_|_$/g, '') });
+        else send('delta', { text });
+      }
       send('done', {});
     } catch (err) {
       req.log.warn({ err: err instanceof LlmError ? err.message : err }, 'échec de l’assistant de rédaction');

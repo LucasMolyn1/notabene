@@ -88,6 +88,14 @@ describe('contenu de page', () => {
     expect(md.split('\n').filter((l) => l.startsWith('|'))).toHaveLength(2); // une ligne de cellules et sa ligne de séparation
   });
 
+  it('l’export Markdown d’une cellule ne crée pas de fausse ligne avec un retour chariot', () => {
+    const cell = { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a\r| faux | rang |\rb\r\nc' }] }] };
+    const table = { type: 'table', content: [{ type: 'tableRow', content: [cell] }] };
+    const md = toMarkdown('P', '', { type: 'doc', content: [table] } as never, () => null);
+    expect(md).not.toMatch(/\r/);
+    expect(md.split('\n').filter((l) => l.startsWith('|'))).toHaveLength(2);
+  });
+
   it('les exports affichent un lien, jamais une iframe', () => {
     const d = sanitizeDoc(doc('https://player.vimeo.com/video/1?a=1&b=<x>'));
     const md = toMarkdown('P', '', d, () => null);

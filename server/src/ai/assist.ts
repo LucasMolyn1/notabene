@@ -39,7 +39,7 @@ const TASKS: Record<Exclude<AssistInput['action'], 'translate' | 'custom'>, stri
 };
 
 // Une balise de fermeture glissée dans le texte ne doit pas pouvoir sortir de la zone de données.
-const fence = (text: string) => text.replace(/<(\/?)texte/gi, '< $1texte');
+const fence = (text: string) => text.replace(/<\s*(\/?)\s*texte/gi, '< $1texte');
 
 export function buildAssistPrompt(input: AssistInput): Prompt {
   const task = input.action === 'translate'

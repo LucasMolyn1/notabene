@@ -131,9 +131,26 @@ test('coller du HTML d’un autre site n’y garde aucune mention ; une copie de
   await expect(page.locator('.prose')).toContainText('Étranger');
   await expect(page.locator('.prose .mention')).toHaveCount(0);
 
+  // Les noms d'attributs sont insensibles à la casse en HTML : une variante en majuscules ne contourne pas la neutralisation.
+  await paste(page, '<p>Majuscules <span DATA-MENTION-ID="adminxyz">@quelqu\'un</span></p>');
+  await expect(page.locator('.prose')).toContainText('Majuscules');
+  await expect(page.locator('.prose .mention')).toHaveCount(0);
+
   await paste(page, '<p data-pm-slice="1 1 []">Copie <span data-mention-id="adminxyz">@quelqu\'un</span></p>');
   await expect(page.locator('.prose')).toContainText('Copie');
   await expect(page.locator('.prose .mention')).toHaveCount(1);
+});
+
+test('une sélection de tout le document n’ouvre pas l’assistant (pas de remplacement hors du texte choisi)', async ({ page, browser }) => {
+  const id = await newPage(browser, 'Assistant e2e tout', 'Un seul paragraphe.');
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto(`/p/${id}`);
+  await page.locator('.prose').click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.getByRole('button', { name: 'Assistant de rédaction' }).click();
+  await expect(page.getByRole('dialog', { name: 'Assistant de rédaction' })).toHaveCount(0);
+  await expect(page.locator('.toast, [role="status"]').filter({ hasText: 'Sélectionnez du texte' }).first()).toBeVisible();
+  expect(received).toHaveLength(0);
 });
 
 test.describe('sur écran tactile', () => {

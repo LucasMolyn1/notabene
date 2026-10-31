@@ -96,7 +96,7 @@ export function createEditor({ element, content, editable = true, onChange, cont
       // Une mention collée depuis un autre site ne doit pas notifier : seule la copie d'une page Notabene (marqueur de
       // ProseMirror) garde ses mentions. Le serveur revérifie de toute façon l'accès de la personne avant d'envoyer.
       transformPastedHTML: (html) => {
-        if (!html.includes('data-mention-id') || html.includes('data-pm-slice')) return html;
+        if (!/data-mention-id/i.test(html) || /data-pm-slice/i.test(html)) return html;
         const doc = new DOMParser().parseFromString(html, 'text/html');
         for (const el of doc.querySelectorAll('[data-mention-id]')) el.removeAttribute('data-mention-id');
         return doc.body.innerHTML;
