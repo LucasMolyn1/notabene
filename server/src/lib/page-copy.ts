@@ -4,6 +4,7 @@
 // rendrait visible à tous une page réservée) ; les mentions déjà notifiées ne le sont pas de nouveau.
 import type { DB } from '../db.js';
 import { type DocNode } from './content.js';
+import { copyBaseData } from './bases.js';
 import { HttpError } from './http.js';
 import { entriesOf, governingPage } from './page-acl.js';
 import { createPage, getPageRow, type PageRow } from './pages.js';
@@ -52,7 +53,9 @@ export function copyTree(
         title: src.title,
         icon: src.icon,
         content: stripCommentAnchors(JSON.parse(src.content) as DocNode),
+        kind: src.kind,
       }, userId);
+      if (src.kind === 'base') copyBaseData(db, src.id, copy.id, userId);
       created.push(copy);
       db.prepare('INSERT INTO page_acl (page_id, user_id, level) SELECT ?, user_id, level FROM page_acl WHERE page_id = ?').run(copy.id, src.id);
       db.prepare('INSERT INTO page_acl_groups (page_id, group_id, level) SELECT ?, group_id, level FROM page_acl_groups WHERE page_id = ?').run(copy.id, src.id);

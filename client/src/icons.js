@@ -47,6 +47,7 @@ const PATHS = {
   compass: '<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>',
   pdf: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/><path d="M10 12v5"/><path d="M8 15h4"/>',
   qrcode: '<rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4"/><rect x="20" y="20" width="2" height="2"/>',
+  table: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>',
   wand: '<path d="m15 4-1 1m-2 8-8 8 4 4 8-8M21.4 6.1a2 2 0 0 0-2.8 0L15 9.7 18.3 13l3.5-3.5a2 2 0 0 0-.4-3.4Z"/>',
 };
 

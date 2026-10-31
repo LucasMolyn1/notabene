@@ -16,7 +16,7 @@ const EMAIL_CHANGES_INTERVAL = 60 * 60_000;
 export type NotificationType = 'comment' | 'reply' | 'page.updated' | 'mention';
 
 interface UserRow { id: string; name: string; email: string | null; role: 'admin' | 'editor' | 'reader'; disabled: number }
-const asAuth = (u: UserRow): Auth => ({ user: { id: u.id, name: u.name, email: u.email, role: u.role }, via: 'session', scopes: new Set() });
+const asAuth = (u: UserRow): Auth => ({ user: { id: u.id, name: u.name, email: u.email, role: u.role }, via: 'session', scopes: new Set(['read']) });
 const oneLine = (v: string) => v.replace(/[\r\n]+/g, ' ').trim().slice(0, 120);
 
 export const getPrefs = (db: DB, userId: string) => {

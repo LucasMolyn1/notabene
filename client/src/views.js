@@ -20,6 +20,7 @@ import { labelBar } from './labels.js';
 import { api, listAll } from './api.js';
 import { permissionsButton } from './permissions.js';
 import { shareButton } from './share-dialog.js';
+import { showBase } from './base.js';
 import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
@@ -49,7 +50,7 @@ export function topbar(left, right = []) {
     h('div', { class: 'topbar-right' }, right, !app.embed && bellButton()));
 }
 
-function crumbsFor(page) {
+export function crumbsFor(page) {
   const space = store.space(page.spaceId);
   const parts = [
     space && h('a', { class: 'crumb', href: spacePath(space) }, h('span', { class: 'crumb-ico' }, pageIcon(space.icon || 'folder', 14)), space.name),
@@ -87,6 +88,7 @@ export async function showPage(id) {
     return;
   }
   if (seq !== navSeq) return;
+  if (page.kind === 'base') { prefs.space = page.spaceId; prefs.lastPage = id; for (const a of store.ancestors(id)) prefs.expanded[a.id] = true; savePrefs(); presence.setPage(id); showBase(page); return; }
   mountPage(page);
 }
 

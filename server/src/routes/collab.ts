@@ -19,7 +19,7 @@ export default async function collabRoutes(app: FastifyInstance) {
     ).get(conn.sessionHash ?? '', conn.userId) as { exp: number; name: string; email: string | null; role: 'admin' | 'editor' | 'reader'; disabled: number } | undefined;
     if (!row || row.exp <= Date.now() || row.disabled || row.role === 'reader') return false;
     const page = getPageRow(db, pageId);
-    if (!page || page.deleted_at) return false;
+    if (!page || page.deleted_at || page.kind === 'base') return false;
     const auth: Auth = { user: { id: conn.userId, name: row.name, email: row.email, role: row.role }, via: 'session', scopes: new Set(['read', 'write']) };
     return canWritePage(db, auth, pageId);
   };
@@ -37,7 +37,7 @@ export default async function collabRoutes(app: FastifyInstance) {
       if (req.headers.origin !== publicOrigin) throw new HttpError(403, 'Origine non autorisée');
       if (req.auth?.via !== 'session') throw new HttpError(401, 'Session requise');
       requireScope(req, 'write');
-      loadWritablePage(db, req, (req.params as { id: string }).id);
+      if (loadWritablePage(db, req, (req.params as { id: string }).id).kind === 'base') throw new HttpError(409, 'Une base ne se modifie pas en co-édition de texte');
     },
   }, (socket, req) => {
     const user = req.auth!.user;
