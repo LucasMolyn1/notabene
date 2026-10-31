@@ -6,6 +6,8 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## Non publié
 
+## [3.8.0] - 2026-10-31
+
 ### Ajouté
 - **Assistant de rédaction dans l'éditeur** : sur un texte sélectionné, améliorer, raccourcir, corriger, traduire (sept langues) ou suivre une consigne libre. La réponse s'affiche en flux dans un aperçu ; la page n'est modifiée qu'après « Remplacer » ou « Insérer après » (texte simple, jamais du HTML, et seulement si la sélection n'a pas changé). Réservé aux personnes qui ont la portée IA et le droit de modifier la page ; seul le texte sélectionné part, et l'interface indique le destinataire avant l'envoi. Nouvelle route `POST /api/v3/ai/assist` (20 appels par minute et par compte), action `ai.assist` au journal d'audit (longueur et fournisseur, jamais le texte).
 - Écran tactile : un bouton « Aa » dans la barre de l'éditeur ouvre les actions sur la sélection (couleur, fond, alignement, commentaire, assistant), qui n'existaient qu'avec la souris.
