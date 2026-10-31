@@ -29,6 +29,7 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | Guide | Pour |
 | --- | --- |
 | [docs/ESSAI.md](docs/ESSAI.md) | Essayer en 10 minutes avec Docker seul |
+| [docs/INSTALLATION.md](docs/INSTALLATION.md) | Partir d'une machine vierge : distributions compatibles, Docker, Notabene, HTTPS |
 | [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) | Installer pour de vrai : image, reverse proxy, adresses, premier démarrage |
 | [docs/AUTHENTIK.md](docs/AUTHENTIK.md) | Connexion unique avec Authentik |
 | [docs/MISE-A-JOUR.md](docs/MISE-A-JOUR.md) | Savoir qu'une version existe, la lire, l'installer, revenir en arrière |
