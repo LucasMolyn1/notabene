@@ -175,8 +175,8 @@ export const store = {
     emit({ type: 'space', id: space.id });
     return space.id;
   },
-  async deletePersonalSpace() {
-    await api.del('/spaces/personal');
+  async deletePersonalSpace(reauth) {
+    await api.post('/spaces/personal/delete', { reauth });
     await store.load();
   },
   personalSpace: (userId) => state.spaces.find((s) => s.kind === 'personal' && s.ownerId === userId) || null,

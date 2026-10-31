@@ -28,7 +28,7 @@ export function renderSpaces(el) {
       s.visibility === 'public' ? pill('Public', 'ok') : pill('Privé', 'off'),
       s.kind !== 'personal' && h('button', { class: 'icon-btn', title: 'Membres', 'aria-label': `Membres de ${s.name}`, onClick: () => openSpaceMembers(s) }, icon('users')),
       h('button', { class: 'icon-btn', title: 'Modifier', 'aria-label': `Modifier ${s.name}`, onClick: () => A.spaceForm(s) }, icon('edit')),
-      admin && s.kind !== 'personal' && store.spaces.length > 1 && h('button', { class: 'icon-btn danger', title: 'Supprimer', 'aria-label': `Supprimer ${s.name}`, onClick: () => A.deleteSpace(s) }, icon('trash'))))),
+      admin && s.kind !== 'personal' && store.spaces.filter((x) => x.kind !== 'personal').length > 1 && h('button', { class: 'icon-btn danger', title: 'Supprimer', 'aria-label': `Supprimer ${s.name}`, onClick: () => A.deleteSpace(s) }, icon('trash'))))),
     admin && h('button', { class: 'btn btn-primary btn-sm', onClick: () => A.spaceForm() }, icon('plus', 15), 'Nouvel espace')),
     admin && personalSpacesCard(),
     admin && card('Corbeille', 'Les pages supprimées restent restaurables jusqu’à leur suppression définitive.',

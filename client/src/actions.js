@@ -4,6 +4,7 @@ import { icon } from './icons.js';
 import { request } from './api.js';
 import { store } from './store.js';
 import { session } from './session.js';
+import { askReauth } from './provider-settings.js';
 import { prefs, savePrefs, setTheme, currentTheme, app } from './prefs.js';
 import { canonicalPath, pagePathById, parseRoute } from './urls.js';
 import { toast, openModal, confirmModal, pageIcon } from './ui.js';
@@ -358,7 +359,9 @@ export async function deletePersonalSpace(space) {
     confirm: 'Supprimer mon espace',
     danger: true,
   });
-  if (!ok || !(await attempt(() => store.deletePersonalSpace().then(() => true)))) return;
+  if (!ok) return;
+  const reauth = await askReauth('supprimer définitivement mon espace personnel', { strict: true });
+  if (!reauth || !(await attempt(() => store.deletePersonalSpace(reauth).then(() => true)))) return;
   prefs.space = store.spaces[0]?.id;
   savePrefs();
   go(prefs.space ? `/s/${prefs.space}` : '/');

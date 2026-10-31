@@ -6,6 +6,7 @@ import { guard, requireAuth, requireScope } from '../auth/context.js';
 import { readableSpaces, requireSpaceRole, type SpaceRow, spaceRoleOf, toSpace } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
 import { EVERYONE } from '../lib/space-access.js';
+import { reauthInput, requireReauth } from '../lib/reauth.js';
 import { createPersonalSpace, personalSpaceOf, personalSpacesEnabled } from '../lib/personal-spaces.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
 
@@ -93,12 +94,15 @@ export default async function spaceRoutes(app: FastifyInstance) {
     return reply.status(201).send({ ...toSpace(db.prepare('SELECT * FROM spaces WHERE id = ?').get(id) as SpaceRow), role: spaceRoleOf(db, req, id) });
   });
 
-  app.delete('/spaces/personal', {
+  // Suppression sans corbeille : session web et mot de passe redemandé (un jeton, même de portée écriture, ne détruit pas un espace).
+  app.post('/spaces/personal/delete', {
     preHandler: guard('write'),
     config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
-    schema: { tags, summary: 'Supprimer mon espace personnel et toutes ses pages' },
+    schema: { tags, summary: 'Supprimer mon espace personnel et toutes ses pages (session et mot de passe)', body: z.object({ reauth: reauthInput }) },
   }, async (req, reply) => {
     const auth = requireAuth(req);
+    if (auth.via !== 'session') throw new HttpError(403, 'Réservé à la session web');
+    await requireReauth(app, req, (req.body as { reauth: z.output<typeof reauthInput> }).reauth, { strict: true });
     const mine = personalSpaceOf(db, auth.user.id);
     if (!mine) throw new HttpError(404, 'Vous n’avez pas d’espace personnel');
     db.prepare('DELETE FROM spaces WHERE id = ?').run(mine.id);

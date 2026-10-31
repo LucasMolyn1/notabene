@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { guard } from '../auth/context.js';
 import { loadReadablePage, loadWritablePage, readableSpaceIds } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
+import { inPersonalSpace } from '../lib/personal-spaces.js';
 import { idParams, idSchema } from '../lib/http.js';
 import { addLabel, labelCounts, labelsOf, normalizeLabel, removeLabel } from '../lib/labels.js';
 import { filterReadable } from '../lib/page-acl.js';
@@ -32,7 +33,7 @@ export default async function labelRoutes(app: FastifyInstance) {
     const page = loadWritablePage(db, req, (req.params as { id: string }).id);
     const name = normalizeLabel((req.body as z.output<typeof nameBody>).name);
     if (addLabel(db, page.id, name, req.auth?.user.id ?? null)) {
-      audit(db, req, 'page.label.add', page.id, { name });
+      audit(db, req, 'page.label.add', page.id, inPersonalSpace(db, page.id) ? undefined : { name });
       announce(req, page.space_id, page.id);
     }
     return { items: labelsOf(db, page.id) };
@@ -47,7 +48,7 @@ export default async function labelRoutes(app: FastifyInstance) {
     const page = loadWritablePage(db, req, p.id);
     const name = normalizeLabel(p.name);
     if (removeLabel(db, page.id, name)) {
-      audit(db, req, 'page.label.remove', page.id, { name });
+      audit(db, req, 'page.label.remove', page.id, inPersonalSpace(db, page.id) ? undefined : { name });
       announce(req, page.space_id, page.id);
     }
     return { items: labelsOf(db, page.id) };

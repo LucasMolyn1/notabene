@@ -136,7 +136,7 @@ export default async function adminRoutes(app: FastifyInstance) {
   // Un administrateur peut répondre à une demande d'accès pour un compte.
   app.get('/admin/users/:id/export', { preHandler: guard('admin'), config: { rateLimit: { max: 20, timeWindow: '1 hour' } }, schema: { hide: true, params: idParams } }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const data = exportUserData(db, id);
+    const data = exportUserData(db, id, req.auth!.user.id);
     if (!data) throw new HttpError(404, 'Utilisateur introuvable');
     audit(db, req, 'user.export', id);
     return sendExport(reply, data, 'donnees-utilisateur');

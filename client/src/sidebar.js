@@ -34,7 +34,7 @@ function spaceMenu(anchor, space) {
     canCreatePersonal && { label: 'Créer mon espace personnel', icon: 'home', onClick: () => A.createPersonalSpace() },
     admin && { label: 'Nouvel espace', icon: 'plus', onClick: () => A.spaceForm() },
     (admin || store.canManage(space.id)) && { label: 'Paramètres de l’espace', icon: 'settings', onClick: () => A.spaceForm(space) },
-    admin && space.kind !== 'personal' && store.spaces.length > 1 && { label: 'Supprimer l’espace', icon: 'trash', danger: true, onClick: () => A.deleteSpace(space) },
+    admin && space.kind !== 'personal' && store.spaces.filter((x) => x.kind !== 'personal').length > 1 && { label: 'Supprimer l’espace', icon: 'trash', danger: true, onClick: () => A.deleteSpace(space) },
     space.kind === 'personal' && space.ownerId === session.user?.id && { label: 'Supprimer mon espace personnel', icon: 'trash', danger: true, onClick: () => A.deletePersonalSpace(space) },
   ]);
 }

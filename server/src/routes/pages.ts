@@ -77,7 +77,14 @@ export default async function pageRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     writable(req, id);
     const body = req.body as z.output<typeof moveBody>;
-    if (body.spaceId) requireSpaceRole(db, req, body.spaceId, 'edit'); // déplacer vers un espace : y écrire
+    if (body.spaceId) {
+      requireSpaceRole(db, req, body.spaceId, 'edit'); // déplacer vers un espace : y écrire
+      // Le sous-arbre suit la page, y compris des sous-pages que l'on ne lit pas : vers un espace personnel elles disparaîtraient
+      // de la vue de tous. On copie (copyTree ne prend que ce qui est lisible), on ne déplace pas.
+      if (db.prepare("SELECT 1 FROM spaces WHERE id = ? AND kind = 'personal'").get(body.spaceId) && writable(req, id).space_id !== body.spaceId) {
+        throw new HttpError(409, 'Copiez la page vers un espace personnel au lieu de la déplacer');
+      }
+    }
     if (body.parentId && !canWritePage(db, req.auth, body.parentId)) throw new HttpError(403, 'Accès en lecture seule sur la page parente');
     assertMoveKeepsRestriction(db, req.auth, id, body.parentId);
     const { row, fromSpaceId } = movePage(db, id, body);

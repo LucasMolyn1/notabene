@@ -22,6 +22,10 @@ export function setPersonalSpaces(db: DB, enabled: boolean, userId: string): voi
 export const personalSpaceOf = (db: DB, userId: string) =>
   db.prepare("SELECT * FROM spaces WHERE kind = 'personal' AND owner_id = ?").get(userId) as import('./access.js').SpaceRow | undefined;
 
+/** La page est-elle dans un espace personnel ? (journal d'audit, export : rien du contenu d'un espace personnel n'en sort.) */
+export const inPersonalSpace = (db: DB, pageId: string): boolean =>
+  !!db.prepare("SELECT 1 FROM pages p JOIN spaces s ON s.id = p.space_id WHERE p.id = ? AND s.kind = 'personal'").get(pageId);
+
 /** Crée l'espace personnel de `user` (un seul par compte). */
 export function createPersonalSpace(db: DB, user: { id: string; name: string }): string {
   const now = Date.now();

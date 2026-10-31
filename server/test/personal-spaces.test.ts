@@ -131,9 +131,55 @@ describe('accès : le propriétaire seul', () => {
     await enable();
     const m = await mine('ed1');
     expect((await call(m.s, 'POST', `/api/v3/pages/${m.pageId}/copy`, { spaceId: 'shared' })).statusCode).toBe(201);
-    expect((await call(m.s, 'DELETE', '/api/v3/spaces/personal')).statusCode).toBe(204);
+    // Sans corbeille : le mot de passe est redemandé, et un jeton ne suffit pas.
+    expect((await call(m.s, 'POST', '/api/v3/spaces/personal/delete', { reauth: { password: 'mauvais' } })).statusCode).toBeGreaterThanOrEqual(400);
+    const token = await call(m.s, 'POST', '/api/v3/tokens', { name: 'essai', scopes: ['read', 'write'], expiresInDays: 7 });
+    const viaToken = await app.inject({ method: 'POST', url: '/api/v3/spaces/personal/delete', headers: { authorization: `Bearer ${token.json().token}` }, payload: { reauth: { password: PASS } } });
+    expect(viaToken.statusCode).toBeGreaterThanOrEqual(400);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM spaces WHERE kind = 'personal'").get()).toEqual({ n: 1 });
+    expect((await call(m.s, 'POST', '/api/v3/spaces/personal/delete', { reauth: { password: PASS } })).statusCode).toBe(204);
     expect(db.prepare("SELECT COUNT(*) AS n FROM spaces WHERE kind = 'personal'").get()).toEqual({ n: 0 });
-    expect((await call(m.s, 'DELETE', '/api/v3/spaces/personal')).statusCode).toBe(404);
+    expect((await call(m.s, 'POST', '/api/v3/spaces/personal/delete', { reauth: { password: PASS } })).statusCode).toBe(404);
+  });
+});
+
+describe('sorties de données', () => {
+  it('l’export d’un compte demandé par un administrateur ne contient rien de son espace personnel ; l’export personnel, tout', async () => {
+    await enable();
+    const m = await mine('ed1');
+    await call(m.s, 'POST', `/api/v3/pages/${m.pageId}/comments`, { body: 'commentaire intime' });
+    db.prepare("INSERT INTO favorites (user_id, page_id) VALUES ('ed1', ?)").run(m.pageId);
+    db.prepare("INSERT INTO notifications (id, user_id, type, page_id, created_at) VALUES ('n1', 'ed1', 'comment', ?, 1)").run(m.pageId);
+    const admin = await login('admin');
+    const forAdmin = (await call(admin, 'GET', '/api/v3/admin/users/ed1/export')).body;
+    expect(forAdmin).not.toMatch(/intime|Secret de ed1/);
+    expect(forAdmin).not.toContain(m.pageId);
+    const own = (await call(m.s, 'GET', '/api/v3/me/export')).body;
+    expect(own).toContain('commentaire intime');
+    expect(own).toContain('Secret de ed1');
+  });
+
+  it('on ne déplace pas une page vers un espace personnel (le sous-arbre disparaîtrait) : on la copie', async () => {
+    await enable();
+    const m = await mine('ed1');
+    db.prepare("INSERT INTO pages (id, space_id, title, content, text, created_at, updated_at) VALUES ('ps1', 'shared', 'Commune', ?, '', 1, 1)").run(JSON.stringify({ type: 'doc', content: [{ type: 'paragraph' }] }));
+    const move = await call(m.s, 'POST', '/api/v3/pages/ps1/move', { parentId: null, spaceId: m.spaceId });
+    expect(move.statusCode).toBe(409);
+    expect(db.prepare("SELECT space_id FROM pages WHERE id = 'ps1'").get()).toEqual({ space_id: 'shared' });
+    expect((await call(m.s, 'POST', '/api/v3/pages/ps1/copy', { spaceId: m.spaceId })).statusCode).toBe(201);
+    // Dans l'espace personnel lui-même, on range librement.
+    expect((await call(m.s, 'POST', `/api/v3/pages/${m.pageId}/move`, { parentId: null, spaceId: m.spaceId })).statusCode).toBe(200);
+  });
+
+  it('le journal d’audit ne garde pas les libellés posés sur une page personnelle', async () => {
+    await enable();
+    const m = await mine('ed1');
+    expect((await call(m.s, 'POST', `/api/v3/pages/${m.pageId}/labels`, { name: 'confidentiel-perso' })).statusCode).toBeLessThan(300);
+    db.prepare("INSERT INTO pages (id, space_id, title, content, text, created_at, updated_at) VALUES ('ps2', 'shared', 'C', '{}', '', 1, 1)").run();
+    await call(m.s, 'POST', '/api/v3/pages/ps2/labels', { name: 'public-ok' });
+    const rows = JSON.stringify(db.prepare("SELECT target, meta FROM audit_log WHERE action LIKE 'page.label%'").all());
+    expect(rows).not.toContain('confidentiel-perso');
+    expect(rows).toContain('public-ok');
   });
 });
 
