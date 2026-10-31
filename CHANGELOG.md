@@ -6,7 +6,7 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## Non publié
 
-## 3.9.0 - 2026-10-31
+## [3.9.0] - 2026-10-31
 
 ### Ajouté
 - **Groupes et droits par espace** : groupes locaux (Paramètres, Groupes), membres d'un espace (personnes ou groupes) avec les rôles lecture, édition et gestion, permissions de page visant un groupe. Le rôle global reste un plafond, le droit le plus élevé entre plusieurs chemins l'emporte, et la permission de page ne fait que restreindre. Un gestionnaire d'espace gère les membres et le nom de son espace. Nouvelles routes `/api/v3/groups`, `/spaces/:id/members`, `/spaces/:id/member-candidates`.
