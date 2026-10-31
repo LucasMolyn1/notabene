@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import { marked } from 'marked';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
@@ -39,6 +40,7 @@ describe('nom d’hôte autorisé', () => {
   it('accepte un nom de domaine exact en minuscules', () => {
     expect(normalizeEmbedHost('www.youtube-nocookie.com')).toBe('www.youtube-nocookie.com');
     expect(normalizeEmbedHost('  Player.Vimeo.com ')).toBe('player.vimeo.com');
+    expect(normalizeEmbedHost('exemple.xn--p1ai')).toBe('exemple.xn--p1ai'); // domaine de premier niveau internationalisé
   });
 
   it('refuse tout ce qui n’est pas un nom de domaine : joker, chemin, port, protocole, adresse IP, nom interne, espace, directive CSP', () => {
@@ -148,6 +150,75 @@ describe('réglage de l’administrateur', () => {
     for (const bad of ['*', 'https://a.com', 'a.com/x', 'localhost', '10.0.0.1', 'A.COM', 'localhost']) {
       expect(() => loadConfig({ ...env, CONTENT_EMBED_HOSTS: bad }), bad).toThrow();
     }
-    expect(() => loadConfig({ ...env, PUBLIC_URL: 'https://wiki.example.org', CONTENT_EMBED_HOSTS: 'wiki.example.org' })).toThrow(/s'intégrer lui-même/);
+    expect(() => loadConfig({ ...env, PUBLIC_URL: 'https://wiki.example.org', CONTENT_EMBED_HOSTS: 'wiki.example.org' })).toThrow(/même site/);
+  });
+});
+
+describe('relecture : valeurs enregistrées, même site, audit, Markdown', () => {
+  const store = (hosts: unknown) => db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('cfg:embeds', ?, ?)").run(JSON.stringify({ enabled: true, values: { hosts }, secrets: {}, hints: {} }), Date.now());
+  const reboot = async (extra: Record<string, string> = {}) => {
+    const keep = db;
+    await app.close();
+    app = await buildApp({ config: loadConfig({ ...env, ...extra }), db: keep, clientDir: '/nonexistent' });
+  };
+
+  it('une ligne modifiée directement en base n\'entre jamais dans la politique de sécurité, et ne fait pas tomber le site', async () => {
+    store(['a.com *', '*', 'a.com;x', 'a.com,b.com', "'unsafe-inline'", 'https://c.com', 'LOCALHOST', 'ok.example.test']);
+    await reboot();
+    expect(await frameSrc()).toBe('https://ok.example.test');
+    expect((await app.inject({ method: 'GET', url: '/api/v3/config' })).json().embedHosts).toEqual(['ok.example.test']);
+    expect((await app.inject({ method: 'GET', url: '/api/v3/me' })).statusCode).toBe(200);
+  });
+
+  it('un hôte enregistré qui devient celui de Notabene (ou de son site) est écarté au démarrage', async () => {
+    store(['wiki.example.org', 'files.wiki.example.org', 'example.org', 'autre.example.test']);
+    await reboot({ PUBLIC_URL: 'http://wiki.example.org:3000' });
+    expect(await frameSrc()).toBe('https://autre.example.test');
+  });
+
+  it('refuse un hôte du même site que Notabene : lui-même, un sous-domaine, le domaine parent', async () => {
+    await app.close(); db.close();
+    await boot({ PUBLIC_URL: 'http://wiki.example.org:3000' });
+    const admin = await login('a@example.com', 'admin');
+    for (const bad of ['wiki.example.org', 'files.wiki.example.org', 'example.org']) {
+      expect((await api(admin, 'PUT', '/admin/settings/embeds', { config: { enabled: true, hosts: [bad] }, reauth })).statusCode, bad).toBe(400);
+    }
+    expect((await api(admin, 'PUT', '/admin/settings/embeds', { config: { enabled: true, hosts: ['autre.example.test'] }, reauth })).statusCode).toBe(200);
+    expect(() => loadConfig({ ...env, PUBLIC_URL: 'https://wiki.example.org', CONTENT_EMBED_HOSTS: 'example.org' })).toThrow(/même site/);
+  });
+
+  it('le journal d\'audit garde la liste d\'hôtes', async () => {
+    const admin = await login('a@example.com', 'admin');
+    await api(admin, 'PUT', '/admin/settings/embeds', { config: { enabled: true, hosts: ['player.vimeo.com'] }, reauth });
+    const row = db.prepare("SELECT meta FROM audit_log WHERE action = 'settings.embeds'").get() as { meta: string };
+    expect(JSON.parse(row.meta).hosts).toEqual(['player.vimeo.com']);
+  });
+
+  it('exige le jeton CSRF pour modifier la liste', async () => {
+    const admin = await login('a@example.com', 'admin');
+    const res = await app.inject({ method: 'PUT', url: '/api/v3/admin/settings/embeds', payload: { config: { enabled: true, hosts: ['player.vimeo.com'] }, reauth }, cookies: admin.cookies });
+    expect(res.statusCode).toBe(403);
+    expect(await frameSrc()).toBe("'none'");
+  });
+
+  it('un PUBLIC_URL illisible donne l\'erreur de configuration habituelle, pas une exception brute', () => {
+    expect(() => loadConfig({ ...env, PUBLIC_URL: 'pas une adresse', CONTENT_EMBED_HOSTS: 'player.vimeo.com' })).toThrow(/PUBLIC_URL/);
+  });
+
+  it('l\'export Markdown neutralise parenthèses et chevrons : un lien, une image ou un bloc intégré ne peut pas en ouvrir un autre', () => {
+    const evil = 'https://a.com/?)[Cliquez](javascript:alert(1))![](https://tracker.example/p.gif)';
+    const d = sanitizeDoc({ type: 'doc', content: [
+      { type: 'embed', attrs: { url: evil } },
+      { type: 'paragraph', content: [{ type: 'text', text: 'lien', marks: [{ type: 'link', attrs: { href: evil } }] }] },
+      { type: 'image', attrs: { src: evil, alt: 'x' } },
+    ] });
+    const md = toMarkdown('P', '', d, () => null);
+    // Lecture par un moteur Markdown : ni lien javascript:, ni image externe supplémentaire.
+    const html = marked.parse(md, { gfm: false, async: false }) as string;
+    expect(html).not.toContain('href="javascript:');
+    expect(html).not.toContain('src="https://tracker');
+    expect(html).not.toContain('<img src="https://tracker');
+    expect((html.match(/<a href=/g) ?? []).length).toBeGreaterThanOrEqual(1); // le lien du texte ; le bloc intégré, d'une forme exotique, reste du texte
+    expect((html.match(/<img /g) ?? []).length).toBe(1); // l'image elle-même
   });
 });

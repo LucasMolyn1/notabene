@@ -1,7 +1,7 @@
 // Contenu intégré (iframe) : seuls les hôtes que l'administrateur a autorisés s'affichent, et seulement après un clic.
 // Quatre garde-fous : l'adresse enregistrée est vérifiée par le serveur (https, nom de domaine) ; la CSP `frame-src` du serveur
 // interdit tout autre hôte ; l'iframe est en bac à sable ; le contenu d'un tiers ne se charge qu'à la demande de la personne
-// (le tiers voit alors son adresse IP).
+// (le tiers voit alors son adresse IP). Le consentement vaut pour un hôte, jusqu'à la fermeture de l'onglet.
 import { Node, mergeAttributes } from '@tiptap/core';
 import { h } from '../util.js';
 import { icon } from '../icons.js';
@@ -9,10 +9,10 @@ import { session } from '../session.js';
 
 const CONSENT_KEY = 'notabene.embeds.loaded';
 
-// Nom de domaine ASCII d'au moins deux étiquettes, dernière étiquette alphabétique (donc jamais une adresse IP).
+// Nom de domaine ASCII d'au moins deux étiquettes, dernière étiquette alphabétique ou punycode (donc jamais une adresse IP).
 function isDomain(host) {
   const labels = host.split('.');
-  return host.length >= 4 && host.length <= 253 && labels.length >= 2 && /^[a-z]{2,63}$/.test(labels.at(-1))
+  return host.length >= 4 && host.length <= 253 && labels.length >= 2 && /^(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/.test(labels.at(-1))
     && labels.every((l) => /^[a-z0-9-]{1,63}$/.test(l) && !l.startsWith('-') && !l.endsWith('-'));
 }
 
@@ -41,10 +41,12 @@ export const Embed = Node.create({
     return { url: { default: null, parseHTML: (el) => embedUrl(el.getAttribute('data-url')) } };
   },
   parseHTML() { return [{ tag: 'div[data-embed]', getAttrs: (el) => (embedUrl(el.getAttribute('data-url')) ? null : false) }]; },
+  // Une adresse reçue par co-édition n'a pas encore été validée par le serveur : on la revalide avant de la copier ou de l'afficher.
   renderHTML({ node, HTMLAttributes }) {
-    return ['div', mergeAttributes(HTMLAttributes, { 'data-embed': '', 'data-url': node.attrs.url, class: 'embed' }), ['a', { href: node.attrs.url, rel: 'noopener noreferrer' }, node.attrs.url]];
+    const url = embedUrl(node.attrs.url);
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-embed': '', 'data-url': url || '', class: 'embed' }), url ? ['a', { href: url, rel: 'noopener noreferrer' }, url] : 'Adresse invalide'];
   },
-  renderText({ node }) { return node.attrs.url || ''; },
+  renderText({ node }) { return embedUrl(node.attrs.url) || ''; },
 
   addNodeView() {
     return ({ node }) => {

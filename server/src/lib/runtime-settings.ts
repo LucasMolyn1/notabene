@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { Config } from '../config.js';
 import type { DB } from '../db.js';
 import type { SecretBox } from './crypto.js';
-import { normalizeEmbedHost, selfHost } from './embed.js';
+import { normalizeEmbedHost, sameSiteAsSelf, selfHost } from './embed.js';
 
 export type SectionName = 'embed' | 'embeds' | 'oidc' | 'ldap' | 'saml' | 'smtp';
 export const SECTION_NAMES: SectionName[] = ['embed', 'embeds', 'oidc', 'ldap', 'saml', 'smtp'];
@@ -59,7 +59,7 @@ const SPECS: Record<SectionName, SectionSpec> = {
         for (const raw of all) {
           const host = normalizeEmbedHost(raw);
           if (!host) ctx.addIssue({ code: 'custom', message: `hôte invalide : ${raw} (nom de domaine, sans https://, chemin, port ni joker)` });
-          else if (host === selfHost(env.PUBLIC_URL)) ctx.addIssue({ code: 'custom', message: `${host} est l'hôte de Notabene : il ne peut pas s'intégrer lui-même` });
+          else if (sameSiteAsSelf(host, selfHost(env.PUBLIC_URL))) ctx.addIssue({ code: 'custom', message: `${host} est du même site que Notabene (${selfHost(env.PUBLIC_URL)}) : il ne peut pas être intégré` });
         }
       }).transform((all) => [...new Set(all.map((h) => normalizeEmbedHost(h)!))]).default([]),
     }),

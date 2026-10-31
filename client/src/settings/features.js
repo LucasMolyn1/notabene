@@ -36,7 +36,7 @@ export async function renderEmbeds(el) {
   el.replaceChildren(
     card('Intégrer du contenu externe dans les pages', 'Par défaut, aucune page ne peut afficher le contenu d’un autre site.',
       h('div', { class: 'notice warning' },
-        'Autoriser un hôte, c’est accepter que le navigateur de chaque lecteur le contacte pour afficher le contenu : ce site voit l’adresse IP des lecteurs et peut déposer ses propres cookies. Chaque lecteur doit cliquer pour afficher un contenu, dans un cadre isolé (bac à sable). N’autorisez que des sites de confiance, par exemple un hébergeur vidéo.'),
+        'Autoriser un hôte, c’est accepter que le navigateur de chaque lecteur le contacte pour afficher le contenu : ce site voit l’adresse IP des lecteurs et peut déposer ses propres cookies. Chaque lecteur doit cliquer pour afficher le contenu d’un hôte (le choix vaut pour l’hôte, jusqu’à la fermeture de l’onglet), dans un cadre isolé (bac à sable). N’autorisez que des sites de confiance, par exemple un hébergeur vidéo.'),
       h('p', { class: 'hint' }, 'Les éditeurs ne peuvent intégrer que des adresses https sur ces hôtes ; une page qui renvoie vers un autre hôte l’affiche comme un lien.')),
     embedHostsCard(cfgData, { card, refresh: () => renderEmbeds(el) }));
 }

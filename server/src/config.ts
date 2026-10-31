@@ -2,7 +2,7 @@
 // Principe : une configuration dangereuse empêche le serveur de démarrer.
 import { isIP } from 'node:net';
 import { z } from 'zod';
-import { normalizeEmbedHost, selfHost } from './lib/embed.js';
+import { normalizeEmbedHost, sameSiteAsSelf, selfHost } from './lib/embed.js';
 
 const bool = (def: 'true' | 'false') =>
   z.enum(['true', 'false', '1', '0']).default(def).transform((v) => v === 'true' || v === '1');
@@ -183,8 +183,8 @@ const schema = z
     for (const host of c.CONTENT_EMBED_HOSTS) {
       if (!normalizeEmbedHost(host) || normalizeEmbedHost(host) !== host) {
         ctx.addIssue({ code: 'custom', path: ['CONTENT_EMBED_HOSTS'], message: `hôte invalide : ${host} (nom de domaine en minuscules, sans https://, chemin, port ni joker)` });
-      } else if (host === selfHost(c.PUBLIC_URL)) {
-        ctx.addIssue({ code: 'custom', path: ['CONTENT_EMBED_HOSTS'], message: `${host} est l'hôte de Notabene : il ne peut pas s'intégrer lui-même` });
+      } else if (sameSiteAsSelf(host, selfHost(c.PUBLIC_URL))) {
+        ctx.addIssue({ code: 'custom', path: ['CONTENT_EMBED_HOSTS'], message: `${host} est du même site que Notabene (${selfHost(c.PUBLIC_URL)}) : il ne peut pas être intégré` });
       }
     }
     for (const origin of c.EMBED_ALLOWED_ORIGINS) {

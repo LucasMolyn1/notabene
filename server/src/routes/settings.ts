@@ -121,7 +121,7 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
       passed.delete(body.testId!);
     }
     const view = wrap(() => rt.save(section, body.config, secretsOf(section, body.secrets), auth.user.id));
-    audit(db, req, `settings.${section}`, section, { enabled: view.enabled, secretsChanged: Object.keys(body.secrets) });
+    audit(db, req, `settings.${section}`, section, { enabled: view.enabled, secretsChanged: Object.keys(body.secrets), ...(section === 'embeds' ? { hosts: view.values.hosts } : {}) });
     return view;
   });
 

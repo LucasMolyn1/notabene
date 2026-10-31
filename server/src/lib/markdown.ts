@@ -7,6 +7,8 @@ const WRAP: Record<string, [string, string]> = {
 const ALERT: Record<string, string> = { info: 'NOTE', warning: 'WARNING', success: 'TIP', danger: 'CAUTION' };
 
 type TitleOf = (id: string) => string | null;
+// Adresse placée entre parenthèses d'un lien ou d'une image : parenthèses, espaces et chevrons encodés, pour qu'elle ne puisse pas fermer le lien.
+const mdUrl = (u: string) => u.replace(/[()\s<>]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);
 /** Nom d'une personne mentionnée, ou null si la personne n'a pas à être nommée (« @utilisateur »). */
 export type MentionName = (id: string) => string | null;
 
@@ -21,7 +23,7 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
     if (!marks.some((m) => m.type === 'code')) t = t.replace(/([\\*_`~[\]])/g, '\\$1');
     for (const m of marks) if (WRAP[m.type]) t = WRAP[m.type][0] + t + WRAP[m.type][1];
     const link = marks.find((m) => m.type === 'link');
-    return link ? `[${t}](${String(link.attrs?.href)})` : t;
+    return link ? `[${t}](${mdUrl(String(link.attrs?.href))})` : t;
   }).join('');
 
   const quote = (s: string) => s.split('\n').map((l) => (l ? `> ${l}` : '>')).join('\n');
@@ -41,7 +43,7 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
       case 'callout': return quote(`[!${ALERT[String(a.type)] ?? 'NOTE'}]\n${blocks(node.content)}`);
       case 'codeBlock': return `\`\`\`${a.language ?? ''}\n${(node.content ?? []).map((t) => t.text).join('')}\n\`\`\``;
       case 'plantuml': return `\`\`\`plantuml\n${a.code ?? ''}\n\`\`\``;
-      case 'embed': return `[${String(a.url).replace(/([\\*_`~[\]])/g, '\\$1')}](${String(a.url).replace(/[()\s]/g, encodeURIComponent)})`;
+      case 'embed': return `[${String(a.url).replace(/([\\*_`~[\]])/g, '\\$1')}](${mdUrl(String(a.url))})`;
       case 'mermaid': return `\`\`\`mermaid\n${a.code ?? ''}\n\`\`\``;
       case 'math': return `$$\n${String(a.code ?? '').replace(/\$\$/g, '$ $')}\n$$`;
       case 'details': {
@@ -52,7 +54,7 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
       case 'excalidraw': return '_[Dessin Excalidraw]_';
       case 'drawio': return '_[Diagramme Draw.io]_';
       case 'horizontalRule': return '---';
-      case 'image': return String(a.src).startsWith('data:') ? `_[Image : ${a.alt ?? ''}]_` : `![${a.alt ?? ''}](${a.src})`;
+      case 'image': return String(a.src).startsWith('data:') ? `_[Image : ${a.alt ?? ''}]_` : `![${a.alt ?? ''}](${mdUrl(String(a.src))})`;
       case 'bulletList': return list(node, () => '- ');
       case 'orderedList': return list(node, (_, i) => `${(Number(a.start) || 1) + i}. `);
       case 'taskList': return list(node, (item) => `- [${item.attrs?.checked ? 'x' : ' '}] `);

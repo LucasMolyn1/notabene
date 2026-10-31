@@ -1,4 +1,5 @@
 // Configuration publique, identité courante, flux d'événements (SSE) et présence.
+import { effectiveEmbedHosts } from '../lib/embed.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { can, requireAuth } from '../auth/context.js';
@@ -20,7 +21,7 @@ export default async function coreRoutes(app: FastifyInstance) {
     auth: { oidc: app.oidc.enabled, devLogin: config.DEV_LOGIN, local: config.AUTH_LOCAL, ldap: !!app.rt.get().LDAP_URL, saml: !!app.rt.get().SAML_ENTRY_POINT, mail: !!app.rt.get().SMTP_HOST, setupRequired: config.AUTH_LOCAL && !(app.db.prepare("SELECT 1 FROM users WHERE role = 'admin' AND password_hash IS NOT NULL LIMIT 1").get()) },
     drawioUrl: config.DRAWIO_URL ?? null,
     // Hôtes dont le contenu peut être intégré dans une page (liste vide : fonction inactive).
-    embedHosts: app.rt.get().CONTENT_EMBED_HOSTS,
+    embedHosts: effectiveEmbedHosts(app.rt.get().CONTENT_EMBED_HOSTS, config.PUBLIC_URL),
     collab: config.COLLAB_ENABLED,
     ai: isAiReady(db),
   }));

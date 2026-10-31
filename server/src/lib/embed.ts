@@ -2,9 +2,9 @@
 // Deux protections se superposent : l'en-tête CSP `frame-src` (le navigateur refuse tout autre hôte, quoi que contienne une page)
 // et la forme de l'adresse enregistrée dans la page (https, sans identifiants, sans port, nom de domaine).
 const LABEL = /^[a-z0-9-]{1,63}$/;
-const TLD = /^[a-z]{2,63}$/;
+const TLD = /^(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/; // lettres, ou domaine de premier niveau internationalisé (punycode)
 
-// Nom de domaine ASCII d'au moins deux étiquettes, dernière étiquette alphabétique (donc jamais une adresse IP).
+// Nom de domaine ASCII d'au moins deux étiquettes, dernière étiquette alphabétique ou punycode (donc jamais une adresse IP).
 function isDomain(host: string): boolean {
   if (host.length < 4 || host.length > 253) return false;
   const labels = host.split('.');
@@ -29,5 +29,19 @@ export function embedUrl(raw: unknown): string | null {
 
 export const embedHostOf = (url: string): string | null => { try { return new URL(url).hostname; } catch { return null; } };
 
-/** Hôte de l'application : il ne peut pas figurer dans la liste (une page de Notabene intégrée dans Notabene n'est pas isolée). */
-export const selfHost = (publicUrl: string): string => new URL(publicUrl).hostname.toLowerCase();
+/** Hôte de l'application ; chaîne vide si l'adresse publique est illisible (la configuration est alors refusée par ailleurs). */
+export function selfHost(publicUrl: string): string {
+  try { return new URL(publicUrl).hostname.toLowerCase(); } catch { return ''; }
+}
+
+/**
+ * Un hôte du même site que Notabene (lui-même, un de ses sous-domaines ou un domaine parent) ne peut pas figurer dans la liste :
+ * une page de Notabene intégrée dans Notabene n'est pas isolée, et un cadre du même site reçoit les cookies `SameSite=Lax`.
+ */
+export const sameSiteAsSelf = (host: string, self: string): boolean => !!self && (host === self || host.endsWith(`.${self}`) || self.endsWith(`.${host}`));
+
+/** Hôtes réellement autorisés : ceux de la liste qui passent encore la validation (une valeur enregistrée en base n'est jamais crue sur parole). */
+export const effectiveEmbedHosts = (hosts: readonly string[], publicUrl: string): string[] => {
+  const self = selfHost(publicUrl);
+  return hosts.filter((h) => normalizeEmbedHost(h) === h && !sameSiteAsSelf(h, self));
+};
