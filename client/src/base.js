@@ -39,6 +39,7 @@ export async function showBase(initial) {
   let activeView = null;
   let shown = PAGE_SIZE;
   let editing = false;
+  let pendingFocus = null; // cellule à refocaliser après le rendu qui suit une saisie
   let destroyed = false;
   let lastOwnWrite = 0; // les écritures de cet écran reviennent aussi par le flux : on n'y réagit pas
   let localConfigs = {}; // lecteurs : réglages de vue gardés en mémoire seulement
@@ -53,7 +54,12 @@ export async function showBase(initial) {
   const props = () => data.properties;
   const propById = (pid) => props().find((p) => p.id === pid);
   const view = () => data.views.find((v) => v.id === activeView) ?? data.views[0];
-  const config = () => localConfigs[view().id] ?? view().config;
+  // Une colonne supprimée par quelqu'un d'autre ne doit rester ni dans un filtre ni dans un tri.
+  const config = () => {
+    const c = localConfigs[view().id] ?? view().config;
+    const known = (pid) => !!propById(pid);
+    return { sort: c.sort.filter((x) => known(x.propertyId)), filters: c.filters.filter((x) => known(x.propertyId)), hidden: c.hidden.filter(known) };
+  };
   const fail = (err) => toast(err?.message || 'Une erreur est survenue', { kind: 'error' });
 
   async function load(silent = false) {
@@ -138,12 +144,19 @@ export async function showBase(initial) {
   }
 
   // ---- Vue : enregistrement (écrivains) ou mémoire locale (lecteurs) ----
-  const saveConfig = debounce(async () => {
-    const v = view();
-    try { await api.patch(`/bases/${id}/views/${v.id}`, { config: v.config }); } catch (err) { fail(err); load(true); }
-  }, 500);
+  // Un envoi différé par vue : passer à une autre vue pendant l'attente ne perd pas le réglage de la première.
+  const saveTimers = new Map();
+  function saveConfig(viewId) {
+    clearTimeout(saveTimers.get(viewId));
+    saveTimers.set(viewId, setTimeout(async () => {
+      saveTimers.delete(viewId);
+      const v = data?.views.find((x) => x.id === viewId);
+      if (!v || destroyed) return;
+      try { await api.patch(`/bases/${id}/views/${viewId}`, { config: v.config }); } catch (err) { fail(err); load(true); }
+    }, 500));
+  }
   function setConfig(next) {
-    if (canWrite()) { view().config = next; saveConfig(); } else localConfigs[view().id] = next;
+    if (canWrite()) { view().config = next; saveConfig(view().id); } else localConfigs[view().id] = next;
     render();
   }
 
@@ -191,6 +204,7 @@ export async function showBase(initial) {
     if (!canWrite()) return;
     const v = row.values[p.id];
     editing = true;
+    pendingFocus = { rowId: row.id, propId: p.id };
     const done = () => { editing = false; render(); };
     switch (p.type) {
       case 'text': case 'number': case 'date': {
@@ -293,7 +307,7 @@ export async function showBase(initial) {
     const td = h('td', { class: `bt-cell bt-t-${p.type}` });
     if (canWrite()) {
       const shownText = textOf(p, v);
-      const btn = h('button', { class: 'bt-cell-btn', 'aria-label': shownText ? `${shownText} (modifier ${p.name})` : `Modifier ${p.name}`, onClick: () => editCell(td, row, p) }, content ?? h('span', { class: 'bt-placeholder' }, ' '));
+      const btn = h('button', { class: 'bt-cell-btn', 'data-prop': p.id, 'aria-label': shownText ? `${shownText} (modifier ${p.name})` : `Modifier ${p.name}`, onClick: () => editCell(td, row, p) }, content ?? h('span', { class: 'bt-placeholder' }, ' '));
       td.append(btn);
     } else td.append(content ?? '');
     return td;
@@ -567,6 +581,11 @@ export async function showBase(initial) {
         canWrite() && h('button', { class: 'btn btn-ghost btn-sm', disabled: data.rows.length >= data.limits.rows, onClick: addRow }, icon('plus', 14), 'Nouvelle ligne'),
         h('span', { class: 'muted' }, `${data.rows.length} ${data.rows.length > 1 ? 'lignes' : 'ligne'}${rows.length !== data.rows.length ? `, ${rows.length} affichées` : ''}`)),
     ].filter(Boolean));
+    if (pendingFocus && !editing) {
+      const target = [...body.querySelectorAll(`tr[data-row="${pendingFocus.rowId}"] .bt-cell-btn`)].find((b) => b.dataset.prop === pendingFocus.propId);
+      pendingFocus = null;
+      target?.focus();
+    }
   }
 
   // Un autre écran a modifié la base : on recharge, sauf pendant une saisie (la saisie prime, le rechargement suivra).
@@ -583,7 +602,7 @@ export async function showBase(initial) {
   setView({
     kind: 'base',
     id,
-    destroy() { destroyed = true; window.removeEventListener('notabene:base', onRemote); closePopover(); },
+    destroy() { destroyed = true; for (const t of saveTimers.values()) clearTimeout(t); window.removeEventListener('notabene:base', onRemote); closePopover(); },
     onStore() { if (!destroyed && data && !editing) render(); },
   });
   await load();

@@ -10,7 +10,7 @@ import { EVERYONE } from './space-access.js';
 
 export const MAX_MENTIONS = 10;
 interface UserRow { id: string; name: string; email: string | null; role: 'admin' | 'editor' | 'reader' }
-const asAuth = (u: UserRow): Auth => ({ user: { id: u.id, name: u.name, email: u.email, role: u.role }, via: 'session', scopes: new Set() });
+const asAuth = (u: UserRow): Auth => ({ user: { id: u.id, name: u.name, email: u.email, role: u.role }, via: 'session', scopes: new Set(['read']) });
 
 /**
  * Personnes actives qui peuvent lire la page, dont le nom (ou l'un de ses mots) commence par `q`.

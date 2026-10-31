@@ -6,6 +6,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { type DB, openDb } from '../src/db.js';
 import { csvCell, MAX_ROWS, presentRows, propertiesOf } from '../src/lib/bases.js';
+import { canReadPage } from '../src/lib/page-acl.js';
 import { hashPassword } from '../src/lib/password.js';
 import { seedDemo } from '../src/seed.js';
 import { oldDb } from './migrations.js';
@@ -374,6 +375,121 @@ describe('export CSV', () => {
     expect(res.headers['content-type']).toContain('text/csv');
     expect(res.headers['content-disposition']).toMatch(/^attachment; filename="[\w.-]+\.csv"$/);
     expect(res.body).toContain(`"'=HYPERLINK(""http://x"")"`);
+  });
+});
+
+describe('relecture : une base n’existe pas pour qui n’a pas de compte', () => {
+  async function publicBase() {
+    const ed = await login('ed1@example.com');
+    const b = await newBase(ed, 'Base publique cachée', publicSpace());
+    const nom = b.properties[0]!.id;
+    await call(ed, 'POST', `/api/v3/bases/${b.page.id}/rows`, { values: { [nom]: 'cellule confidentielle' } });
+    return { ed, b };
+  }
+
+  it('ni la liste des pages, ni la page, ni son export, ni la recherche, ni les commentaires ne la montrent', async () => {
+    const { b } = await publicBase();
+    const list = JSON.stringify((await call(null, 'GET', `/api/v3/pages?spaceId=${publicSpace()}`)).json());
+    expect(list).not.toContain(b.page.id);
+    expect(list).not.toContain('confidentielle');
+    expect((await call(null, 'GET', `/api/v3/pages/${b.page.id}`)).statusCode).toBe(404);
+    expect((await call(null, 'GET', `/api/v3/pages/${b.page.id}/export?format=json`)).statusCode).toBe(404);
+    expect((await call(null, 'GET', `/api/v3/pages/${b.page.id}/comments`)).statusCode).toBe(404);
+    const found = JSON.stringify((await call(null, 'GET', '/api/v3/search?q=confidentielle')).json());
+    expect(found).not.toContain(b.page.id);
+    expect(found).not.toContain('confidentielle');
+    // Une page ordinaire du même espace reste lisible : la règle ne vise que les bases.
+    expect(JSON.stringify((await call(null, 'GET', `/api/v3/pages?spaceId=${publicSpace()}`)).json())).toContain('Bienvenue');
+  });
+
+  it('un jeton sans la portée de lecture n’y a pas droit non plus', async () => {
+    const { b } = await publicBase();
+    const user = { id: 'ed1', name: 'Nom ed1', email: 'ed1@example.com', role: 'editor' as const };
+    const reading = { user, via: 'token' as const, scopes: new Set(['read']) };
+    const writeOnly = { user, via: 'token' as const, scopes: new Set(['write']) };
+    expect(canReadPage(db, reading, b.page.id)).toBe(true);
+    expect(canReadPage(db, writeOnly, b.page.id)).toBe(false);
+    expect(canReadPage(db, null, b.page.id)).toBe(false);
+    expect(canReadPage(db, writeOnly, (db.prepare("SELECT id FROM pages WHERE kind = 'doc' AND space_id = ? LIMIT 1").get(publicSpace()) as { id: string }).id)).toBe(true);
+  });
+
+  it('le flux temps réel ne dit rien d’une base à un visiteur anonyme, et reste complet pour un compte', async () => {
+    const { b } = await publicBase();
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const port = (app.server.address() as { port: number }).port;
+    const watch = async (cookie?: string) => {
+      const controller = new AbortController();
+      const res = await fetch(`http://127.0.0.1:${port}/api/v3/events`, { headers: cookie ? { cookie: `nb_session=${cookie}` } : {}, signal: controller.signal });
+      const box = { text: '', stop: () => controller.abort() };
+      void (async () => { const r = res.body!.getReader(); const d = new TextDecoder(); for (;;) { const { value, done } = await r.read(); if (done) break; box.text += d.decode(value); } })().catch(() => undefined);
+      return box;
+    };
+    const anon = await watch();
+    const account = await watch((await login('ed2@example.com')).cookies.nb_session);
+    const pause = () => new Promise((r) => setTimeout(r, 250));
+    await pause();
+    app.bus.publish({ type: 'base.changed', spaceId: publicSpace(), pageId: b.page.id, by: { id: 'ed1', name: 'Nom ed1' } });
+    app.bus.publish({ type: 'page.updated', spaceId: publicSpace(), pageId: b.page.id, version: 77 });
+    await pause();
+    expect(account.text).toContain('base.changed');
+    expect(anon.text).not.toContain('base.changed');
+    expect(anon.text).not.toContain('"version":77');
+    expect(anon.text).not.toContain('Nom ed1');
+    anon.stop(); account.stop();
+  });
+});
+
+describe('relecture : tailles, export et noms', () => {
+  it('une ligne ne dépasse pas 20 000 caractères, même par modifications successives, et la base a une taille maximale', async () => {
+    const ed = await login('ed1@example.com');
+    const b = await newBase(ed);
+    const cols: string[] = [b.properties[0]!.id];
+    for (let i = 0; i < 11; i++) cols.push((await addProp(ed, b.page.id, { name: `t${i}`, type: 'text' })).id);
+    const row = (await call(ed, 'POST', `/api/v3/bases/${b.page.id}/rows`, { values: {} })).json() as { id: string };
+    const results: number[] = [];
+    for (const c of cols) results.push((await call(ed, 'PATCH', `/api/v3/bases/${b.page.id}/rows/${row.id}`, { values: { [c]: 'x'.repeat(2000) } })).statusCode);
+    expect(results.slice(0, 9).every((c) => c === 200)).toBe(true);
+    expect(results.slice(9)).toContain(400);
+    const total = (db.prepare('SELECT length(vals) AS n FROM base_rows WHERE id = ?').get(row.id) as { n: number }).n;
+    expect(total).toBeLessThanOrEqual(20_000);
+    // Taille totale : on remplit directement, l'écriture suivante est refusée.
+    db.prepare('UPDATE base_rows SET vals = ? WHERE id = ?').run(JSON.stringify({ [cols[0]!]: 'y'.repeat(1900) }) + ' '.repeat(10_000_000), row.id);
+    expect((await call(ed, 'POST', `/api/v3/bases/${b.page.id}/rows`, { values: { [cols[0]!]: 'encore' } })).statusCode).toBe(409);
+  });
+
+  it('le CSV laisse les nombres négatifs et les dates tels quels, et protège toujours le texte', async () => {
+    const ed = await login('ed1@example.com');
+    const b = await newBase(ed);
+    const n = (await addProp(ed, b.page.id, { name: 'N', type: 'number' })).id;
+    const d = (await addProp(ed, b.page.id, { name: 'D', type: 'date' })).id;
+    await call(ed, 'POST', `/api/v3/bases/${b.page.id}/rows`, { values: { [b.properties[0]!.id]: '-texte', [n]: -5, [d]: '2026-01-02' } });
+    const csv = (await call(ed, 'GET', `/api/v3/bases/${b.page.id}/export`)).body;
+    expect(csv).toContain("'-texte,-5,2026-01-02");
+  });
+
+  it('les caractères de direction du texte sont retirés des noms et des valeurs', async () => {
+    const ed = await login('ed1@example.com');
+    const b = await newBase(ed);
+    const p = await call(ed, 'POST', `/api/v3/bases/${b.page.id}/properties`, { name: 'Prix\u202Etxt.exe', type: 'text' });
+    expect(p.json().name).toBe('Prixtxt.exe');
+    expect((await call(ed, 'POST', `/api/v3/bases/${b.page.id}/properties`, { name: '\u202E\u2066', type: 'text' })).statusCode).toBe(400);
+    const row = await call(ed, 'POST', `/api/v3/bases/${b.page.id}/rows`, { values: { [b.properties[0]!.id]: 'a\u202Eb' } });
+    expect(Object.values((row.json() as { values: Record<string, string> }).values)).toEqual(['ab']);
+    const opt = await call(ed, 'POST', `/api/v3/bases/${b.page.id}/properties`, { name: 'S', type: 'select', options: [{ name: 'x\u202Ey' }] });
+    expect((opt.json() as { options: { name: string }[] }).options[0]!.name).toBe('xy');
+  });
+
+  it('dans un espace personnel, la suppression de lignes n’écrit aucun détail au journal', async () => {
+    const ed = await login('ed1@example.com');
+    const admin = await login('admin@example.com');
+    await call(admin, 'PUT', '/api/v3/admin/personal-spaces', { enabled: true });
+    const sp = await call(ed, 'POST', '/api/v3/spaces/personal');
+    expect(sp.statusCode).toBe(201);
+    const b = await newBase(ed, 'Privée', (sp.json() as { id: string }).id);
+    const row = (await call(ed, 'POST', `/api/v3/bases/${b.page.id}/rows`, { values: {} })).json() as { id: string };
+    await call(ed, 'POST', `/api/v3/bases/${b.page.id}/rows/delete`, { ids: [row.id] });
+    const entry = db.prepare("SELECT meta FROM audit_log WHERE action = 'base.rows.delete' ORDER BY id DESC LIMIT 1").get() as { meta: string | null };
+    expect(entry.meta ?? '').not.toContain('count');
   });
 });
 

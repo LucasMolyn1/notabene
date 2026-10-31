@@ -7,8 +7,8 @@ import { can, guard } from '../auth/context.js';
 import { loadReadablePage, loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
 import {
-  addProperty, addRow, addView, checkViewConfig, createBase, MAX_PROPERTIES, MAX_ROWS, optionSchema, patchRow, presentRows, propertiesOf,
-  PROPERTY_TYPES, propertyName, reindexBase, removeProperty, removeRows, rowCount, toCsv, touchBase, updateProperty, viewConfigSchema, viewsOf,
+  cleanName, addProperty, addRow, addView, checkViewConfig, createBase, MAX_PROPERTIES, MAX_ROWS, optionSchema, patchRow, presentRows, propertiesOf,
+  PROPERTY_TYPES, reindexBase, removeProperty, removeRows, rowCount, toCsv, touchBase, updateProperty, viewConfigSchema, viewsOf,
   type Ctx,
 } from '../lib/bases.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
@@ -16,8 +16,10 @@ import { canWritePage } from '../lib/page-acl.js';
 import { inPersonalSpace } from '../lib/personal-spaces.js';
 import { toMeta, type PageRow } from '../lib/pages.js';
 
+const propertyName = cleanName(60);
+const viewName = cleanName(60);
 const values = z.record(z.string().max(40), z.unknown()).refine((o) => Object.keys(o).length <= MAX_PROPERTIES, 'trop de cellules')
-  .refine((o) => JSON.stringify(o).length <= 40_000, 'ligne trop volumineuse');
+  .refine((o) => JSON.stringify(o).length <= 20_000, 'ligne trop volumineuse');
 
 const createBody = z.object({
   spaceId: idSchema,
@@ -32,8 +34,8 @@ const rowParams = z.object({ id: idSchema, rowId: idSchema });
 const viewParams = z.object({ id: idSchema, viewId: idSchema });
 const rowBody = z.object({ values: values.default({}) });
 const rowsDelete = z.object({ ids: z.array(idSchema).min(1).max(500) });
-const viewBody = z.object({ name: z.string().trim().min(1).max(60), config: viewConfigSchema.default({ sort: [], filters: [], hidden: [] }) });
-const viewPatch = z.object({ name: z.string().trim().min(1).max(60).optional(), config: viewConfigSchema.optional() });
+const viewBody = z.object({ name: viewName, config: viewConfigSchema.default({ sort: [], filters: [], hidden: [] }) });
+const viewPatch = z.object({ name: viewName.optional(), config: viewConfigSchema.optional() });
 
 export default async function baseRoutes(app: FastifyInstance) {
   const { db, bus } = app;
@@ -51,8 +53,8 @@ export default async function baseRoutes(app: FastifyInstance) {
   const by = (req: FastifyRequest) => (req.auth ? { id: req.auth.user.id, name: req.auth.user.name } : undefined);
   const userId = (req: FastifyRequest) => req.auth?.user.id ?? null;
   // Après une écriture : texte de recherche, date de modification, événement pour les autres écrans.
-  const changed = (req: FastifyRequest, page: PageRow) => {
-    reindexBase(db, page.id);
+  const changed = (req: FastifyRequest, page: PageRow, reindex = true) => {
+    if (reindex) reindexBase(db, page.id);
     touchBase(db, page.id, userId(req));
     bus.publish({ type: 'base.changed', spaceId: page.space_id, pageId: page.id, by: by(req) });
   };
@@ -127,23 +129,26 @@ export default async function baseRoutes(app: FastifyInstance) {
   app.post('/bases/:id/rows', { ...write, schema: { tags, summary: 'Ajouter une ligne', params: idParams, body: rowBody } }, async (req, reply) => {
     const page = openBase(req, (req.params as { id: string }).id, 'write');
     const row = addRow(ctxOf(req, page), (req.body as z.output<typeof rowBody>).values, userId(req));
-    changed(req, page);
-    const shown = presentRows(ctxOf(req, page), propertiesOf(db, page.id), !!req.auth).find((r) => r.id === row.id);
-    return reply.status(201).send(shown);
+    changed(req, page, Object.keys((req.body as z.output<typeof rowBody>).values).length > 0);
+    return reply.status(201).send(presentRows(ctxOf(req, page), propertiesOf(db, page.id), !!req.auth, row.id)[0]);
   });
 
   app.patch('/bases/:id/rows/:rowId', { ...write, schema: { tags, summary: 'Modifier des cellules d’une ligne (null efface)', params: rowParams, body: rowBody } }, async (req) => {
     const p = req.params as z.output<typeof rowParams>;
     const page = openBase(req, p.id, 'write');
-    const row = patchRow(ctxOf(req, page), p.rowId, (req.body as z.output<typeof rowBody>).values, userId(req));
-    changed(req, page);
-    return presentRows(ctxOf(req, page), propertiesOf(db, page.id), !!req.auth).find((r) => r.id === row.id);
+    const patch = (req.body as z.output<typeof rowBody>).values;
+    const row = patchRow(ctxOf(req, page), p.rowId, patch, userId(req));
+    const props = propertiesOf(db, page.id);
+    // Le texte de recherche ne dépend ni des cases cochées, ni des personnes, ni des pages liées : inutile de le refaire pour elles.
+    const indexed = Object.keys(patch).some((k) => { const t = props.find((x) => x.id === k)?.type; return t !== 'checkbox' && t !== 'person' && t !== 'page_link'; });
+    changed(req, page, indexed);
+    return presentRows(ctxOf(req, page), props, !!req.auth, row.id)[0];
   });
 
   app.post('/bases/:id/rows/delete', { ...write, schema: { tags, summary: 'Supprimer des lignes', params: idParams, body: rowsDelete } }, async (req) => {
     const page = openBase(req, (req.params as { id: string }).id, 'write');
     const n = removeRows(db, page.id, (req.body as z.output<typeof rowsDelete>).ids);
-    if (n) { audit(db, req, 'base.rows.delete', page.id, { count: n, remaining: rowCount(db, page.id) }); changed(req, page); }
+    if (n) { audit(db, req, 'base.rows.delete', page.id, detail(page, { count: n, remaining: rowCount(db, page.id) })); changed(req, page); }
     return { deleted: n };
   });
 

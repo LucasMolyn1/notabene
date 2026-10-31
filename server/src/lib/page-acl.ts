@@ -11,6 +11,9 @@ import { EVERYONE, spaceRole, spaceRoles } from './space-access.js';
 export type Level = 'none' | 'read' | 'write';
 export type AclEntry = { userId?: string; groupId?: string; level: 'read' | 'write' };
 
+// Une base n'est jamais lisible sans compte (visiteur anonyme, ou jeton sans la portée de lecture), même dans un espace public.
+const readsAsAccount = (auth: Auth | null) => !!auth && auth.scopes.has('read');
+
 export const hasAnyAcl = (db: DB) => !!db.prepare('SELECT 1 FROM page_acl LIMIT 1').get() || !!db.prepare('SELECT 1 FROM page_acl_groups LIMIT 1').get();
 
 // Page qui gouverne `pageId` : elle-même ou son plus proche ancêtre ayant des entrées.
@@ -44,8 +47,9 @@ function aclLevel(db: DB, userId: string, gov: string): 'read' | 'write' | null 
 }
 
 export function pageLevel(db: DB, auth: Auth | null, pageId: string): Level {
-  const page = db.prepare('SELECT space_id FROM pages WHERE id = ?').get(pageId) as { space_id: string } | undefined;
+  const page = db.prepare('SELECT space_id, kind FROM pages WHERE id = ?').get(pageId) as { space_id: string; kind: string } | undefined;
   if (!page) return 'none';
+  if (page.kind === 'base' && !readsAsAccount(auth)) return 'none';
   const space = spaceRole(db, auth, page.space_id);
   if (space === 'none') return 'none';
   const fromSpace: Level = space === 'view' ? 'read' : 'write';
@@ -68,8 +72,9 @@ export function filterReadable<T extends { id: string }>(db: DB, auth: Auth | nu
   if (!items.length) return items;
   const ids = JSON.stringify([...new Set(items.map((i) => i.id))]);
   const roles = spaceRoles(db, auth);
-  const spaceOf = new Map((db.prepare('SELECT id, space_id FROM pages WHERE id IN (SELECT value FROM json_each(?))').all(ids) as { id: string; space_id: string }[]).map((r) => [r.id, r.space_id]));
-  items = items.filter((i) => { const sid = spaceOf.get(i.id); return sid !== undefined && roles.has(sid); });
+  const meta = new Map((db.prepare('SELECT id, space_id, kind FROM pages WHERE id IN (SELECT value FROM json_each(?))').all(ids) as { id: string; space_id: string; kind: string }[]).map((r) => [r.id, r]));
+  const account = readsAsAccount(auth);
+  items = items.filter((i) => { const m = meta.get(i.id); return m !== undefined && roles.has(m.space_id) && (m.kind !== 'base' || account); });
   if (!items.length || !hasAnyAcl(db)) return items;
   if (auth?.user.role === 'admin') return items;
   // Pour chaque page demandée : la page restreinte la plus proche (elle-même ou un ancêtre).

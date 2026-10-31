@@ -54,6 +54,7 @@ export default async function coreRoutes(app: FastifyInstance) {
 
   // Flux ouverts : sans les terminer à l'arrêt, le serveur attendrait indéfiniment leur fermeture (docker stop).
   const pageExists = db.prepare('SELECT 1 FROM pages WHERE id = ?');
+  const baseKind = db.prepare("SELECT 1 FROM pages WHERE id = ? AND kind = 'base'");
   const streams = new Set<import('node:http').ServerResponse>();
   app.addHook('preClose', async () => { for (const res of streams) res.end(); });
 
@@ -89,6 +90,8 @@ export default async function coreRoutes(app: FastifyInstance) {
       }
       if (event.type === 'space.changed') spaces = spaceIds(auth);
       if (event.type === 'presence' && !authed) return;
+      // Une base n'existe pas pour qui n'a pas de compte : ni son activité ni l'auteur ne sont diffusés.
+      if (!authed && (event.type === 'base.changed' || (event.pageId && baseKind.get(event.pageId)))) return;
       // Notification : uniquement pour son destinataire.
       if (event.type === 'notification' && (event.data as { userId?: string } | undefined)?.userId !== req.auth?.user.id) return;
       if (event.spaceId && !spaces.has(event.spaceId)) return;

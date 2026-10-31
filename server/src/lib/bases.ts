@@ -11,7 +11,7 @@ import type { Auth } from '../auth/context.js';
 import type { DB } from '../db.js';
 import { HttpError, newId } from './http.js';
 import { readersAmong } from './mentions.js';
-import { canReadPage } from './page-acl.js';
+import { canReadPage, filterReadable } from './page-acl.js';
 import { createPage, getPageRow, type PageRow } from './pages.js';
 
 export const MAX_PROPERTIES = 50;
@@ -19,6 +19,8 @@ export const MAX_ROWS = 5000;
 export const MAX_OPTIONS = 100;
 export const MAX_VIEWS = 10;
 export const MAX_TEXT = 2000;
+export const MAX_ROW_CHARS = 20_000;
+export const MAX_BASE_CHARS = 10_000_000;
 
 export const PROPERTY_TYPES = ['text', 'number', 'date', 'select', 'multi_select', 'status', 'checkbox', 'person', 'page_link'] as const;
 export type PropertyType = typeof PROPERTY_TYPES[number];
@@ -30,12 +32,12 @@ const OPTION_ID = /^[0-9a-f]{10}$/;
 
 export const optionSchema = z.object({
   id: z.string().regex(OPTION_ID).optional(),
-  name: z.string().trim().min(1).max(40),
+  name: z.lazy(() => cleanName(40)),
   color: z.enum(OPTION_COLORS).default('gray'),
 });
 export interface Option { id: string; name: string; color: typeof OPTION_COLORS[number] }
 
-export const propertyName = z.string().trim().min(1).max(60);
+
 
 // Vue : tri, filtres, colonnes masquées. Rien d'exécutable : des identifiants de colonnes, des opérateurs d'une liste fermée.
 export const FILTER_OPS = ['contains', 'eq', 'neq', 'gt', 'lt', 'empty', 'notempty'] as const;
@@ -116,11 +118,11 @@ export function updateProperty(db: DB, baseId: string, id: string, input: { name
       const alive = new Set(options.map((o) => o.id));
       const removed = prop.options.filter((o) => !alive.has(o.id)).map((o) => o.id);
       if (removed.length) rewriteRows(db, baseId, (vals) => {
-        const v = vals[id];
-        if (typeof v === 'string' && removed.includes(v)) { delete vals[id]; return true; }
+        const v = vals.get(id);
+        if (typeof v === 'string' && removed.includes(v)) { vals.delete(id); return true; }
         if (Array.isArray(v)) {
           const kept = v.filter((x) => !removed.includes(String(x)));
-          if (kept.length !== v.length) { if (kept.length) vals[id] = kept; else delete vals[id]; return true; }
+          if (kept.length !== v.length) { if (kept.length) vals.set(id, kept); else vals.delete(id); return true; }
         }
         return false;
       });
@@ -134,7 +136,7 @@ export function removeProperty(db: DB, baseId: string, id: string): void {
     propertyById(db, baseId, id);
     if (propertiesOf(db, baseId).length <= 1) throw new HttpError(409, 'Une base garde au moins une colonne');
     db.prepare('DELETE FROM base_properties WHERE id = ?').run(id);
-    rewriteRows(db, baseId, (vals) => (id in vals ? (delete vals[id], true) : false));
+    rewriteRows(db, baseId, (vals) => vals.delete(id));
     // Les vues ne gardent aucune référence à une colonne qui n'existe plus.
     for (const v of viewsOf(db, baseId)) {
       const c = v.config;
@@ -144,11 +146,12 @@ export function removeProperty(db: DB, baseId: string, id: string): void {
   })();
 }
 
-function rewriteRows(db: DB, baseId: string, fn: (vals: Record<string, unknown>) => boolean) {
+// Les cellules sont manipulées dans une Map : la clé (identifiant de colonne) vient du client, jamais d'un objet indexé par elle.
+function rewriteRows(db: DB, baseId: string, fn: (vals: Map<string, unknown>) => boolean) {
   const upd = db.prepare('UPDATE base_rows SET vals = ? WHERE id = ?');
   for (const r of db.prepare('SELECT id, vals FROM base_rows WHERE base_id = ?').all(baseId) as { id: string; vals: string }[]) {
-    const vals = JSON.parse(r.vals) as Record<string, unknown>;
-    if (fn(vals)) upd.run(JSON.stringify(vals), r.id);
+    const vals = new Map(Object.entries(JSON.parse(r.vals) as Record<string, unknown>));
+    if (fn(vals)) upd.run(JSON.stringify(Object.fromEntries(vals)), r.id);
   }
 }
 
@@ -164,7 +167,9 @@ export interface Ctx {
 
 const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`)) && new Date(`${s}T00:00:00Z`).toISOString().startsWith(s);
 // eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
+const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+/** Nom saisi : sans caractères de contrôle ni de direction du texte (qui déguisent un nom affiché ou exporté), non vide après nettoyage. */
+export const cleanName = (max: number) => z.string().transform((v) => v.replace(CONTROL, '').trim()).pipe(z.string().min(1).max(max));
 
 /** Valide une valeur pour une colonne. `null` efface la cellule. Lève 400 si la valeur ne convient pas. */
 export function checkValue(ctx: Ctx, prop: Property, v: unknown): unknown {
@@ -213,23 +218,31 @@ export function checkValue(ctx: Ctx, prop: Property, v: unknown): unknown {
 /** Applique une modification de cellules (clé = colonne, `null` = effacer) à des valeurs existantes. */
 export function applyPatch(ctx: Ctx, props: Property[], current: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
   const byId = new Map(props.map((p) => [p.id, p]));
-  const next: Record<string, unknown> = { ...current };
+  const next = new Map(Object.entries(current));
   for (const [key, raw] of Object.entries(patch)) {
     const prop = byId.get(key);
     if (!prop) throw new HttpError(400, 'Colonne inconnue');
     const v = checkValue(ctx, prop, raw);
-    if (v === null) delete next[key]; else next[key] = v;
+    if (v === null) next.delete(prop.id); else next.set(prop.id, v);
   }
-  return next;
+  const out = Object.fromEntries(next);
+  if (JSON.stringify(out).length > MAX_ROW_CHARS) throw new HttpError(400, 'Ligne trop volumineuse');
+  return out;
 }
 
 export const rowCount = (db: DB, baseId: string) => (db.prepare('SELECT COUNT(*) AS n FROM base_rows WHERE base_id = ?').get(baseId) as { n: number }).n;
+
+const baseChars = (db: DB, baseId: string) => (db.prepare('SELECT COALESCE(SUM(length(vals)), 0) AS n FROM base_rows WHERE base_id = ?').get(baseId) as { n: number }).n;
+const assertRoom = (db: DB, baseId: string, added: number) => {
+  if (baseChars(db, baseId) + added > MAX_BASE_CHARS) throw new HttpError(409, 'Cette base a atteint sa taille maximale');
+};
 
 export function addRow(ctx: Ctx, values: Record<string, unknown>, userId: string | null): RowRow {
   const { db, baseId } = ctx;
   return db.transaction(() => {
     if (rowCount(db, baseId) >= MAX_ROWS) throw new HttpError(409, `Au plus ${MAX_ROWS} lignes par base`);
     const vals = applyPatch(ctx, propertiesOf(db, baseId), {}, values);
+    assertRoom(db, baseId, JSON.stringify(vals).length);
     const last = db.prepare('SELECT MAX(position) AS m FROM base_rows WHERE base_id = ?').get(baseId) as { m: number | null };
     const id = newId();
     const now = Date.now();
@@ -245,6 +258,7 @@ export function patchRow(ctx: Ctx, rowId: string, patch: Record<string, unknown>
     const row = db.prepare('SELECT * FROM base_rows WHERE id = ? AND base_id = ?').get(rowId, baseId) as RowRow | undefined;
     if (!row) throw new HttpError(404, 'Ligne introuvable');
     const vals = applyPatch(ctx, propertiesOf(db, baseId), JSON.parse(row.vals) as Record<string, unknown>, patch);
+    assertRoom(db, baseId, Math.max(0, JSON.stringify(vals).length - row.vals.length));
     db.prepare('UPDATE base_rows SET vals = ?, updated_by = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(vals), userId, Date.now(), rowId);
     return db.prepare('SELECT * FROM base_rows WHERE id = ?').get(rowId) as RowRow;
   })();
@@ -262,9 +276,11 @@ export interface PresentedRow { id: string; position: number; values: Record<str
  * Lignes telles que les voit l'appelant. Une cellule « personne » n'est nommée qu'à une personne connectée et seulement si cette
  * personne peut lire la base ; une cellule « page » ne donne le titre que d'une page que l'appelant peut lire. Sinon la cellule est vide.
  */
-export function presentRows(ctx: Ctx, props: Property[], canSeeNames: boolean): PresentedRow[] {
+export function presentRows(ctx: Ctx, props: Property[], canSeeNames: boolean, only?: string): PresentedRow[] {
   const { db, baseId } = ctx;
-  const rows = db.prepare('SELECT * FROM base_rows WHERE base_id = ? ORDER BY position, created_at').all(baseId) as RowRow[];
+  const rows = (only
+    ? db.prepare('SELECT * FROM base_rows WHERE base_id = ? AND id = ?').all(baseId, only)
+    : db.prepare('SELECT * FROM base_rows WHERE base_id = ? ORDER BY position, created_at').all(baseId)) as RowRow[];
   const parsed = rows.map((r) => ({ r, vals: JSON.parse(r.vals) as Record<string, unknown> }));
   const people = new Set<string>();
   const pagesSeen = new Set<string>();
@@ -277,9 +293,11 @@ export function presentRows(ctx: Ctx, props: Property[], canSeeNames: boolean): 
   }
   const names = new Map(canSeeNames && people.size ? readersAmong(db, baseId, [...people], people.size).map((u) => [u.id, u.name]) : []);
   const pageInfo = new Map<string, { id: string; title: string; icon: string }>();
-  for (const id of pagesSeen) {
-    const pg = getPageRow(db, id);
-    if (pg && !pg.deleted_at && ctx.spaces.has(pg.space_id) && canReadPage(db, ctx.auth, id)) pageInfo.set(id, { id, title: pg.title, icon: pg.icon });
+  if (pagesSeen.size) {
+    // Une requête pour toutes les pages visées (sans leur contenu), puis le filtre de droits habituel.
+    const found = db.prepare('SELECT id, space_id, title, icon FROM pages WHERE deleted_at IS NULL AND id IN (SELECT value FROM json_each(?))')
+      .all(JSON.stringify([...pagesSeen])) as { id: string; space_id: string; title: string; icon: string }[];
+    for (const pg of filterReadable(db, ctx.auth, found.filter((f) => ctx.spaces.has(f.space_id)))) pageInfo.set(pg.id, { id: pg.id, title: pg.title, icon: pg.icon });
   }
   const kinds = new Map(props.map((p) => [p.id, p.type]));
   return parsed.map(({ r, vals }) => {
@@ -417,7 +435,9 @@ export function toCsv(props: Property[], rows: PresentedRow[]): string {
       default: return String(v);
     }
   };
+  // Nombres et dates sont validés : ils ne peuvent pas être une formule, et « -5 » doit rester un nombre pour le tableur.
+  const cell = (p: Property, v: unknown) => (p.type === 'number' || p.type === 'date' ? text(p, v) : csvCell(text(p, v)));
   const lines = [props.map((p) => csvCell(p.name)).join(',')];
-  for (const r of rows) lines.push(props.map((p) => csvCell(text(p, r.values[p.id]))).join(','));
+  for (const r of rows) lines.push(props.map((p) => cell(p, r.values[p.id])).join(','));
   return `\uFEFF${lines.join('\r\n')}\r\n`;
 }
