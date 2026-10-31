@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { type DB, openDb } from '../src/db.js';
-import { csvCell, MAX_ROWS, presentRows, propertiesOf } from '../src/lib/bases.js';
+import { csvCell, limits, MAX_ROWS, presentRows, propertiesOf } from '../src/lib/bases.js';
 import { canReadPage } from '../src/lib/page-acl.js';
 import { hashPassword } from '../src/lib/password.js';
 import { seedDemo } from '../src/seed.js';
@@ -575,6 +575,55 @@ describe('formules', () => {
     db.prepare("UPDATE users SET disabled = 1 WHERE id = 'ed1'").run();
     const after = (await call(ed2, 'GET', `/api/v3/bases/${id}`)).json() as { rows: unknown[] };
     expect(JSON.stringify(after.rows)).not.toContain('Nom ed1');
+  });
+
+  it('deux colonnes ne portent pas le même nom, quelle que soit la casse ou la composition des accents', async () => {
+    const { ed, id, prix } = await priced();
+    const add = (name: string) => call(ed, 'POST', `/api/v3/bases/${id}/properties`, { name, type: 'text' });
+    expect((await add('Prix')).statusCode).toBe(409);
+    expect((await add('prix')).statusCode).toBe(409);
+    expect((await add('  PRIX ')).statusCode).toBe(409);
+    expect((await add('Éléphant')).statusCode).toBe(201);
+    expect((await add('E\u0301le\u0301phant')).statusCode).toBe(409);
+    const other = (await addProp(ed, id, { name: 'Autre', type: 'text' })).id;
+    expect((await call(ed, 'PATCH', `/api/v3/bases/${id}/properties/${other}`, { name: 'prix' })).statusCode).toBe(409);
+    expect((await call(ed, 'PATCH', `/api/v3/bases/${id}/properties/${other}`, { name: 'Autre bis' })).statusCode).toBe(200);
+    // Se renommer soi-même avec une autre casse reste possible, seulement si la colonne n'est lue par aucune formule.
+    expect((await call(ed, 'PATCH', `/api/v3/bases/${id}/properties/${other}`, { name: 'AUTRE BIS' })).statusCode).toBe(200);
+    expect((await get(ed, id)).properties.find((p) => p.id === prix)!.name).toBe('Prix');
+  });
+
+  it('une case décochée vaut faux pour une formule, et le résultat reste un nombre dans le CSV', async () => {
+    const ed = await login('ed1@example.com');
+    const b = await newBase(ed);
+    const id = b.page.id;
+    const fait = (await addProp(ed, id, { name: 'Fait', type: 'checkbox' })).id;
+    const inv = (await addProp(ed, id, { name: 'Inverse', type: 'formula', formula: '!prop("Fait")' })).id;
+    const eq = (await addProp(ed, id, { name: 'Faux', type: 'formula', formula: 'prop("Fait") == false' })).id;
+    const neg = (await addProp(ed, id, { name: 'Négatif', type: 'formula', formula: '0 - 5' })).id;
+    await call(ed, 'POST', `/api/v3/bases/${id}/rows`, { values: {} });
+    await call(ed, 'POST', `/api/v3/bases/${id}/rows`, { values: { [fait]: true } });
+    const rows = (await get(ed, id)).rows;
+    expect(rows[0]!.values[inv]).toBe(true);
+    expect(rows[0]!.values[eq]).toBe(true);
+    expect(rows[1]!.values[inv]).toBe(false);
+    expect(rows[1]!.values[eq]).toBe(false);
+    expect((await call(ed, 'GET', `/api/v3/bases/${id}/export`)).body).toContain(',-5');
+    expect((await call(ed, 'GET', `/api/v3/bases/${id}/export`)).body).not.toContain("'-5");
+    void neg;
+  });
+
+  it('le travail des formules de texte est borné pour toute une lecture', async () => {
+    const ed = await login('ed1@example.com');
+    const b = await newBase(ed);
+    const id = b.page.id;
+    const f = (await addProp(ed, id, { name: 'Majuscules', type: 'formula', formula: 'upper(prop("Nom"))' })).id;
+    for (let i = 0; i < 6; i++) await call(ed, 'POST', `/api/v3/bases/${id}/rows`, { values: { [b.properties[0]!.id]: `ligne ${i} ${'x'.repeat(200)}` } });
+    const count = async () => (await get(ed, id)).rows.filter((r) => typeof r.values[f] === 'string').length;
+    expect(await count()).toBe(6);
+    const saved = limits.formulaChars;
+    limits.formulaChars = 600;
+    try { expect(await count()).toBeLessThan(6); } finally { limits.formulaChars = saved; }
   });
 
   it('dupliquer une base copie ses formules, qui continuent de calculer', async () => {

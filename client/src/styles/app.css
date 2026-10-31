@@ -1192,3 +1192,4 @@ tr:hover .bt-row-actions, .bt-row-actions:focus-within { opacity: 1; }
 .base-block .bt-mini { margin: 0; border: 0; border-radius: 0; max-height: 360px; }
 .base-block .bt-lane { flex-basis: 220px; max-height: 320px; }
 .base-block .bt-board { padding: 8px; }
+.field > label { font-size: 12.5px; font-weight: 500; color: var(--text-2); }

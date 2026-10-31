@@ -33,7 +33,7 @@ function matches(props, row, f) {
       return f.op === 'contains' ? t.includes(w) : f.op === 'eq' ? t === w : t !== w;
     }
     case 'formula': {
-      const n = Number(want);
+      const n = Number(String(want).replace(',', '.'));
       if (typeof v === 'number' && want !== null && want !== '' && Number.isFinite(n)) return f.op === 'eq' ? v === n : f.op === 'neq' ? v !== n : f.op === 'gt' ? v > n : f.op === 'lt' ? v < n : textOf(p, v).includes(String(want));
       const t = fold(textOf(p, v));
       const w = fold(want);
