@@ -96,6 +96,8 @@ export function publicDoc(node: DocNode, shared: Set<string>): DocNode {
     const id = String(node.attrs?.id ?? '');
     return shared.has(id) ? node : { type: 'text', text: 'page non partagée' };
   }
+  // Une base n'est jamais publique : le bloc disparaît, avec l'identifiant qu'il porte.
+  if (node.type === 'baseBlock') return { type: 'paragraph', content: [{ type: 'text', text: 'base non partagée' }] };
   const out: DocNode = { ...node };
   if (node.marks) {
     const marks = node.marks.filter((m) => m.type !== 'commentAnchor');

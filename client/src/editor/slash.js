@@ -3,6 +3,7 @@ import { h, norm, pickFile } from '../util.js';
 import { icon } from '../icons.js';
 import { session } from '../session.js';
 import { openModal, toast } from '../ui.js';
+import { pickBase } from './base-block.js';
 import { allowedHosts, embedUrl } from './embed.js';
 import { DEFAULT_MATH, DEFAULT_MERMAID, DEFAULT_PLANTUML, openDrawio, openExcalidraw } from '../diagrams.js';
 
@@ -109,6 +110,20 @@ const SLASH_ITEMS = [
       editor.chain().focus().deleteRange(range).run();
       const file = await pickFile('image/*');
       if (file) insertImageFile(editor, file);
+    },
+  },
+  {
+    group: 'Bases', title: 'Base', desc: 'Afficher une base (tableau) dans la page', ico: 'table', keys: 'base tableau database table',
+    run: (editor, range, ctx) => {
+      editor.chain().focus().deleteRange(range).run();
+      pickBase({ spaceId: ctx.spaceId }, ({ id, view }) => editor.chain().focus().insertContent({ type: 'baseBlock', attrs: { id, view } }).run());
+    },
+  },
+  {
+    group: 'Bases', title: 'Kanban', desc: 'Afficher une base en colonnes (cartes par statut)', ico: 'layers', keys: 'kanban cartes statut board',
+    run: (editor, range, ctx) => {
+      editor.chain().focus().deleteRange(range).run();
+      pickBase({ kanban: true, spaceId: ctx.spaceId }, ({ id, view }) => editor.chain().focus().insertContent({ type: 'baseBlock', attrs: { id, view } }).run());
     },
   },
   {

@@ -283,7 +283,7 @@ describe('colonnes et valeurs', () => {
     expect((await call(ed, 'DELETE', `/api/v3/bases/${id}/properties/${multi.id}`)).statusCode).toBe(204);
     const after = await get(ed, id);
     expect(JSON.stringify(after.rows)).not.toContain(ob.id);
-    expect(after.views[0]!.config).toEqual({ sort: [], filters: [], hidden: [] });
+    expect(after.views[0]!.config).toEqual({ type: 'table', sort: [], filters: [], hidden: [] });
     expect((db.prepare('SELECT vals FROM base_rows WHERE base_id = ?').all(id) as { vals: string }[]).map((r) => r.vals).join('')).not.toContain(sel.id);
     // La dernière colonne reste.
     expect((await call(ed, 'DELETE', `/api/v3/bases/${id}/properties/${b.properties[0]!.id}`)).statusCode).toBe(409);
@@ -598,6 +598,103 @@ describe('formules', () => {
     up.prepare("DELETE FROM pages WHERE id = 'b1'").run();
     expect((up.prepare('SELECT COUNT(*) AS n FROM base_properties').get() as { n: number }).n).toBe(0);
     up.close();
+  });
+});
+
+describe('Kanban et bloc intégré', () => {
+  async function board() {
+    const ed = await login('ed1@example.com');
+    const b = await newBase(ed, 'Tableau de bord');
+    const id = b.page.id;
+    const status = await addProp(ed, id, { name: 'Statut', type: 'status' });
+    const multi = await addProp(ed, id, { name: 'Tags', type: 'multi_select', options: [{ name: 'a' }] });
+    const txt = b.properties[0]!.id;
+    return { ed, id, status, multi, txt };
+  }
+  const post = (ed: S, id: string, config: object) => call(ed, 'POST', `/api/v3/bases/${id}/views`, { name: 'Kanban', config });
+
+  it('une vue Kanban se range par une colonne Sélection ou Statut, et seulement elle', async () => {
+    const { ed, id, status, multi, txt } = await board();
+    expect((await post(ed, id, { type: 'kanban', groupBy: status.id })).statusCode).toBe(201);
+    expect((await post(ed, id, { type: 'kanban' })).statusCode).toBe(400);
+    expect((await post(ed, id, { type: 'kanban', groupBy: txt })).statusCode).toBe(400);
+    expect((await post(ed, id, { type: 'kanban', groupBy: multi.id })).statusCode).toBe(400);
+    expect((await post(ed, id, { type: 'kanban', groupBy: 'fantome' })).statusCode).toBe(400);
+    expect((await post(ed, id, { type: 'table', groupBy: status.id })).statusCode).toBe(400);
+    expect((await post(ed, id, { type: 'carousel' })).statusCode).toBe(400);
+    const views = (await get(ed, id)).views as { config: { type: string; groupBy?: string } }[];
+    expect(views.find((v) => v.config.type === 'kanban')!.config.groupBy).toBe(status.id);
+  });
+
+  it('supprimer la colonne de rangement ramène le Kanban à un tableau ; dupliquer la base garde le Kanban avec la nouvelle colonne', async () => {
+    const { ed, id, status } = await board();
+    await post(ed, id, { type: 'kanban', groupBy: status.id });
+    const dup = (await call(ed, 'POST', `/api/v3/pages/${id}/duplicate`)).json() as { id: string };
+    const copy = await get(ed, dup.id);
+    const copyStatus = copy.properties.find((p) => p.name === 'Statut')!;
+    const copied = (copy.views as { config: { type: string; groupBy?: string } }[]).find((v) => v.config.type === 'kanban')!;
+    expect(copied.config.groupBy).toBe(copyStatus.id);
+    expect(copied.config.groupBy).not.toBe(status.id);
+    expect((await call(ed, 'DELETE', `/api/v3/bases/${id}/properties/${status.id}`)).statusCode).toBe(204);
+    const after = (await get(ed, id)).views as { config: { type: string; groupBy?: string } }[];
+    expect(after.every((v) => v.config.type === 'table' && v.config.groupBy === undefined)).toBe(true);
+  });
+
+  it('déplacer une carte, c’est modifier la cellule de rangement ; une option inconnue est refusée', async () => {
+    const { ed, id, status } = await board();
+    const row = (await call(ed, 'POST', `/api/v3/bases/${id}/rows`, { values: { [status.id]: status.options[0]!.id } })).json() as { id: string };
+    expect((await call(ed, 'PATCH', `/api/v3/bases/${id}/rows/${row.id}`, { values: { [status.id]: status.options[2]!.id } })).statusCode).toBe(200);
+    expect((await get(ed, id)).rows[0]!.values[status.id]).toBe(status.options[2]!.id);
+    expect((await call(ed, 'PATCH', `/api/v3/bases/${id}/rows/${row.id}`, { values: { [status.id]: 'ffffffffff' } })).statusCode).toBe(400);
+    expect((await call(ed, 'PATCH', `/api/v3/bases/${id}/rows/${row.id}`, { values: { [status.id]: null } })).statusCode).toBe(200);
+    expect((await get(ed, id)).rows[0]!.values[status.id]).toBeUndefined();
+  });
+
+  const blockDoc = (attrs: object) => ({ type: 'doc', content: [{ type: 'baseBlock', attrs }, { type: 'paragraph' }] });
+
+  it('le bloc ne garde que l’identifiant de la base et de la vue, et disparaît sans identifiant', async () => {
+    const ed = await login('ed1@example.com');
+    const b = await newBase(ed);
+    insertPage('pagehote0001', teamSpace(), 'Hôte');
+    const version = () => (db.prepare('SELECT version FROM pages WHERE id = ?').get('pagehote0001') as { version: number }).version;
+    const put = (content: object) => app.inject({ method: 'PATCH', url: '/api/v3/pages/pagehote0001', payload: { content }, cookies: ed.cookies, headers: { ...ed.headers, 'if-match': `"${version()}"` } });
+    expect((await put(blockDoc({ id: b.page.id, view: 'vue1', titre: 'secret', x: '<script>' }))).statusCode).toBe(200);
+    const stored = JSON.parse((db.prepare('SELECT content FROM pages WHERE id = ?').get('pagehote0001') as { content: string }).content);
+    expect(stored.content[0]).toEqual({ type: 'baseBlock', attrs: { id: b.page.id, view: 'vue1' } });
+    expect((await put(blockDoc({ view: 'vue1' }))).statusCode).toBe(200);
+    expect(JSON.stringify(JSON.parse((db.prepare('SELECT content FROM pages WHERE id = ?').get('pagehote0001') as { content: string }).content))).not.toContain('baseBlock');
+    expect((await put(blockDoc({ id: '../../x' }))).statusCode).toBe(200);
+    expect(JSON.stringify(JSON.parse((db.prepare('SELECT content FROM pages WHERE id = ?').get('pagehote0001') as { content: string }).content))).not.toContain('baseBlock');
+  });
+
+  it('une page partagée publiquement ne montre ni le bloc ni l’identifiant de la base', async () => {
+    const ed = await login('ed1@example.com');
+    await call(await login('admin@example.com'), 'PUT', '/api/v3/admin/sharing', { enabled: true });
+    const b = await newBase(ed);
+    insertPage('pagepartage01', teamSpace(), 'Page avec base');
+    const version = (db.prepare('SELECT version FROM pages WHERE id = ?').get('pagepartage01') as { version: number }).version;
+    await app.inject({ method: 'PATCH', url: '/api/v3/pages/pagepartage01', payload: { content: blockDoc({ id: b.page.id }) }, cookies: ed.cookies, headers: { ...ed.headers, 'if-match': `"${version}"` } });
+    const shared = await call(ed, 'PUT', '/api/v3/pages/pagepartage01/share', {});
+    const token = (shared.json() as { url: string }).url.split('/share/')[1]!;
+    const pub = await app.inject({ method: 'GET', url: `/api/v3/public/shares/${token}` });
+    expect(pub.statusCode).toBe(200);
+    expect(pub.body).not.toContain(b.page.id);
+    expect(pub.body).not.toContain('baseBlock');
+    expect(pub.body).toContain('base non partagée');
+  });
+
+  it('l’export Markdown nomme la base seulement à qui peut la lire', async () => {
+    const ed1 = await login('ed1@example.com');
+    const ed2 = await login('ed2@example.com');
+    const b = await newBase(ed1, 'Budget confidentiel');
+    insertPage('pageexport001', teamSpace(), 'Page export');
+    const version = (db.prepare('SELECT version FROM pages WHERE id = ?').get('pageexport001') as { version: number }).version;
+    await app.inject({ method: 'PATCH', url: '/api/v3/pages/pageexport001', payload: { content: blockDoc({ id: b.page.id }) }, cookies: ed1.cookies, headers: { ...ed1.headers, 'if-match': `"${version}"` } });
+    await call(await login('admin@example.com'), 'PUT', `/api/v3/pages/${b.page.id}/permissions`, { entries: [{ userId: 'ed1', level: 'write' }] });
+    expect((await call(ed1, 'GET', '/api/v3/pages/pageexport001/export')).body).toContain('[Budget confidentiel]');
+    const other = (await call(ed2, 'GET', '/api/v3/pages/pageexport001/export')).body;
+    expect(other).not.toContain('Budget confidentiel');
+    expect(other).not.toContain(b.page.id);
   });
 });
 

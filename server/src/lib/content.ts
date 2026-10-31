@@ -84,6 +84,9 @@ const NODES: Record<string, AttrRules> = {
   mermaid: { code: str(50_000), width: nullable(int(120, 4000)) },
   // Contenu intégré (iframe) : adresse https normalisée ; l'affichage dépend en plus de la liste d'hôtes de l'instance (CSP frame-src).
   embed: { url: (v) => embedUrl(v) ?? undefined },
+  // Bloc qui affiche une base (tableau ou Kanban) : seuls l'identifiant de la base et celui de la vue sont enregistrés. Les droits de lecture
+  // sont ceux de la base, vérifiés à chaque affichage : le bloc ne contient ni titre, ni cellule, ni nom.
+  baseBlock: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined), view: nullable((v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined)) },
   // Formule LaTeX : seul le texte est enregistré, le rendu (KaTeX) se fait dans le navigateur.
   math: { code: str(5_000), width: nullable(int(120, 4000)) },
   // Bloc dépliable (titre + contenu) et colonnes (2 à 4, vérifiées par l'éditeur ; ici seulement la liste des types).
@@ -175,6 +178,7 @@ export function sanitizeDoc(input: unknown): DocNode {
     if (type === 'pageLink' && !attrs?.id) return null;
     if (type === 'mention' && !attrs?.id) return null;
     if (type === 'embed' && !attrs?.url) return null;
+    if (type === 'baseBlock' && !attrs?.id) return null;
     if (Array.isArray(node.content)) {
       out.content = node.content.map((c) => walk(c, depth + 1, type)).filter((c): c is DocNode => c !== null);
     }

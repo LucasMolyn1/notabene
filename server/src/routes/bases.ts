@@ -35,7 +35,7 @@ const rowParams = z.object({ id: idSchema, rowId: idSchema });
 const viewParams = z.object({ id: idSchema, viewId: idSchema });
 const rowBody = z.object({ values: values.default({}) });
 const rowsDelete = z.object({ ids: z.array(idSchema).min(1).max(500) });
-const viewBody = z.object({ name: viewName, config: viewConfigSchema.default({ sort: [], filters: [], hidden: [] }) });
+const viewBody = z.object({ name: viewName, config: viewConfigSchema.default({ type: 'table', sort: [], filters: [], hidden: [] }) });
 const viewPatch = z.object({ name: viewName.optional(), config: viewConfigSchema.optional() });
 
 export default async function baseRoutes(app: FastifyInstance) {

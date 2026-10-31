@@ -13,6 +13,7 @@ import { CodeBlockEditor } from './editor/code-block.js';
 import { ResizableImage } from './editor/image.js';
 import { CommentAnchor } from './editor/comment-anchor.js';
 import { createBubbleMenu, createTableMenu } from './editor/menus.js';
+import { BaseBlock } from './editor/base-block.js';
 import { Embed } from './editor/embed.js';
 import { createMentionMenu, Mention } from './editor/mention.js';
 import { Callout, PageLink } from './editor/nodes.js';
@@ -50,6 +51,7 @@ function baseExtensions({ collab = false } = {}) {
     Mention,
     CommentAnchor,
     Embed,
+    BaseBlock,
     Mermaid,
     MathBlock,
     PlantUml,
