@@ -59,6 +59,7 @@ export default async function shareRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     needSession(req);
     const page = loadWritablePage(db, req, (req.params as { id: string }).id);
+    if (page.kind === 'base') throw new HttpError(409, 'Une base ne se partage pas publiquement');
     const b = req.body as z.output<typeof putBody>;
     if (!sharingEnabled(db)) throw new HttpError(403, 'Le partage public n’est pas activé sur cette instance');
     if (!spaceAllows(page.space_id)) throw new HttpError(403, 'Le partage public est désactivé dans cet espace');

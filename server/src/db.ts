@@ -391,6 +391,47 @@ export const MIGRATIONS: string[] = [
   -- Les espaces personnels ne se partagent pas (aucun administrateur ne pourrait ni lister ni retirer ces liens).
   UPDATE spaces SET sharing_enabled = 0 WHERE kind = 'personal';
   `,
+  // v17 : bases (tableaux). Une base est une page (`kind = 'base'`) : arborescence, corbeille, permissions et recherche sont ceux des pages,
+  // aucun contrôle d'accès nouveau. Les cellules (JSON validé par type) sont dans base_rows ; les vues ne gardent que tri, filtres et colonnes.
+  `
+  ALTER TABLE pages ADD COLUMN kind TEXT NOT NULL DEFAULT 'doc' CHECK (kind IN ('doc', 'base'));
+  -- Une page ne change jamais de nature : sinon ses lignes deviendraient du contenu, ou l'inverse.
+  CREATE TRIGGER pages_kind_fixed BEFORE UPDATE OF kind ON pages WHEN NEW.kind != OLD.kind
+    BEGIN SELECT RAISE(ABORT, 'le type d''une page ne change pas'); END;
+
+  CREATE TABLE base_properties (
+    id         TEXT PRIMARY KEY,
+    base_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    type       TEXT NOT NULL CHECK (type IN ('text', 'number', 'date', 'select', 'multi_select', 'status', 'checkbox', 'person', 'page_link')),
+    options    TEXT NOT NULL DEFAULT '[]',
+    position   REAL NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX base_properties_base ON base_properties(base_id, position);
+
+  CREATE TABLE base_rows (
+    id         TEXT PRIMARY KEY,
+    base_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    position   REAL NOT NULL DEFAULT 0,
+    vals       TEXT NOT NULL DEFAULT '{}',
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX base_rows_base ON base_rows(base_id, position);
+
+  CREATE TABLE base_views (
+    id         TEXT PRIMARY KEY,
+    base_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    config     TEXT NOT NULL DEFAULT '{}',
+    position   REAL NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX base_views_base ON base_views(base_id, position);
+  `,
 ];
 
 export function openDb(file: string): DB {

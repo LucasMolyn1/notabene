@@ -23,7 +23,7 @@ export default async function seoRoutes(app: FastifyInstance, { indexHtml }: { i
     const rows = config.SEO_INDEX
       ? filterReadable(db, null, db.prepare(
         `SELECT p.id, p.title, p.updated_at FROM pages p JOIN spaces s ON s.id = p.space_id
-         WHERE s.visibility = 'public' AND p.deleted_at IS NULL ORDER BY p.updated_at DESC LIMIT ?`).all(SITEMAP_LIMIT) as { id: string; title: string; updated_at: number }[])
+         WHERE s.visibility = 'public' AND p.deleted_at IS NULL AND p.kind = 'doc' ORDER BY p.updated_at DESC LIMIT ?`).all(SITEMAP_LIMIT) as { id: string; title: string; updated_at: number }[])
       : [];
     const urls = rows.map((r) => `<url><loc>${escapeHtml(`${base}/p/${segmentOf(r.id, r.title)}`)}</loc><lastmod>${new Date(r.updated_at).toISOString().slice(0, 10)}</lastmod></url>`).join('');
     return reply.header('content-type', 'application/xml; charset=utf-8').header('cache-control', 'public, max-age=600')
@@ -40,7 +40,7 @@ export default async function seoRoutes(app: FastifyInstance, { indexHtml }: { i
     const id = idFromSegment(seg);
     const row = id ? getPageRow(db, id) : undefined;
     // Lisible par un anonyme (espace public, page non restreinte, hors corbeille) ? Sinon : l'application seule, que les moteurs ne doivent pas garder.
-    const open = !!row && !row.deleted_at && !!db.prepare("SELECT 1 FROM spaces WHERE id = ? AND visibility = 'public'").get(row.space_id) && canReadPage(db, null, row.id);
+    const open = !!row && !row.deleted_at && row.kind === 'doc' && !!db.prepare("SELECT 1 FROM spaces WHERE id = ? AND visibility = 'public'").get(row.space_id) && canReadPage(db, null, row.id);
     if (!open || !row || !config.SEO_INDEX) return reply.header('x-robots-tag', 'noindex, nofollow').header('cache-control', 'no-cache').type('text/html; charset=utf-8').send(indexHtml);
 
     const canonical = segmentOf(row.id, row.title);

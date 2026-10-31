@@ -2,7 +2,7 @@
 import { EventEmitter } from 'node:events';
 
 export interface AppEvent {
-  type: 'page.created' | 'page.updated' | 'page.moved' | 'page.trashed' | 'page.restored' | 'page.deleted' | 'space.changed' | 'presence' | 'page.permissions' | 'page.labels' | 'comment.created' | 'comment.updated' | 'comment.deleted' | 'notification';
+  type: 'page.created' | 'page.updated' | 'page.moved' | 'page.trashed' | 'page.restored' | 'page.deleted' | 'space.changed' | 'presence' | 'page.permissions' | 'page.labels' | 'base.changed' | 'comment.created' | 'comment.updated' | 'comment.deleted' | 'notification';
   spaceId?: string;
   pageId?: string;
   version?: number;

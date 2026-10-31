@@ -43,6 +43,7 @@ function pageMenu(anchor, page) {
   const others = store.spaces.filter((s) => s.id !== page.spaceId);
   openMenu(anchor, [
     { label: 'Ajouter une sous-page', icon: 'plus', onClick: () => A.newPage(page.spaceId, page.id) },
+    { label: 'Ajouter une base', icon: 'table', onClick: () => A.newBase(page.spaceId, page.id) },
     { label: page.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris', icon: 'star', onClick: () => A.attempt(() => store.toggleFavorite(page.id)) },
     { label: 'Renommer', icon: 'edit', onClick: () => startRename(page.id) },
     { label: 'Dupliquer', icon: 'copy', onClick: () => A.duplicate(page.id) },
@@ -189,7 +190,7 @@ function treeNode(page, depth, activeId, canWrite) {
       renderSidebar();
     },
   }, icon('chevron', 14)),
-  h('span', { class: 'tree-icon' }, pageIcon(page.icon, 15)),
+  h('span', { class: 'tree-icon' }, pageIcon(page.icon || (page.kind === 'base' ? 'table' : ''), 15)),
   h('span', { class: 'tree-title' }, page.title || 'Sans titre'),
   canWrite && h('span', { class: 'tree-actions' },
     h('button', { class: 'mini-btn', title: 'Options', tabindex: '-1', onClick: (e) => { e.stopPropagation(); pageMenu(e.currentTarget, page); } }, icon('more', 15)),
@@ -293,6 +294,7 @@ export function renderSidebar() {
       navBtn('search', session.can('ai') ? 'Rechercher ou demander' : 'Rechercher', A.search, { hint: `${modKey}K` }),
       navBtn('home', 'Accueil de l’espace', () => A.go(`/s/${space.id}`), { active: onSpaceHome }),
       canWrite && navBtn('plus', 'Nouvelle page', () => A.newPage(space.id), { hint: '⌥N' }),
+      canWrite && navBtn('table', 'Nouvelle base', () => A.newBase(space.id)),
       canWrite && navBtn('layers', 'Depuis un modèle', () => A.newPageFromTemplate(space.id))),
     h('div', { class: 'sb-scroll' },
       favorites.length > 0 && h('section', { class: 'sb-section' },

@@ -93,13 +93,13 @@ export function openMenu(anchor, items, opts) {
 export const ICON_LABELS = {
   file: 'Page', folder: 'Dossier', home: 'Accueil', star: 'Étoile', layers: 'Couches', code: 'Code', settings: 'Réglages', shield: 'Bouclier',
   key: 'Clé', lock: 'Cadenas', globe: 'Globe', eye: 'Œil', search: 'Loupe', link: 'Lien', pencil: 'Crayon', download: 'Téléchargement',
-  upload: 'Envoi', users: 'Personnes', sparkle: 'Étincelle', diamond: 'Diamant', hexagon: 'Hexagone', webhook: 'Webhook', pdf: 'PDF', wand: 'Baguette',
+  upload: 'Envoi', users: 'Personnes', sparkle: 'Étincelle', diamond: 'Diamant', hexagon: 'Hexagone', webhook: 'Webhook', pdf: 'PDF', wand: 'Baguette', table: 'Tableau',
 };
 
 export const PAGE_ICONS = [
   'file', 'folder', 'home', 'star', 'layers', 'code', 'settings', 'shield',
   'key', 'lock', 'globe', 'eye', 'search', 'link', 'pencil', 'download',
-  'upload', 'users', 'sparkle', 'diamond', 'hexagon', 'webhook', 'pdf', 'wand',
+  'upload', 'users', 'sparkle', 'diamond', 'hexagon', 'webhook', 'pdf', 'wand', 'table',
 ];
 
 // Icône d'une page ou d'un espace : nom d'une icône de l'interface (« folder ») ou emoji. Un emoji s'affiche en texte (jamais en HTML).
