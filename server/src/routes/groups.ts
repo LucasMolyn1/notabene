@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard } from '../auth/context.js';
 import { audit } from '../lib/audit.js';
+import { keepPagesClosed, pagesOnlyOpenTo } from '../lib/page-acl.js';
 import { type GroupRow, isEveryone, MAX_GROUP_MEMBERS, MAX_GROUPS, SYNC_SOURCES, toGroup } from '../lib/groups.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
 import { spaceRoles } from '../lib/space-access.js';
@@ -101,8 +102,13 @@ export default async function groupRoutes(app: FastifyInstance) {
     schema: { tags, summary: 'Supprimer un groupe (administrateur) : retire ses droits sur les espaces et les pages', params: idParams },
   }, async (req, reply) => {
     const g = editable((req.params as { id: string }).id);
-    db.prepare('DELETE FROM groups WHERE id = ?').run(g.id);
-    audit(db, req, 'group.delete', g.id);
+    // Une page réservée à ce seul groupe resterait sinon sans restriction : elle reste fermée (entrée de l'administrateur).
+    const closed = pagesOnlyOpenTo(db, { groupId: g.id });
+    db.transaction(() => {
+      db.prepare('DELETE FROM groups WHERE id = ?').run(g.id);
+      keepPagesClosed(db, closed, req.auth!.user.id);
+    })();
+    audit(db, req, 'group.delete', g.id, { pagesKeptClosed: closed.length });
     accessChanged();
     return reply.status(204).send();
   });

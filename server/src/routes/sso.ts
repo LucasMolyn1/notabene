@@ -37,7 +37,7 @@ export default async function ssoRoutes(app: FastifyInstance, opts: { ldap?: Lda
       return false;
     }
     const userId = upsertUser(db, { sub: input.sub, email: input.email, name: input.name, role: input.role });
-    if (input.method === 'ldap' || input.method === 'saml') syncGroups(db, userId, input.method, input.groups ?? []);
+    if ((input.method === 'ldap' || input.method === 'saml') && syncGroups(db, userId, input.method, input.groups ?? [])) { app.bus.publish({ type: 'space.changed' }); app.collab?.recheckAll(); }
     const previous = req.cookies[cookieName];
     if (previous) destroySession(db, previous);
     const session = createSession(db, userId, null, config.SESSION_TTL_HOURS);

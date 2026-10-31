@@ -158,7 +158,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (target.role === 'admin' && !target.disabled && count(db, "SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND disabled = 0 AND id != ?", id) === 0) {
       throw new HttpError(409, 'Impossible de supprimer le dernier administrateur actif');
     }
-    eraseUser(db, id);
+    eraseUser(db, id, auth.user.id);
     app.collab?.recheckAll();
     audit(db, req, 'user.erase', null, { role: target.role });
     return { ok: true };

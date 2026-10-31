@@ -28,6 +28,17 @@ export default async function spaceRoutes(app: FastifyInstance) {
   const { db } = app;
   const tags = ['spaces'];
 
+  // Les adresses e-mail ne sont montrées qu'aux administrateurs : un gestionnaire d'espace n'a pas à moissonner l'annuaire.
+  const isAdmin = (req: Parameters<typeof requireAuth>[0]) => req.auth?.user.role === 'admin' && !!req.auth.scopes.has('admin');
+
+  // Gérer les droits est une action d'administration : une session web, ou un jeton qui porte la portée « admin » (un jeton de
+  // lecture/écriture, même d'un administrateur, ne modifie pas les droits de l'instance).
+  const manage = (req: Parameters<typeof requireAuth>[0], id: string) => {
+    const auth = requireAuth(req);
+    if (auth.via === 'token' && !auth.scopes.has('admin')) throw new HttpError(403, 'Un jeton doit porter la portée admin pour gérer les membres');
+    requireSpaceRole(db, req, id, 'full');
+  };
+
   app.get('/spaces', { schema: { tags, summary: 'Lister les espaces visibles (avec votre rôle : view, edit ou full)' } }, async (req) =>
     readableSpaces(db, req).map((s) => ({ ...toSpace(s), role: spaceRoleOf(db, req, s.id) })));
 
@@ -49,9 +60,8 @@ export default async function spaceRoutes(app: FastifyInstance) {
     schema: { tags, summary: 'Modifier un espace (gestionnaire ou administrateur ; la visibilité publique est réservée aux administrateurs)', params: idParams, body: patchBody },
   }, async (req) => {
     const { id } = req.params as { id: string };
-    requireSpaceRole(db, req, id, 'full');
-    const isAdmin = req.auth!.user.role === 'admin' && req.auth!.scopes.has('admin');
-    if ((req.body as { visibility?: string }).visibility !== undefined && !isAdmin) throw new HttpError(403, 'Seul un administrateur change la visibilité d’un espace');
+    manage(req, id);
+    if ((req.body as { visibility?: string }).visibility !== undefined && !isAdmin(req)) throw new HttpError(403, 'Seul un administrateur change la visibilité d’un espace');
     const current = db.prepare('SELECT * FROM spaces WHERE id = ?').get(id) as SpaceRow | undefined;
     if (!current) throw new HttpError(404, 'Espace introuvable');
     const next = { ...current, ...(req.body as Partial<SpaceRow>), updated_at: Date.now() };
@@ -77,9 +87,6 @@ export default async function spaceRoutes(app: FastifyInstance) {
   });
 
   // ---- Membres d'un espace -------------------------------------------------------------------
-  const manage = (req: Parameters<typeof requireAuth>[0], id: string) => { requireAuth(req); requireSpaceRole(db, req, id, 'full'); };
-  // Les adresses e-mail ne sont montrées qu'aux administrateurs : un gestionnaire d'espace n'a pas à moissonner l'annuaire.
-  const isAdmin = (req: Parameters<typeof requireAuth>[0]) => req.auth?.user.role === 'admin' && !!req.auth.scopes.has('admin');
   // Un changement de droits touche des sessions ouvertes : flux temps réel et co-édition revérifiés.
   const accessChanged = (spaceId: string) => { app.bus.publish({ type: 'space.changed', spaceId }); app.collab?.evictAll(); };
 
@@ -109,6 +116,8 @@ export default async function spaceRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     manage(req, id);
     const b = req.body as z.output<typeof memberBody>;
+    // Ouvrir ou modifier l'accès de tous les comptes : réservé aux administrateurs (un gestionnaire cible des personnes et des groupes).
+    if (b.groupId === EVERYONE && !isAdmin(req)) throw new HttpError(403, 'Seul un administrateur règle l’accès de « Tout le monde »');
     if (b.userId && !db.prepare('SELECT 1 FROM users WHERE id = ? AND disabled = 0').get(b.userId)) throw new HttpError(404, 'Utilisateur introuvable ou désactivé');
     if (b.groupId && !db.prepare('SELECT 1 FROM groups WHERE id = ?').get(b.groupId)) throw new HttpError(404, 'Groupe introuvable');
     const exists = db.prepare(b.userId ? 'SELECT 1 FROM space_members WHERE space_id = ? AND user_id = ?' : 'SELECT 1 FROM space_members WHERE space_id = ? AND group_id = ?').get(id, b.userId ?? b.groupId);

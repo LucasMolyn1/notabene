@@ -16,6 +16,9 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 - Migration v14 : le groupe « Tout le monde » reçoit le droit d'édition sur chaque espace existant, donc aucun accès ne change. Pour fermer un espace, retirez ce groupe de ses membres (Paramètres, Espaces, Membres).
 
 ### Corrigé
+- Un titre de page privée ou restreinte ne s'affiche plus dans le rendu HTML d'une page publique qui y renvoie (pages publiques indexables).
+- Supprimer un groupe ou effacer un compte ne rend plus lisible de tout l'espace une page qui n'était réservée qu'à lui.
+- La présence (qui consulte quelle page) ne liste plus les pages que l'on ne peut pas lire.
 - Renommer un espace (PATCH avec le seul nom) ne remet plus sa visibilité à « privé », ni son icône et sa description à leur valeur par défaut.
 - La recherche de personnes pour les mentions trouve les noms commençant par une majuscule accentuée (« Élodie »).
 

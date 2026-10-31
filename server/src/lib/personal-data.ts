@@ -3,7 +3,7 @@
 // que la personne ne peut plus lire.
 import type { Auth } from '../auth/context.js';
 import type { DB } from '../db.js';
-import { filterReadable } from './page-acl.js';
+import { filterReadable, keepPagesClosed, pagesOnlyOpenTo } from './page-acl.js';
 
 interface UserRow {
   id: string; sub: string; email: string | null; name: string; role: 'admin' | 'editor' | 'reader';
@@ -59,10 +59,12 @@ export function exportUserData(db: DB, userId: string) {
 
 // Effacement : le compte et ce qui lui est propre disparaissent ; ce qu'il a écrit reste mais sans auteur.
 // (Les clés étrangères en cascade retirent sessions, jetons, favoris, suivis, notifications, permissions et préférences.)
-export function eraseUser(db: DB, userId: string): boolean {
+export function eraseUser(db: DB, userId: string, closedBy: string | null = null): boolean {
   return db.transaction(() => {
     const u = db.prepare('SELECT sub FROM users WHERE id = ?').get(userId) as { sub: string } | undefined;
     if (!u) return false;
+    // Une page réservée à cette seule personne reste fermée (entrée de l'administrateur qui efface) au lieu de s'ouvrir à l'espace.
+    if (closedBy) keepPagesClosed(db, pagesOnlyOpenTo(db, { userId }), closedBy);
     db.prepare('UPDATE pages SET created_by = NULL WHERE created_by = ?').run(userId);
     db.prepare('UPDATE pages SET updated_by = NULL WHERE updated_by = ?').run(userId);
     db.prepare('UPDATE page_versions SET created_by = NULL WHERE created_by = ?').run(userId);

@@ -373,6 +373,113 @@ describe('données personnelles', () => {
   });
 });
 
+describe('défauts relevés par la relecture', () => {
+  const tokenFor = async (id: string, scopes: string[]) => {
+    const s = await login(id);
+    const t = await call(s, 'POST', '/api/v3/tokens', { name: 'essai', scopes, expiresInDays: 7 });
+    expect(t.statusCode).toBe(201);
+    return { authorization: `Bearer ${t.json().token}` };
+  };
+  const bearer = (headers: Record<string, string>, method: 'GET' | 'PUT' | 'DELETE' | 'PATCH', url: string, payload?: object) => app.inject({ method, url, payload, headers });
+
+  it('supprimer le seul groupe d’une page restreinte ne l’ouvre pas à l’espace : elle reste fermée', async () => {
+    member('sA', { group: 'everyone' }, 'edit');
+    const admin = await login('admin');
+    const rh = (await call(admin, 'POST', '/api/v3/groups', { name: 'RH' })).json().id as string;
+    await call(admin, 'PUT', `/api/v3/groups/${rh}/members/ed1`);
+    await call(admin, 'PUT', '/api/v3/pages/pA/permissions', { entries: [{ groupId: rh, level: 'read' }] });
+    expect((await call(await login('ed2'), 'GET', '/api/v3/pages/pA')).statusCode).toBe(404);
+    expect((await call(admin, 'DELETE', `/api/v3/groups/${rh}`)).statusCode).toBe(204);
+    expect((await call(await login('ed1'), 'GET', '/api/v3/pages/pA')).statusCode).toBe(404);
+    expect((await call(await login('ed2'), 'GET', '/api/v3/pages/pA')).statusCode).toBe(404);
+    expect((await call(admin, 'GET', '/api/v3/pages/pA')).statusCode).toBe(200);
+    // Un groupe qui n'est pas la seule entrée ne laisse pas d'entrée d'administrateur derrière lui.
+    const g2 = (await call(admin, 'POST', '/api/v3/groups', { name: 'Autre' })).json().id as string;
+    await call(admin, 'PUT', '/api/v3/pages/pA/permissions', { entries: [{ groupId: g2, level: 'read' }, { userId: 'ed3', level: 'read' }] });
+    await call(admin, 'DELETE', `/api/v3/groups/${g2}`);
+    expect(db.prepare("SELECT user_id FROM page_acl WHERE page_id = 'pA'").all()).toEqual([{ user_id: 'ed3' }]);
+  });
+
+  it('effacer le seul compte d’une page restreinte ne l’ouvre pas non plus', async () => {
+    member('sA', { group: 'everyone' }, 'edit');
+    db.prepare("INSERT INTO page_acl (page_id, user_id, level) VALUES ('pA', 'ed1', 'write')").run();
+    const admin = await login('admin');
+    const res = await call(admin, 'POST', '/api/v3/admin/users/ed1/erase', { reauth: { password: PASS } });
+    expect(res.statusCode).toBe(200);
+    expect((await call(await login('ed2'), 'GET', '/api/v3/pages/pA')).statusCode).toBe(404);
+  });
+
+  it('eraseUser garde fermée la page dont la personne était la seule entrée', async () => {
+    const { eraseUser } = await import('../src/lib/personal-data.js');
+    member('sA', { group: 'everyone' }, 'edit');
+    db.prepare("INSERT INTO page_acl (page_id, user_id, level) VALUES ('pA', 'ed1', 'write')").run();
+    db.prepare("INSERT INTO page_acl (page_id, user_id, level) VALUES ('pB', 'ed1', 'write'), ('pB', 'ed3', 'read')").run();
+    expect(eraseUser(db, 'ed1', 'admin')).toBe(true);
+    expect(db.prepare("SELECT user_id FROM page_acl WHERE page_id = 'pA'").all()).toEqual([{ user_id: 'admin' }]);
+    expect(db.prepare("SELECT user_id FROM page_acl WHERE page_id = 'pB'").all()).toEqual([{ user_id: 'ed3' }]);
+    expect(pageLevel(db, as('ed2'), 'pA')).toBe('none');
+  });
+
+  it('un jeton sans la portée admin ne gère pas les membres, même celui d’un administrateur ; avec la portée admin si', async () => {
+    const light = await tokenFor('admin', ['read', 'write']);
+    const body = { groupId: 'everyone', role: 'full' };
+    expect((await bearer(light, 'PUT', '/api/v3/spaces/sA/members', body)).statusCode).toBe(403);
+    expect((await bearer(light, 'GET', '/api/v3/spaces/sA/members')).statusCode).toBe(403);
+    expect((await bearer(light, 'DELETE', '/api/v3/spaces/sA/members/group/everyone')).statusCode).toBe(403);
+    expect((await bearer(light, 'PATCH', '/api/v3/spaces/sA', { name: 'Pirate' })).statusCode).toBe(403);
+    member('sA', { user: 'ed1' }, 'full');
+    const managerToken = await tokenFor('ed1', ['read', 'write']);
+    expect((await bearer(managerToken, 'PUT', '/api/v3/spaces/sA/members', { userId: 'ed2', role: 'view' })).statusCode).toBe(403);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM space_members WHERE space_id = 'sA' AND (group_id = 'everyone' OR user_id = 'ed2')").get()).toEqual({ n: 0 });
+    const full = await tokenFor('admin', ['read', 'write', 'admin']);
+    expect((await bearer(full, 'PUT', '/api/v3/spaces/sA/members', { userId: 'ed2', role: 'view' })).statusCode).toBe(204);
+  });
+
+  it('un gestionnaire ne peut pas régler l’accès de « Tout le monde » ; un administrateur si', async () => {
+    member('sA', { user: 'ed1' }, 'full');
+    const ed1 = await login('ed1');
+    expect((await call(ed1, 'PUT', '/api/v3/spaces/sA/members', { groupId: 'everyone', role: 'full' })).statusCode).toBe(403);
+    expect((await call(ed1, 'PUT', '/api/v3/spaces/sA/members', { groupId: 'everyone', role: 'view' })).statusCode).toBe(403);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM space_members WHERE group_id = 'everyone'").get()).toEqual({ n: 0 });
+    expect((await call(await login('admin'), 'PUT', '/api/v3/spaces/sA/members', { groupId: 'everyone', role: 'view' })).statusCode).toBe(204);
+  });
+
+  it('un flux temps réel ouvert cesse de recevoir les événements d’un espace dont l’accès est retiré', async () => {
+    member('sA', { group: 'everyone' }, 'edit');
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const port = (app.server.address() as { port: number }).port;
+    const ed2 = await login('ed2');
+    const controller = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${port}/api/v3/events`, { headers: { cookie: `nb_session=${ed2.cookies.nb_session}` }, signal: controller.signal });
+    let received = '';
+    void (async () => { const r = res.body!.getReader(); const d = new TextDecoder(); for (;;) { const { value, done } = await r.read(); if (done) break; received += d.decode(value); } })().catch(() => undefined);
+    const emit = (version: number) => app.bus.publish({ type: 'page.updated', spaceId: 'sA', pageId: 'pA', version });
+    const pause = () => new Promise((r) => setTimeout(r, 250));
+    await pause();
+    emit(11);
+    await pause();
+    expect(received).toContain('"version":11');
+    await call(await login('admin'), 'DELETE', '/api/v3/spaces/sA/members/group/everyone');
+    await pause();
+    emit(12);
+    await pause();
+    expect(received).not.toContain('"version":12');
+    controller.abort();
+  });
+
+  it('la présence ne révèle pas les pages que l’on ne peut pas lire', async () => {
+    const ed1 = await login('ed1');
+    member('sA', { user: 'ed1' }, 'edit');
+    await call(ed1, 'POST', '/api/v3/presence', { tabId: 'tab-ed1-0001', pageId: 'pA', editing: true });
+    const ed2 = await login('ed2');
+    const seen = (await call(ed2, 'POST', '/api/v3/presence', { tabId: 'tab-ed2-0001', pageId: 'pA', editing: false })).json() as { peers: { userId: string; pageId: string | null }[] };
+    expect(seen.peers.some((p) => p.pageId === 'pA')).toBe(false);
+    expect(seen.peers.some((p) => p.userId === 'ed2' && p.pageId === null)).toBe(true); // sa propre page illisible n'est pas signalée
+    const mine = (await call(ed1, 'POST', '/api/v3/presence', { tabId: 'tab-ed1-0001', pageId: 'pA', editing: true })).json() as { peers: { pageId: string | null }[] };
+    expect(mine.peers.some((p) => p.pageId === 'pA')).toBe(true);
+  });
+});
+
 describe('synchronisation avec le fournisseur d’identité', () => {
   const link = (id: string, source: 'oidc' | 'ldap' | 'saml', external: string) =>
     db.prepare('INSERT INTO groups (id, name, source, external_id, created_at) VALUES (?, ?, ?, ?, 0)').run(id, id, source, external);

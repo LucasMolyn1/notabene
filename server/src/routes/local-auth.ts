@@ -313,6 +313,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
       }
       if (b.role) db.prepare('UPDATE users SET role = ? WHERE id = ?').run(b.role, id);
       if (b.disabled !== undefined) db.prepare('UPDATE users SET disabled = ? WHERE id = ?').run(b.disabled ? 1 : 0, id);
+      if (b.role || b.disabled !== undefined) app.bus.publish({ type: 'space.changed' }); // flux ouverts : droits recalculés
       if (b.resetMfa) db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_last_step = NULL, recovery_codes = NULL WHERE id = ?').run(id);
       if (b.password || b.disabled) closeOtherSessions(id);
       else if (b.role) app.collab?.recheckAll();

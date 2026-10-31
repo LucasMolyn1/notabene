@@ -92,6 +92,24 @@ export function filterReadable<T extends { id: string }>(db: DB, auth: Auth | nu
   return items.filter((i) => { const g = governing.get(i.id); return !g || allowed.has(g); });
 }
 
+// Pages dont la seule entrée de permission est `who` : si cette entrée disparaît (groupe supprimé, compte effacé), la page n'aurait
+// plus aucune restriction et deviendrait lisible de tout l'espace. On la garde fermée en lui donnant une entrée pour `closedBy`
+// (un administrateur, qui voit tout de toute façon).
+export function pagesOnlyOpenTo(db: DB, who: { userId: string } | { groupId: string }): string[] {
+  const byUser = 'userId' in who;
+  const id = byUser ? who.userId : who.groupId;
+  const [own, ownCol, other] = byUser ? ['page_acl', 'user_id', 'page_acl_groups'] : ['page_acl_groups', 'group_id', 'page_acl'];
+  const pages = db.prepare(`SELECT page_id FROM ${own} WHERE ${ownCol} = ?`).all(id) as { page_id: string }[];
+  const hasOtherOwn = db.prepare(`SELECT 1 FROM ${own} WHERE page_id = ? AND ${ownCol} != ?`);
+  const hasOther = db.prepare(`SELECT 1 FROM ${other} WHERE page_id = ?`);
+  return pages.map((r) => r.page_id).filter((p) => !hasOtherOwn.get(p, id) && !hasOther.get(p));
+}
+
+export function keepPagesClosed(db: DB, pageIds: string[], closedBy: string): void {
+  const insert = db.prepare("INSERT OR IGNORE INTO page_acl (page_id, user_id, level) VALUES (?, ?, 'write')");
+  for (const p of pageIds) insert.run(p, closedBy);
+}
+
 // Un déplacement ne doit ni lever ni changer la restriction qui protège une page : sinon un rédacteur
 // (non administrateur) rendrait lisible par d'autres une page cachée. Une page qui porte ses propres entrées
 // garde sa restriction où qu'elle aille ; sinon seul un administrateur peut la sortir de sa zone restreinte.

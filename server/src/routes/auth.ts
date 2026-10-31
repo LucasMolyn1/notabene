@@ -68,7 +68,7 @@ export default async function authRoutes(app: FastifyInstance) {
         name: displayName(profile),
         role,
       });
-      syncGroups(db, userId, 'oidc', profile.groups);
+      if (syncGroups(db, userId, 'oidc', profile.groups)) { app.bus.publish({ type: 'space.changed' }); app.collab?.recheckAll(); }
       const previous = req.cookies[cookieName];
       if (previous) destroySession(db, previous);
       startSession(reply, userId, idToken);
