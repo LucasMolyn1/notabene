@@ -40,6 +40,9 @@ export const store = {
   // ---- Lecture (cache) --------------------------------------------------
   get spaces() { return state.spaces; },
   space: (id) => state.spaces.find((s) => s.id === id) || null,
+  /** Rôle dans l'espace (view, edit, full) ; le serveur applique le même contrôle, ceci ne fait que masquer ce qui échouerait. */
+  canWriteIn: (id) => ['edit', 'full'].includes(state.spaces.find((s) => s.id === id)?.role ?? 'edit'),
+  canManage: (id) => state.spaces.find((s) => s.id === id)?.role === 'full',
   page: (id) => state.pages.get(id) || null,
   pagesIn: (spaceId) => all().filter((p) => p.spaceId === spaceId),
   children: (spaceId, parentId = null) => all().filter((p) => p.spaceId === spaceId && (p.parentId || null) === parentId).sort(byPosition),

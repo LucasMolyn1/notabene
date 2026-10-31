@@ -1,11 +1,12 @@
-// Visibilité des espaces : un utilisateur authentifié (portée « read ») voit tout ;
-// un visiteur anonyme ne voit que les espaces publics.
+// Visibilité des espaces : un espace se voit par adhésion (personne, groupe ou `everyone`, voir space-access.ts), un espace
+// public se voit sans adhésion ; un administrateur voit tout ; un visiteur anonyme ne voit que les espaces publics.
 import type { FastifyRequest } from 'fastify';
 import { can } from '../auth/context.js';
 import type { DB } from '../db.js';
 import { HttpError } from './http.js';
 import { canReadPage, canWritePage } from './page-acl.js';
 import { getPageRow, type PageRow } from './pages.js';
+import { atLeast, spaceRole, spaceRoles, type SpaceRole } from './space-access.js';
 
 export interface SpaceRow {
   id: string;
@@ -28,9 +29,13 @@ export const toSpace = (s: SpaceRow) => ({
   updatedAt: s.updated_at,
 });
 
+// Pour les routes : un jeton sans la portée « read » n'a pas plus de droits qu'un visiteur anonyme.
+const actor = (req: FastifyRequest) => (can(req.auth, 'read') ? req.auth : null);
+
 export function readableSpaces(db: DB, req: FastifyRequest): SpaceRow[] {
   const all = db.prepare('SELECT * FROM spaces ORDER BY position, created_at').all() as SpaceRow[];
-  return can(req.auth, 'read') ? all : all.filter((s) => s.visibility === 'public');
+  const roles = spaceRoles(db, actor(req));
+  return all.filter((s) => roles.has(s.id));
 }
 
 export const readableSpaceIds = (db: DB, req: FastifyRequest) => readableSpaces(db, req).map((s) => s.id);
@@ -52,3 +57,13 @@ export function loadWritablePage(db: DB, req: FastifyRequest, id: string, opts?:
   if (!canWritePage(db, req.auth, id)) throw new HttpError(403, 'Accès en lecture seule sur cette page');
   return row;
 }
+
+// Droit minimal sur un espace : 404 si l'espace n'est pas visible (on ne révèle pas son existence), 403 si le droit est trop faible.
+export function requireSpaceRole(db: DB, req: FastifyRequest, spaceId: string, wanted: Exclude<SpaceRole, 'none'>): SpaceRole {
+  const role = spaceRole(db, actor(req), spaceId);
+  if (role === 'none') throw new HttpError(404, 'Espace introuvable');
+  if (!atLeast(role, wanted)) throw new HttpError(403, wanted === 'full' ? 'Réservé aux gestionnaires de cet espace' : 'Accès en lecture seule sur cet espace');
+  return role;
+}
+
+export const spaceRoleOf = (db: DB, req: FastifyRequest, spaceId: string) => spaceRole(db, actor(req), spaceId);

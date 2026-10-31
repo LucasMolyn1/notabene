@@ -9,7 +9,9 @@ const as = (id: string, role: 'admin' | 'editor' | 'reader' = 'editor'): Auth =>
 function tree() {
   const db = openDb(':memory:');
   const now = Date.now();
-  db.prepare("INSERT INTO spaces (id, name, created_at, updated_at) VALUES ('s', 's', ?, ?)").run(now, now);
+  // Espace public : lisible sans adhésion (visiteur anonyme compris) ; `everyone` en édition, comme après la migration v14.
+  db.prepare("INSERT INTO spaces (id, name, visibility, created_at, updated_at) VALUES ('s', 's', 'public', ?, ?)").run(now, now);
+  db.prepare("INSERT INTO space_members (space_id, group_id, role) VALUES ('s', 'everyone', 'edit')").run();
   for (const u of ['a', 'b', 'c']) db.prepare("INSERT INTO users (id, sub, name, role, created_at) VALUES (?, ?, ?, 'editor', ?)").run(u, `sub:${u}`, u, now);
   const page = (id: string, parent: string | null) =>
     db.prepare("INSERT INTO pages (id, space_id, parent_id, title, content, text, created_at, updated_at) VALUES (?, 's', ?, ?, '{}', ?, ?, ?)").run(id, parent, id, `texte de ${id} `.repeat(50), now, now);
@@ -40,9 +42,11 @@ describe('filtrage des pages par permissions', () => {
     }
   });
 
-  it('sans restriction, renvoie tout sans requête', () => {
-    const db = openDb(':memory:');
-    expect(filterReadable(db, null, ids)).toEqual(ids);
+  it('sans restriction de page, renvoie les pages des espaces lisibles et écarte les pages inconnues', () => {
+    const db = tree();
+    db.prepare('DELETE FROM page_acl').run();
+    expect(filterReadable(db, as('c'), [...ids, { id: 'inconnue' }])).toEqual(ids);
+    expect(filterReadable(openDb(':memory:'), null, ids)).toEqual([]);
   });
 });
 

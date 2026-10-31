@@ -37,7 +37,7 @@ export const currentPageId = () => { const r = parseRoute(location.pathname); re
 export const search = () => openPalette({ onOpen: (p) => go(`/p/${p.id}`) });
 
 export async function newPage(spaceId = prefs.space, parentId = null) {
-  if (!session.can('write')) return null;
+  if (!session.can('write') || !store.canWriteIn(spaceId)) return null;
   const id = await attempt(() => store.createPage({ spaceId, parentId }));
   if (!id) return null;
   if (parentId) { prefs.expanded[parentId] = true; savePrefs(); }
@@ -46,7 +46,7 @@ export async function newPage(spaceId = prefs.space, parentId = null) {
 }
 
 export function newPageFromTemplate(spaceId = prefs.space, parentId = null) {
-  if (!session.can('write')) return;
+  if (!session.can('write') || !store.canWriteIn(spaceId)) return;
   openTemplatePicker(async (tpl) => {
     const id = await attempt(() => store.createPage({ spaceId, parentId, icon: tpl.icon, content: tpl.content }));
     if (!id) return;
@@ -313,9 +313,14 @@ export function spaceForm(space = null) {
     h('option', { value: 'private' }, 'Privé : utilisateurs connectés uniquement'),
     h('option', { value: 'public' }, 'Public : lisible sans connexion (portfolio)'));
   visibility.value = space?.visibility || 'private';
+  // Seul un administrateur change la visibilité publique ; un gestionnaire d'espace règle le nom, l'icône et la description.
+  const isAdmin = session.can('admin');
+  const access = h('select', { class: 'input', 'aria-label': 'Qui y a accès au départ' },
+    h('option', { value: 'admins' }, 'Les administrateurs seulement (j’ajoute ensuite des membres)'),
+    h('option', { value: 'everyone' }, 'Tout le monde, en édition'));
 
   const submit = async () => {
-    const values = { name: name.value.trim() || 'Nouvel espace', icon: spaceIcon, description: desc.value.trim(), visibility: visibility.value };
+    const values = { name: name.value.trim() || 'Nouvel espace', icon: spaceIcon, description: desc.value.trim(), ...(isAdmin ? { visibility: visibility.value } : {}), ...(space ? {} : { access: access.value }) };
     if (space) return (await attempt(() => store.updateSpace(space.id, values).then(() => true))) ? undefined : false;
     const id = await attempt(() => store.createSpace(values));
     if (!id) return false;
@@ -330,7 +335,8 @@ export function spaceForm(space = null) {
     body: h('div', { class: 'stack' },
       h('label', { class: 'field' }, h('span', null, 'Nom'), h('div', { class: 'row' }, iconBtn, name)),
       h('label', { class: 'field' }, h('span', null, 'Description'), desc),
-      h('label', { class: 'field' }, h('span', null, 'Visibilité'), visibility)),
+      isAdmin && h('label', { class: 'field' }, h('span', null, 'Visibilité'), visibility),
+      !space && h('label', { class: 'field' }, h('span', null, 'Accès au départ'), access)),
     actions: [{ label: 'Annuler' }, { label: space ? 'Enregistrer' : 'Créer l’espace', primary: true, onClick: submit }],
   });
   setTimeout(() => name.focus(), 30);

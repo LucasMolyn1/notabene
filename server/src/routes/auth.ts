@@ -3,6 +3,7 @@ import { BINDING_TTL_SECONDS, bindingCookieName, newBinding } from '../auth/logi
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { hasMfaClaim, roleFromGroups, safeReturnTo, upsertUser } from '../auth/oidc.js';
+import { syncGroups } from '../lib/groups.js';
 import { createSession, destroySession, sessionCookieName } from '../auth/session.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/http.js';
@@ -67,6 +68,7 @@ export default async function authRoutes(app: FastifyInstance) {
         name: displayName(profile),
         role,
       });
+      if (syncGroups(db, userId, 'oidc', profile.groups)) { app.bus.publish({ type: 'space.changed' }); app.collab?.recheckAll(); }
       const previous = req.cookies[cookieName];
       if (previous) destroySession(db, previous);
       startSession(reply, userId, idToken);

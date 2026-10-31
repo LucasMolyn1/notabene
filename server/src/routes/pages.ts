@@ -5,7 +5,7 @@ import { can, guard, requireAuth } from '../auth/context.js';
 import { mentionIds } from '../lib/content.js';
 import { copyTree } from '../lib/page-copy.js';
 import { readersAmong } from '../lib/mentions.js';
-import { loadReadablePage, loadWritablePage, readableSpaceIds } from '../lib/access.js';
+import { loadReadablePage, loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
 import { assertMoveKeepsRestriction, canReadPage, canWritePage, filterReadable, governingPage } from '../lib/page-acl.js';
 import { audit } from '../lib/audit.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
@@ -46,7 +46,7 @@ export default async function pageRoutes(app: FastifyInstance) {
 
   app.post('/pages', { preHandler: guard('write'), schema: { tags, summary: 'Créer une page', body: createBody } }, async (req, reply) => {
     const body = req.body as z.output<typeof createBody>;
-    if (!readableSpaceIds(db, req).includes(body.spaceId)) throw new HttpError(404, 'Espace introuvable');
+    requireSpaceRole(db, req, body.spaceId, 'edit'); // 404 si l'espace n'est pas visible, 403 en lecture seule
     if (body.parentId && !canWritePage(db, req.auth, body.parentId)) throw new HttpError(403, 'Accès en lecture seule sur la page parente');
     const row = createPage(db, body, userId(req));
     bus.publish({ type: 'page.created', spaceId: row.space_id, pageId: row.id, version: row.version, by: by(req) });
@@ -77,7 +77,7 @@ export default async function pageRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     writable(req, id);
     const body = req.body as z.output<typeof moveBody>;
-    if (body.spaceId && !readableSpaceIds(db, req).includes(body.spaceId)) throw new HttpError(404, 'Espace introuvable');
+    if (body.spaceId) requireSpaceRole(db, req, body.spaceId, 'edit'); // déplacer vers un espace : y écrire
     if (body.parentId && !canWritePage(db, req.auth, body.parentId)) throw new HttpError(403, 'Accès en lecture seule sur la page parente');
     assertMoveKeepsRestriction(db, req.auth, id, body.parentId);
     const { row, fromSpaceId } = movePage(db, id, body);
@@ -103,7 +103,7 @@ export default async function pageRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const src = loadReadablePage(db, req, (req.params as { id: string }).id);
     const body = req.body as z.output<typeof copyBody>;
-    if (!readableSpaceIds(db, req).includes(body.spaceId)) throw new HttpError(404, 'Espace introuvable');
+    requireSpaceRole(db, req, body.spaceId, 'edit');
     if (body.parentId && !canWritePage(db, req.auth, body.parentId)) throw new HttpError(403, 'Accès en lecture seule sur la page parente');
     const result = copyTree(db, src.id, { spaceId: body.spaceId, parentId: body.parentId ?? null }, userId(req), (pid) => canReadPage(db, req.auth, pid));
     audit(db, req, 'page.copy', src.id, { to: body.spaceId, pages: result.count, skipped: result.skipped });

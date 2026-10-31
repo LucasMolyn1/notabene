@@ -32,7 +32,8 @@ export default async function seoRoutes(app: FastifyInstance, { indexHtml }: { i
 
   if (!indexHtml) return;
 
-  const titleOf = (id: string) => (db.prepare('SELECT title FROM pages WHERE id = ? AND deleted_at IS NULL').get(id) as { title: string } | undefined)?.title ?? null;
+  // Le titre d'une page n'est révélé que si un visiteur anonyme peut la lire (espace public, page non restreinte).
+  const titleOf = (id: string) => (canReadPage(db, null, id) ? (db.prepare('SELECT title FROM pages WHERE id = ? AND deleted_at IS NULL').get(id) as { title: string } | undefined)?.title ?? null : null);
 
   app.get('/p/:seg', async (req, reply) => {
     const seg = (req.params as { seg: string }).seg;

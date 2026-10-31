@@ -3,7 +3,7 @@
 // que la personne ne peut plus lire.
 import type { Auth } from '../auth/context.js';
 import type { DB } from '../db.js';
-import { filterReadable } from './page-acl.js';
+import { filterReadable, keepPagesClosed, pagesOnlyOpenTo } from './page-acl.js';
 
 interface UserRow {
   id: string; sub: string; email: string | null; name: string; role: 'admin' | 'editor' | 'reader';
@@ -35,6 +35,8 @@ export function exportUserData(db: DB, userId: string) {
       .map((t) => ({ name: t.name, prefix: t.prefix, scopes: t.scopes, createdAt: t.created_at, expiresAt: t.expires_at, lastUsedAt: t.last_used_at, revokedAt: t.revoked_at })),
     sessions: all<{ created_at: number; last_seen_at: number; expires_at: number }>('SELECT created_at, last_seen_at, expires_at FROM sessions WHERE user_id = ?', userId)
       .map((s) => ({ createdAt: s.created_at, lastSeenAt: s.last_seen_at, expiresAt: s.expires_at })),
+    groups: all<{ name: string; source: string }>("SELECT g.name, g.source FROM group_members m JOIN groups g ON g.id = m.group_id WHERE m.user_id = ? ORDER BY g.name", userId),
+    spaceMemberships: all<{ name: string; role: string }>('SELECT s.name, m.role FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.user_id = ? ORDER BY s.name', userId),
     notificationPreferences: { emailComments: prefs ? !!prefs.c : true, emailChanges: prefs ? !!prefs.g : false },
     favorites: filterReadable(db, subject, all<{ id: string; title: string }>(
       'SELECT p.id, p.title FROM favorites f JOIN pages p ON p.id = f.page_id WHERE f.user_id = ? AND p.deleted_at IS NULL', userId)),
@@ -57,10 +59,12 @@ export function exportUserData(db: DB, userId: string) {
 
 // Effacement : le compte et ce qui lui est propre disparaissent ; ce qu'il a écrit reste mais sans auteur.
 // (Les clés étrangères en cascade retirent sessions, jetons, favoris, suivis, notifications, permissions et préférences.)
-export function eraseUser(db: DB, userId: string): boolean {
+export function eraseUser(db: DB, userId: string, closedBy: string | null = null): boolean {
   return db.transaction(() => {
     const u = db.prepare('SELECT sub FROM users WHERE id = ?').get(userId) as { sub: string } | undefined;
     if (!u) return false;
+    // Une page réservée à cette seule personne reste fermée (entrée de l'administrateur qui efface) au lieu de s'ouvrir à l'espace.
+    if (closedBy) keepPagesClosed(db, pagesOnlyOpenTo(db, { userId }), closedBy);
     db.prepare('UPDATE pages SET created_by = NULL WHERE created_by = ?').run(userId);
     db.prepare('UPDATE pages SET updated_by = NULL WHERE updated_by = ?').run(userId);
     db.prepare('UPDATE page_versions SET created_by = NULL WHERE created_by = ?').run(userId);

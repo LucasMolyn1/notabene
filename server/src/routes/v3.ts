@@ -8,7 +8,7 @@ import { audit } from '../lib/audit.js';
 import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
 import { getPrefs, watch } from '../lib/notifications.js';
-import { entriesOf, filterReadable, governingPage, pageLevel } from '../lib/page-acl.js';
+import { type AclEntry, entriesOf, filterReadable, governingPage, pageLevel } from '../lib/page-acl.js';
 import { mentionIds } from '../lib/content.js';
 import { MAX_MENTIONS, mentionableUsers, readersAmong, validMentions } from '../lib/mentions.js';
 
@@ -172,7 +172,13 @@ export default async function v3Routes(app: FastifyInstance) {
     const base = { restricted: !!gov, inheritedFrom: gov && gov !== page.id ? gov : null, yourLevel: pageLevel(db, req.auth, page.id) };
     if (req.auth?.user.role !== 'admin' || !req.auth.scopes.has('admin')) return base;
     const names = new Map((db.prepare('SELECT id, name, email FROM users').all() as { id: string; name: string; email: string | null }[]).map((u) => [u.id, u]));
-    return { ...base, entries: gov ? entriesOf(db, gov).map((e) => ({ ...e, name: names.get(e.userId)?.name ?? null, email: names.get(e.userId)?.email ?? null })) : [] };
+    const groups = new Map((db.prepare('SELECT id, name FROM groups').all() as { id: string; name: string }[]).map((g) => [g.id, g.name]));
+    return {
+      ...base,
+      entries: gov ? entriesOf(db, gov).map((e) => (e.groupId
+        ? { ...e, name: groups.get(e.groupId) ?? null, email: null }
+        : { ...e, name: names.get(e.userId!)?.name ?? null, email: names.get(e.userId!)?.email ?? null })) : [],
+    };
   });
 
   app.put('/pages/:id/permissions', {
@@ -181,18 +187,32 @@ export default async function v3Routes(app: FastifyInstance) {
       tags: ['permissions'],
       summary: 'Définir les permissions d’une page (administrateur) : liste vide = aucune restriction propre',
       params: idParams,
-      body: z.object({ entries: z.array(z.object({ userId: idSchema, level: z.enum(['read', 'write']) })).max(100) }),
+      // Une entrée vise une personne OU un groupe.
+      body: z.object({
+        entries: z.array(z.object({ userId: idSchema.optional(), groupId: idSchema.optional(), level: z.enum(['read', 'write']) })
+          .refine((e) => (e.userId === undefined) !== (e.groupId === undefined), 'Une personne ou un groupe, pas les deux')).max(100),
+      }),
     },
   }, async (req) => {
     const page = loadReadablePage(db, req, (req.params as { id: string }).id);
-    const { entries } = req.body as { entries: { userId: string; level: 'read' | 'write' }[] };
-    if (new Set(entries.map((e) => e.userId)).size !== entries.length) throw new HttpError(400, 'Utilisateur en double');
-    const known = db.prepare('SELECT id FROM users WHERE id = ? AND disabled = 0');
-    for (const e of entries) if (!known.get(e.userId)) throw new HttpError(400, `Utilisateur inconnu ou désactivé : ${e.userId}`);
+    const { entries } = req.body as { entries: AclEntry[] };
+    const key = (e: AclEntry) => (e.userId ? `u:${e.userId}` : `g:${e.groupId}`);
+    if (new Set(entries.map(key)).size !== entries.length) throw new HttpError(400, 'Entrée en double');
+    const knownUser = db.prepare('SELECT id FROM users WHERE id = ? AND disabled = 0');
+    const knownGroup = db.prepare('SELECT id FROM groups WHERE id = ?');
+    for (const e of entries) {
+      if (e.userId && !knownUser.get(e.userId)) throw new HttpError(400, `Utilisateur inconnu ou désactivé : ${e.userId}`);
+      if (e.groupId && !knownGroup.get(e.groupId)) throw new HttpError(400, `Groupe inconnu : ${e.groupId}`);
+    }
     db.transaction(() => {
       db.prepare('DELETE FROM page_acl WHERE page_id = ?').run(page.id);
-      const ins = db.prepare('INSERT INTO page_acl (page_id, user_id, level) VALUES (?, ?, ?)');
-      for (const e of entries) ins.run(page.id, e.userId, e.level);
+      db.prepare('DELETE FROM page_acl_groups WHERE page_id = ?').run(page.id);
+      const insUser = db.prepare('INSERT INTO page_acl (page_id, user_id, level) VALUES (?, ?, ?)');
+      const insGroup = db.prepare('INSERT INTO page_acl_groups (page_id, group_id, level) VALUES (?, ?, ?)');
+      for (const e of entries) {
+        if (e.userId) insUser.run(page.id, e.userId, e.level);
+        else insGroup.run(page.id, e.groupId, e.level);
+      }
     })();
     audit(db, req, 'page.permissions', page.id, { entries: entries.length });
     // Les sessions de co-édition en cours se reconnectent : l'accès est revérifié.

@@ -2,10 +2,10 @@
 import { effectiveEmbedHosts } from '../lib/embed.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { can, requireAuth } from '../auth/context.js';
+import { type Auth, can, requireAuth } from '../auth/context.js';
 import { aiProviderLabel, isAiReady } from '../ai/settings.js';
-import { readableSpaceIds } from '../lib/access.js';
-import { canReadPage, hasAnyAcl } from '../lib/page-acl.js';
+import { canReadPage, filterReadable, hasAnyAcl } from '../lib/page-acl.js';
+import { spaceRoles } from '../lib/space-access.js';
 import type { AppEvent } from '../lib/events.js';
 import { idSchema } from '../lib/http.js';
 import { reauthUntil } from '../lib/reauth.js';
@@ -54,8 +54,18 @@ export default async function coreRoutes(app: FastifyInstance) {
   app.addHook('preClose', async () => { for (const res of streams) res.end(); });
 
   // Flux temps réel : changements de pages (sans contenu) et présence.
+  // Présence : on ne montre qui consulte quelle page que pour les pages que l'appelant peut lire.
+  const visiblePeers = (auth: Auth | null, peers: { pageId: string | null }[]) => {
+    const ok = new Set(filterReadable(db, auth, peers.filter((p) => p.pageId).map((p) => ({ id: p.pageId! }))).map((p) => p.id));
+    return peers.filter((p) => !p.pageId || ok.has(p.pageId));
+  };
+
   app.get('/events', { schema: { tags: ['session'], summary: 'Flux SSE des changements' } }, async (req, reply) => {
-    let spaces = new Set(readableSpaceIds(db, req));
+    // Identité du flux : rôle et état du compte sont relus à chaque changement de droits (un administrateur rétrogradé, un
+    // compte désactivé ou un groupe retiré ne gardent pas les droits de l'ouverture du flux).
+    let auth = req.auth;
+    const spaceIds = (a: Auth | null) => new Set(can(a, 'read') ? [...spaceRoles(db, a).keys()] : [...spaceRoles(db, null).keys()]);
+    let spaces = spaceIds(auth);
     const authed = can(req.auth, 'read');
     reply.hijack();
     const res = reply.raw;
@@ -68,14 +78,21 @@ export default async function coreRoutes(app: FastifyInstance) {
     });
     streams.add(res);
     const send = (event: AppEvent) => {
-      if (event.type === 'space.changed') spaces = new Set(readableSpaceIds(db, req));
+      if (event.type === 'space.changed' && auth) {
+        const live = db.prepare('SELECT role, disabled FROM users WHERE id = ?').get(auth.user.id) as { role: 'admin' | 'editor' | 'reader'; disabled: number } | undefined;
+        if (!live || live.disabled) { res.end(); return; }
+        auth = { ...auth, user: { ...auth.user, role: live.role } };
+      }
+      if (event.type === 'space.changed') spaces = spaceIds(auth);
       if (event.type === 'presence' && !authed) return;
       // Notification : uniquement pour son destinataire.
       if (event.type === 'notification' && (event.data as { userId?: string } | undefined)?.userId !== req.auth?.user.id) return;
       if (event.spaceId && !spaces.has(event.spaceId)) return;
       // Page restreinte : l'événement n'est diffusé qu'à ceux qui y ont accès (page détruite : plus de restriction à appliquer).
-      if (event.pageId && hasAnyAcl(db) && pageExists.get(event.pageId) && !canReadPage(db, req.auth, event.pageId)) return;
-      res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+      // Sans espace dans l'événement, le droit sur l'espace de la page est aussi relu (canReadPage).
+      if (event.pageId && (!event.spaceId || hasAnyAcl(db)) && pageExists.get(event.pageId) && !canReadPage(db, auth, event.pageId)) return;
+      const out = event.type === 'presence' ? { ...event, data: visiblePeers(auth, event.data as { pageId: string | null }[]) } : event;
+      res.write(`event: ${event.type}\ndata: ${JSON.stringify(out)}\n\n`);
     };
     res.write('retry: 5000\n\n');
     const unsubscribe = app.bus.subscribe(send);
@@ -97,7 +114,9 @@ export default async function coreRoutes(app: FastifyInstance) {
   }, async (req) => {
     const auth = requireAuth(req);
     const { tabId, pageId, editing } = req.body as { tabId: string; pageId: string | null; editing: boolean };
-    app.presence.update(`${auth.user.id}:${tabId}`, auth.user, pageId, editing);
-    return { peers: app.presence.list() };
+    // Une page illisible n'est pas signalée (rien ne révèle son existence).
+    const seen = pageId && canReadPage(db, auth, pageId) ? pageId : null;
+    app.presence.update(`${auth.user.id}:${tabId}`, auth.user, seen, editing);
+    return { peers: visiblePeers(auth, app.presence.list()) };
   });
 }

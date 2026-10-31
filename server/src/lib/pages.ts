@@ -224,6 +224,7 @@ export function duplicatePage(db: DB, id: string, userId: string | null) {
     }, userId);
     // La copie reste aussi restreinte que la source : sinon dupliquer une page cachée la rendrait visible à tout le parent.
     db.prepare('INSERT INTO page_acl (page_id, user_id, level) SELECT ?, user_id, level FROM page_acl WHERE page_id = ?').run(copy.id, id);
+    db.prepare('INSERT INTO page_acl_groups (page_id, group_id, level) SELECT ?, group_id, level FROM page_acl_groups WHERE page_id = ?').run(copy.id, id);
     db.prepare('INSERT INTO page_labels (page_id, name, created_at, created_by) SELECT ?, name, created_at, created_by FROM page_labels WHERE page_id = ?').run(copy.id, id);
     return copy;
   })();

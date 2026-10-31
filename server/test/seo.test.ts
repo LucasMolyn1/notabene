@@ -129,6 +129,19 @@ describe('référencement des pages publiques', () => {
     expect(res.body).not.toContain('<b>public</b>');
   });
 
+  it('une page publique ne révèle pas le titre d’une page privée ou restreinte vers laquelle elle pointe', async () => {
+    await boot();
+    const link = createPage(db, {
+      spaceId: pub.space_id,
+      title: 'Page avec liens',
+      content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'pageLink', attrs: { id: priv.id } }, { type: 'pageLink', attrs: { id: restricted.id } }, { type: 'pageLink', attrs: { id: pub.id } }] }] },
+    }, null);
+    const res = await get(`/p/${segmentOf(link.id, link.title)}`);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toMatch(/Secret interne|Réservée aux admins/);
+    expect(res.body).toContain('Bienvenue à la maison'); // le titre d'une page publique, lui, s'affiche
+  });
+
   it('un titre périmé ou un identifiant seul redirige (301) vers l’adresse canonique', async () => {
     await boot();
     const seg = segmentOf(pub.id, pub.title);

@@ -37,6 +37,7 @@ import authRoutes from './routes/auth.js';
 import websocket from '@fastify/websocket';
 import collabRoutes from './routes/collab.js';
 import coreRoutes from './routes/core.js';
+import groupRoutes from './routes/groups.js';
 import importRoutes from './routes/import.js';
 import localAuthRoutes from './routes/local-auth.js';
 import mcpRoutes from './routes/mcp.js';
@@ -257,6 +258,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   await app.register(async (scope) => {
     await scope.register(coreRoutes);
     await scope.register(spaceRoutes);
+    await scope.register(groupRoutes);
     await scope.register(pageRoutes);
     await scope.register(pageQueryRoutes);
     await scope.register(labelRoutes);
