@@ -12,6 +12,14 @@ export const MAX_FORMULA_CHARS = 500;
 const MAX_NODES = 120;
 const MAX_DEPTH = 25;
 const MAX_STRING = 2000;
+// Même liste que les valeurs de cellules (bases.ts) : contrôles, retours à la ligne, marques et isolats de direction du texte.
+// eslint-disable-next-line no-control-regex
+const BAD_CHARS = /[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
+const MAX_TEXT_CALLS = 8;
+const TEXT_FUNCTIONS = new Set(['upper', 'lower', 'concat', 'text', 'contains', 'length']);
+/** Budget de caractères traités par les fonctions de texte, partagé par toutes les évaluations d'une lecture. */
+export interface Budget { chars: number }
+class OutOfBudget extends Error {}
 
 type Node =
   | { t: 'num'; v: number }
@@ -49,10 +57,11 @@ function lex(src: string): Tok[] {
         if (d === '\\') {
           const e = src[j + 1];
           if (e === '"' || e === '\\') { s += e; j += 2; continue; }
-          if (e === 'n') { s += '\n'; j += 2; continue; }
           throw new FormulaError(`Séquence « \\${e ?? ''} » inconnue à la position ${j + 1}`);
         }
         if (d === '"') break;
+        // Ni caractère de contrôle (retour à la ligne compris) ni caractère de direction du texte : ils déguiseraient un résultat affiché ou exporté.
+        if (BAD_CHARS.test(d)) throw new FormulaError(`Caractère de contrôle non autorisé dans le texte à la position ${j + 1}`);
         s += d;
         j++;
       }
@@ -93,6 +102,7 @@ export function parseFormula(src: string): Node {
   const toks = lex(src);
   let pos = 0;
   let nodes = 0;
+  let textCalls = 0;
   const peek = () => toks[pos]!;
   const count = () => { if (++nodes > MAX_NODES) throw new FormulaError('Formule trop complexe'); };
   const fail = (m: string, t = peek()): never => { throw new FormulaError(`${m} à la position ${t.at + 1}`); };
@@ -153,6 +163,7 @@ export function parseFormula(src: string): Node {
         if (args.length !== 1 || a?.t !== 'str') return fail('prop() prend un seul texte : prop("nom de colonne")', t);
         return { t: 'prop', name: a.v };
       }
+      if (TEXT_FUNCTIONS.has(t.v) && ++textCalls > MAX_TEXT_CALLS) return fail(`Trop de fonctions de texte (${MAX_TEXT_CALLS} au plus)`, t);
       const arity = FUNCTIONS.get(t.v);
       if (!arity) return fail(`Fonction « ${t.v} » inconnue`, t);
       if (args.length < arity[0] || args.length > arity[1]) return fail(`${t.v}() attend ${arity[0] === arity[1] ? arity[0] : `de ${arity[0]} à ${arity[1]}`} argument(s)`, t);
@@ -181,7 +192,7 @@ export function referencedProperties(ast: Node): string[] {
 
 // ---------- Évaluation ----------
 const num = (v: Value): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-const str = (v: Value): string => (v === null ? '' : typeof v === 'boolean' ? (v ? 'vrai' : 'faux') : String(v));
+const str = (v: Value): string => (v === null ? '' : typeof v === 'boolean' ? (v ? 'oui' : 'non') : String(v));
 const cut = (s: string) => (s.length > MAX_STRING ? s.slice(0, MAX_STRING) : s);
 const finite = (n: number): Value => (Number.isFinite(n) ? n : null);
 /** « 12 », « -3,5 », « 4.25 » (espaces autour tolérés) ; tout le reste donne null. */
@@ -194,26 +205,31 @@ function parseDecimal(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
-const dayNumber = (v: Value): number | null => {
+/** Une vraie date AAAA-MM-JJ (le 30 février est refusé, pas ramené au 2 mars). */
+const parseDate = (v: Value): { y: number; m: number; d: number; day: number } | null => {
   if (typeof v !== 'string') return null;
   const m = DATE.exec(v);
   if (!m) return null;
-  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return Number.isFinite(t) ? Math.round(t / 86_400_000) : null;
+  const y = Number(m[1]); const mo = Number(m[2]); const d = Number(m[3]);
+  const t = Date.UTC(y, mo - 1, d);
+  const back = new Date(t);
+  if (!Number.isFinite(t) || back.getUTCFullYear() !== y || back.getUTCMonth() !== mo - 1 || back.getUTCDate() !== d) return null;
+  return { y, m: mo, d, day: Math.round(t / 86_400_000) };
 };
+const dayNumber = (v: Value): number | null => parseDate(v)?.day ?? null;
 
-function binary(op: string, a: Value, b: Value): Value {
+function binary(op: string, a: Value, b: Value, spend: (n: number) => void): Value {
   switch (op) {
-    case '&&': return a === true && b === true;
-    case '||': return a === true || b === true;
     case '==': return a === b;
     case '!=': return a !== b;
     case '+':
-      if (typeof a === 'string' || typeof b === 'string') return cut(str(a) + str(b));
+      if (typeof a === 'string' || typeof b === 'string') { const x = str(a); const y = str(b); spend(x.length + y.length); return cut(x + y); }
       { const x = num(a); const y = num(b); return x === null || y === null ? null : finite(x + y); }
     case '<': case '>': case '<=': case '>=': {
       if (a === null || b === null || typeof a !== typeof b) return null;
-      const lt = (a as number | string | boolean) < (b as number | string | boolean);
+      if (typeof a === 'string') spend(a.length + (b as string).length);
+      // Textes comparés selon l'ordre du français (« a » avant « B »), nombres et booléens naturellement.
+      const lt = typeof a === 'string' ? a.localeCompare(b as string, 'fr') < 0 : (a as number | boolean) < (b as number | boolean);
       const eq = a === b;
       return op === '<' ? lt : op === '>' ? !lt && !eq : op === '<=' ? lt || eq : !lt;
     }
@@ -229,14 +245,15 @@ function binary(op: string, a: Value, b: Value): Value {
   }
 }
 
-function call(fn: string, a: Value[]): Value {
+function call(fn: string, a: Value[], spend: (n: number) => void): Value {
+  if (TEXT_FUNCTIONS.has(fn)) spend(a.reduce<number>((n, v) => n + (typeof v === 'string' ? v.length : 1), 0));
   switch (fn) {
     case 'round': { const x = num(a[0]!); if (x === null) return null; const d = a[1] === undefined ? 0 : num(a[1]); if (d === null || d < 0 || d > 10) return null; const f = 10 ** Math.trunc(d); return finite(Math.round(x * f) / f); }
     case 'floor': { const x = num(a[0]!); return x === null ? null : Math.floor(x); }
     case 'ceil': { const x = num(a[0]!); return x === null ? null : Math.ceil(x); }
     case 'abs': { const x = num(a[0]!); return x === null ? null : Math.abs(x); }
     case 'min': case 'max': { const xs = a.map(num); if (xs.some((x) => x === null)) return null; return fn === 'min' ? Math.min(...(xs as number[])) : Math.max(...(xs as number[])); }
-    case 'length': return str(a[0]!).length;
+    case 'length': return [...str(a[0]!)].length;
     case 'upper': return cut(str(a[0]!).toLocaleUpperCase('fr'));
     case 'lower': return cut(str(a[0]!).toLocaleLowerCase('fr'));
     case 'concat': return cut(a.map(str).join(''));
@@ -245,30 +262,46 @@ function call(fn: string, a: Value[]): Value {
     case 'number': { if (typeof a[0] === 'number') return a[0]; if (typeof a[0] === 'boolean') return a[0] ? 1 : 0; return typeof a[0] === 'string' ? parseDecimal(a[0]) : null; }
     case 'text': return cut(str(a[0]!));
     case 'dateDiff': { const x = dayNumber(a[0]!); const y = dayNumber(a[1]!); return x === null || y === null ? null : x - y; }
-    case 'year': { const m = typeof a[0] === 'string' ? DATE.exec(a[0]) : null; return m ? Number(m[1]) : null; }
-    case 'month': { const m = typeof a[0] === 'string' ? DATE.exec(a[0]) : null; return m ? Number(m[2]) : null; }
+    case 'year': return parseDate(a[0]!)?.y ?? null;
+    case 'month': return parseDate(a[0]!)?.m ?? null;
     default: return null;
   }
 }
 
-/** Évalue une formule déjà analysée. `read(nom)` donne la valeur d'une colonne (null si absente ou inconnue). */
-export function evaluate(ast: Node, read: (name: string) => Value): Value {
+/**
+ * Évalue une formule déjà analysée. `read(nom)` donne la valeur d'une colonne (null si absente ou inconnue). `budget` limite le travail
+ * des fonctions de texte pour l'ensemble des évaluations qui le partagent ; une fois épuisé, le résultat est null.
+ * Les opérateurs logiques et `if` exigent des booléens : une autre valeur (ou une cellule vide) donne un résultat vide, jamais un faux silencieux.
+ */
+export function evaluate(ast: Node, read: (name: string) => Value, budget?: Budget): Value {
+  const spend = (n: number) => { if (budget && (budget.chars -= n) < 0) throw new OutOfBudget(); };
   const go = (n: Node): Value => {
     switch (n.t) {
       case 'num': case 'str': case 'bool': return n.v;
       case 'prop': return read(n.name);
-      case 'un': { const v = go(n.a); if (n.op === '!') return v === null ? null : !(v === true); const x = num(v); return x === null ? null : -x; }
-      case 'bin': {
-        if (n.op === '&&') { const a = go(n.a); return a === true ? go(n.b) === true : false; }
-        if (n.op === '||') { const a = go(n.a); return a === true ? true : go(n.b) === true; }
-        return binary(n.op, go(n.a), go(n.b));
+      case 'un': {
+        const v = go(n.a);
+        if (n.op === '!') return typeof v === 'boolean' ? !v : null;
+        const x = num(v);
+        return x === null ? null : -x;
       }
-      case 'call':
+      case 'bin': {
+        if (n.op === '&&') { const a = go(n.a); if (a === false) return false; if (a !== true) return null; const b = go(n.b); return typeof b === 'boolean' ? b : null; }
+        if (n.op === '||') { const a = go(n.a); if (a === true) return true; if (a !== false) return null; const b = go(n.b); return typeof b === 'boolean' ? b : null; }
+        return binary(n.op, go(n.a), go(n.b), spend);
+      }
+      case 'call': {
         // if() n'évalue que la branche choisie ; les autres fonctions évaluent tous leurs arguments.
-        if (n.fn === 'if') return go(n.args[0]!) === true ? go(n.args[1]!) : go(n.args[2]!);
-        return call(n.fn, n.args.map(go));
+        if (n.fn === 'if') { const c = go(n.args[0]!); return typeof c === 'boolean' ? (c ? go(n.args[1]!) : go(n.args[2]!)) : null; }
+        return call(n.fn, n.args.map(go), spend);
+      }
     }
   };
-  const out = go(ast);
-  return typeof out === 'number' && !Number.isFinite(out) ? null : out;
+  try {
+    const out = go(ast);
+    return typeof out === 'number' && !Number.isFinite(out) ? null : out;
+  } catch (err) {
+    if (err instanceof OutOfBudget) return null;
+    throw err;
+  }
 }

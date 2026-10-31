@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { Auth } from '../auth/context.js';
 import type { DB } from '../db.js';
-import { evaluate, FormulaError, parseFormula, referencedProperties, type Value } from './formula.js';
+import { type Budget, evaluate, FormulaError, parseFormula, referencedProperties, type Value } from './formula.js';
 import { HttpError, newId } from './http.js';
 import { readersAmong } from './mentions.js';
 import { canReadPage, filterReadable } from './page-acl.js';
@@ -21,6 +21,8 @@ export const MAX_OPTIONS = 100;
 export const MAX_VIEWS = 10;
 export const MAX_TEXT = 2000;
 export const MAX_FORMULAS = 10;
+/** Caractères que les fonctions de texte des formules peuvent traiter pour UNE lecture de la base (borne le temps de calcul). */
+export const limits = { formulaChars: 20_000_000 };
 export const MAX_ROW_CHARS = 20_000;
 export const MAX_BASE_CHARS = 10_000_000;
 
@@ -113,6 +115,7 @@ export function addProperty(db: DB, baseId: string, input: { name: string; type:
   return db.transaction(() => {
     const props = propertiesOf(db, baseId);
     if (props.length >= MAX_PROPERTIES) throw new HttpError(409, `Au plus ${MAX_PROPERTIES} colonnes par base`);
+    assertFreeName(props, input.name);
     if ((input.type === 'formula') !== (input.formula !== undefined)) throw new HttpError(400, input.type === 'formula' ? 'Une colonne calculée demande une formule' : 'Seule une colonne calculée a une formule');
     if (input.type === 'formula' && props.filter((p) => p.type === 'formula').length >= MAX_FORMULAS) throw new HttpError(409, `Au plus ${MAX_FORMULAS} colonnes calculées par base`);
     const formula = input.formula === undefined ? null : checkFormula(props, input.formula);
@@ -134,6 +137,7 @@ export function updateProperty(db: DB, baseId: string, id: string, input: { name
     const prop = propertyById(db, baseId, id);
     const props = propertiesOf(db, baseId);
     if (input.formula !== undefined && prop.type !== 'formula') throw new HttpError(400, 'Seule une colonne calculée a une formule');
+    if (input.name !== undefined && input.name !== prop.name) assertFreeName(props, input.name, id);
     const formula = input.formula === undefined ? prop.formula : checkFormula(props, input.formula, id);
     // Renommer une colonne lue par une formule la casserait en silence : on refuse, la formule se corrige d'abord.
     if (input.name !== undefined && input.name !== prop.name) {
@@ -157,6 +161,12 @@ export function updateProperty(db: DB, baseId: string, id: string, input: { name
     }
     return propertyById(db, baseId, id);
   })();
+}
+
+const sameName = (a: string, b: string) => a.normalize('NFC').toLocaleLowerCase('fr') === b.normalize('NFC').toLocaleLowerCase('fr');
+/** Deux colonnes ne portent pas le même nom (casse et accents composés ignorés) : une formule lit une colonne par son nom, sans ambiguïté possible. */
+function assertFreeName(props: Property[], name: string, exceptId?: string) {
+  if (props.some((p) => p.id !== exceptId && sameName(p.name, name))) throw new HttpError(409, `Une colonne s'appelle déjà « ${name} »`);
 }
 
 /** Nom de la première colonne calculée qui lit la colonne `name` (hors `exceptId`), sinon null. */
@@ -208,7 +218,7 @@ const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Dat
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 /** Nom saisi : sans caractères de contrôle ni de direction du texte (qui déguisent un nom affiché ou exporté), non vide après nettoyage. */
-export const cleanName = (max: number) => z.string().transform((v) => v.replace(CONTROL, '').trim()).pipe(z.string().min(1).max(max));
+export const cleanName = (max: number) => z.string().transform((v) => v.replace(CONTROL, '').normalize('NFC').trim()).pipe(z.string().min(1).max(max));
 
 /** Valide une valeur pour une colonne. `null` efface la cellule. Lève 400 si la valeur ne convient pas. */
 export function checkValue(ctx: Ctx, prop: Property, v: unknown): unknown {
@@ -347,6 +357,7 @@ export function presentRows(ctx: Ctx, props: Property[], canSeeNames: boolean, o
     try { return [{ id: p.id, ast: parseFormula(p.formula!) }]; } catch { return []; }
   });
   const byName = new Map(props.filter((p) => p.type !== 'formula').map((p) => [p.name, p]));
+  const budget: Budget = { chars: limits.formulaChars };
   return parsed.map(({ r, vals }) => {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(vals)) {
@@ -357,7 +368,7 @@ export function presentRows(ctx: Ctx, props: Property[], canSeeNames: boolean, o
       else out[k] = v;
     }
     for (const f of formulas) {
-      const result = evaluate(f.ast, (name) => { const p = byName.get(name); return p ? primitive(p, out[p.id]) : null; });
+      const result = evaluate(f.ast, (name) => { const p = byName.get(name); return p ? readCell(p, out[p.id]) : null; }, budget);
       if (result !== null) out[f.id] = result;
     }
     return { id: r.id, position: r.position, values: out, createdAt: r.created_at, updatedAt: r.updated_at };
@@ -375,6 +386,9 @@ function primitive(p: Property, v: unknown): Value {
     default: return typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean' ? v : null;
   }
 }
+
+// Une case décochée n'est pas stockée : pour une formule elle vaut faux (et non « vide »).
+const readCell = (p: Property, v: unknown): Value => (p.type === 'checkbox' ? v === true : primitive(p, v));
 
 // ---------- Vues ----------
 
@@ -500,7 +514,7 @@ export function toCsv(props: Property[], rows: PresentedRow[]): string {
     }
   };
   // Nombres et dates sont validés : ils ne peuvent pas être une formule, et « -5 » doit rester un nombre pour le tableur.
-  const cell = (p: Property, v: unknown) => (p.type === 'number' || p.type === 'date' ? text(p, v) : csvCell(text(p, v)));
+  const cell = (p: Property, v: unknown) => (p.type === 'number' || p.type === 'date' || (p.type === 'formula' && typeof v === 'number') ? text(p, v) : csvCell(text(p, v)));
   const lines = [props.map((p) => csvCell(p.name)).join(',')];
   for (const r of rows) lines.push(props.map((p) => cell(p, r.values[p.id])).join(','));
   return `\uFEFF${lines.join('\r\n')}\r\n`;

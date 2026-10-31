@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluate, FormulaError, MAX_FORMULA_CHARS, parseFormula, referencedProperties, type Value } from '../src/lib/formula.js';
+import { type Budget, evaluate, FormulaError, MAX_FORMULA_CHARS, parseFormula, referencedProperties, type Value } from '../src/lib/formula.js';
 
 // Comme l'application : les colonnes se lisent dans une Map, jamais dans un objet indexé par le nom.
 const run = (src: string, cols: Record<string, Value> = {}) => { const m = new Map(Object.entries(cols)); return evaluate(parseFormula(src), (n) => m.get(n) ?? null); };
@@ -68,6 +68,56 @@ describe('calcul', () => {
   it('un texte long est tronqué', () => {
     const out = run('prop("A") + prop("A") + prop("A")', { A: 'x'.repeat(1900) });
     expect(typeof out === 'string' && out.length <= 2000).toBe(true);
+  });
+});
+
+describe('relecture : logique stricte, texte, dates, budget', () => {
+  it('les opérateurs logiques et if exigent des booléens : sinon le résultat est vide', () => {
+    for (const src of ['!5', '!0', '!"non"', 'if(5, 1, 2)', 'if("x", 1, 2)', 'prop("X") && true', 'true && prop("X")', 'prop("X") || true', 'false || prop("X")', '!prop("X")', 'if(prop("X"), 1, 2)']) expect(run(src), src).toBeNull();
+    expect(run('!true')).toBe(false);
+    expect(run('!false')).toBe(true);
+    expect(run('false && prop("X")')).toBe(false);
+    expect(run('true || prop("X")')).toBe(true);
+    expect(run('true && false || true')).toBe(true);
+    expect(run('if(1 > 2, "a", "b")')).toBe('b');
+  });
+
+  it('texte : booléens en oui/non, ordre français, longueur en caractères', () => {
+    expect(run('text(true) + "/" + text(false)')).toBe('oui/non');
+    expect(run('"a" < "B"')).toBe(true);
+    expect(run('"é" < "f"')).toBe(true);
+    expect(run('length("😀é")')).toBe(2);
+  });
+
+  it('dates : une date impossible n’est pas ramenée à une autre', () => {
+    expect(run('dateDiff("2026-02-31", "2026-01-01")')).toBeNull();
+    expect(run('year("0000-99-99")')).toBeNull();
+    expect(run('month("2026-13-01")')).toBeNull();
+    expect(run('dateDiff("2026-03-01", "2026-02-28")')).toBe(1);
+    expect(run('dateDiff("2024-03-01", "2024-02-28")')).toBe(2);
+  });
+
+  it('un texte de formule n’accepte ni caractères de contrôle, ni direction du texte, ni retour à la ligne', () => {
+    for (const bidi of ['\u202e', '\u2066', '\u200f', '\u0007', '\n', '\r', '\t']) bad(`"a${bidi}b"`);
+    bad('"a\\nb"');
+    expect(run('"a b"')).toBe('a b');
+  });
+
+  it('le travail des fonctions de texte est borné : budget partagé et nombre d’appels', () => {
+    const greek = 'ΣΑΣς'.repeat(500);
+    const ast = parseFormula('length(lower(upper(prop("T"))))');
+    const budget: Budget = { chars: 10_000 };
+    let nulls = 0;
+    for (let i = 0; i < 20; i++) if (evaluate(ast, () => greek, budget) === null) nulls++;
+    expect(nulls).toBeGreaterThan(10);
+    expect(evaluate(ast, () => greek)).toBe(2000);
+    expect(budget.chars).toBeLessThan(0);
+    // Sans texte, le budget n'est pas touché.
+    const b2: Budget = { chars: 5 };
+    expect(evaluate(parseFormula('1 + 2 * 3'), () => null, b2)).toBe(7);
+    expect(b2.chars).toBe(5);
+    bad(`${'upper('.repeat(9)}"a"${')'.repeat(9)}`);
+    expect(() => parseFormula(`${'upper('.repeat(8)}"a"${')'.repeat(8)}`)).not.toThrow();
   });
 });
 

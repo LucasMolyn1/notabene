@@ -105,7 +105,7 @@ export async function showBase(initial) {
         return f.op === 'contains' ? t.includes(w) : f.op === 'eq' ? t === w : t !== w;
       }
       case 'formula': {
-        const n = Number(want);
+        const n = Number(String(want).replace(',', '.'));
         if (typeof v === 'number' && want !== null && want !== '' && Number.isFinite(n)) return f.op === 'eq' ? v === n : f.op === 'neq' ? v !== n : f.op === 'gt' ? v > n : f.op === 'lt' ? v < n : textOf(p, v).includes(String(want));
         const t = fold(textOf(p, v));
         const w = fold(want);
@@ -330,10 +330,11 @@ export async function showBase(initial) {
     name.value = existing?.name ?? '';
     const type = h('select', { class: 'input', 'aria-label': 'Type', disabled: !!existing }, Object.entries(TYPE_LABELS).map(([k, l]) => h('option', { value: k }, l)));
     type.value = existing?.type ?? 'text';
-    const formula = h('textarea', { class: 'input bt-formula-input', rows: '3', maxlength: '500', spellcheck: 'false', 'aria-label': 'Formule', placeholder: 'prop("Prix") * prop("Quantité")' });
+    const formula = h('textarea', { id: 'bt-formula', class: 'input bt-formula-input', rows: '3', maxlength: '500', spellcheck: 'false', 'aria-describedby': 'bt-formula-help bt-formula-error', placeholder: 'prop("Prix") * prop("Quantité")' });
     formula.value = existing?.formula ?? '';
-    const formulaHelp = h('p', { class: 'muted bt-formula-help' }, 'Lisez une colonne avec prop("Nom"). Opérateurs : + - * / % == != < > <= >= && || !. Fonctions : if, round, floor, ceil, abs, min, max, length, upper, lower, concat, contains, isEmpty, number, text, dateDiff, year, month. Une cellule vide donne un résultat vide.');
-    const formulaBox = h('div', { class: 'field' }, h('span', null, 'Formule'), formula, formulaHelp);
+    const formulaHelp = h('p', { id: 'bt-formula-help', class: 'muted bt-formula-help' }, 'Lisez une colonne avec prop("Nom"). Opérateurs : + - * / % == != < > <= >= && || !. Fonctions : if, round, floor, ceil, abs, min, max, length, upper, lower, concat, contains, isEmpty, number, text, dateDiff, year, month. Une cellule vide donne un résultat vide.');
+    const errorEl = h('p', { id: 'bt-formula-error', class: 'notice warning', role: 'alert', hidden: true });
+    const formulaBox = h('div', { class: 'field' }, h('label', { for: 'bt-formula' }, 'Formule'), formula, errorEl, formulaHelp);
     const optionsHost = h('div', { class: 'bt-options' });
     let opts = (existing?.options ?? []).map((o) => ({ ...o }));
     const hasOptions = () => ['select', 'multi_select', 'status'].includes(type.value);
@@ -368,7 +369,9 @@ export async function showBase(initial) {
       ...(isFormula() ? { formula: formula.value.trim() } : {}),
       ...(hasOptions() ? { options: opts.filter((o) => o.name.trim()).map((o) => ({ ...(o.id ? { id: o.id } : {}), name: o.name.trim(), color: o.color })) } : {}),
     });
-    return { el, payload, focus: () => name.focus() };
+    // Le message d'erreur s'affiche près du champ et est annoncé aux lecteurs d'écran ; le focus y revient.
+    const showError = (msg) => { errorEl.textContent = msg; errorEl.hidden = false; if (isFormula()) formula.focus(); else toast(msg, { kind: 'error' }); };
+    return { el, payload, focus: () => name.focus(), showError };
   }
 
   function openPropertyDialog(existing) {
@@ -384,7 +387,7 @@ export async function showBase(initial) {
           try {
             if (existing) await api.patch(`/bases/${id}/properties/${existing.id}`, payload);
             else await api.post(`/bases/${id}/properties`, payload);
-          } catch (err) { fail(err); return false; }
+          } catch (err) { f.showError(err?.message || 'Une erreur est survenue'); return false; }
           await load(true);
         },
       }],

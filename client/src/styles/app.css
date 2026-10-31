@@ -1166,3 +1166,4 @@ tr:hover .bt-row-actions, .bt-row-actions:focus-within { opacity: 1; }
 .bt-formula-help { font-size: 12.5px; margin: 6px 0 0; }
 .bt-t-formula { color: var(--text-2); font-style: normal; background: var(--bg-soft); }
 .bt-cell.bt-t-formula { padding: 4px 10px; }
+.field > label { font-size: 12.5px; font-weight: 500; color: var(--text-2); }
