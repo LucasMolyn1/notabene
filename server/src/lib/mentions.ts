@@ -27,6 +27,7 @@ export function mentionableUsers(db: DB, pageId: string, q: string, limit = 8): 
      WHERE disabled = 0 AND (lower_fr(name) LIKE @starts ESCAPE '\\' OR lower_fr(name) LIKE @word ESCAPE '\\')
        AND (role = 'admin'
          OR EXISTS (SELECT 1 FROM spaces s WHERE s.id = @space AND s.visibility = 'public')
+         OR EXISTS (SELECT 1 FROM spaces s WHERE s.id = @space AND s.kind = 'personal' AND s.owner_id = u.id)
          OR EXISTS (SELECT 1 FROM space_members m WHERE m.space_id = @space
               AND (m.user_id = u.id OR m.group_id = '${EVERYONE}' OR m.group_id IN (SELECT group_id FROM group_members WHERE user_id = u.id))))
        AND (@gov IS NULL OR role = 'admin'

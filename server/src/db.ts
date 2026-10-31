@@ -358,6 +358,19 @@ export const MIGRATIONS: string[] = [
     VALUES ('everyone', 'Tout le monde', 'Tous les comptes de l''instance', 'system', NULL, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
   INSERT INTO space_members (space_id, group_id, role) SELECT id, 'everyone', 'edit' FROM spaces;
   `,
+  // v15 : espaces personnels. Un espace `personal` n'a qu'un membre, son propriétaire : ni les administrateurs, ni les groupes, ni
+  // « Tout le monde » n'y ont accès (space-access.ts). Si le compte est supprimé, l'espace devient orphelin (propriétaire nul) :
+  // il reste invisible de tous jusqu'à ce qu'un administrateur le reprenne (action journalisée) ou le supprime.
+  `
+  ALTER TABLE spaces ADD COLUMN kind TEXT NOT NULL DEFAULT 'shared' CHECK (kind IN ('shared', 'personal'));
+  ALTER TABLE spaces ADD COLUMN owner_id TEXT REFERENCES users(id) ON DELETE SET NULL;
+  CREATE UNIQUE INDEX spaces_one_personal ON spaces(owner_id) WHERE kind = 'personal' AND owner_id IS NOT NULL;
+  -- Dernier rempart : un espace personnel n'est jamais public, quelle que soit la route qui écrit.
+  CREATE TRIGGER spaces_personal_private_insert BEFORE INSERT ON spaces WHEN NEW.kind = 'personal' AND NEW.visibility != 'private'
+    BEGIN SELECT RAISE(ABORT, 'un espace personnel est toujours privé'); END;
+  CREATE TRIGGER spaces_personal_private_update BEFORE UPDATE ON spaces WHEN NEW.kind = 'personal' AND NEW.visibility != 'private'
+    BEGIN SELECT RAISE(ABORT, 'un espace personnel est toujours privé'); END;
+  `,
 ];
 
 export function openDb(file: string): DB {

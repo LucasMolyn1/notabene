@@ -23,16 +23,19 @@ const ROLE_LABELS = { admin: 'Administrateur', editor: 'Éditeur', reader: 'Lect
 
 function spaceMenu(anchor, space) {
   const admin = session.can('admin');
+  const canCreatePersonal = !!session.config.personalSpaces && session.can('write') && !store.personalSpace(session.user?.id);
   openMenu(anchor, [
     { heading: 'Espaces' },
     ...store.spaces.map((s) => ({
       label: s.name, icon: s.icon || 'folder', checked: s.id === space.id,
       onClick: () => { prefs.space = s.id; savePrefs(); A.go(`/s/${s.id}`); },
     })),
-    admin && { sep: true },
+    (admin || canCreatePersonal || store.canManage(space.id)) && { sep: true },
+    canCreatePersonal && { label: 'Créer mon espace personnel', icon: 'home', onClick: () => A.createPersonalSpace() },
     admin && { label: 'Nouvel espace', icon: 'plus', onClick: () => A.spaceForm() },
-    admin && { label: 'Paramètres de l’espace', icon: 'settings', onClick: () => A.spaceForm(space) },
-    admin && store.spaces.length > 1 && { label: 'Supprimer l’espace', icon: 'trash', danger: true, onClick: () => A.deleteSpace(space) },
+    (admin || store.canManage(space.id)) && { label: 'Paramètres de l’espace', icon: 'settings', onClick: () => A.spaceForm(space) },
+    admin && space.kind !== 'personal' && store.spaces.length > 1 && { label: 'Supprimer l’espace', icon: 'trash', danger: true, onClick: () => A.deleteSpace(space) },
+    space.kind === 'personal' && space.ownerId === session.user?.id && { label: 'Supprimer mon espace personnel', icon: 'trash', danger: true, onClick: () => A.deletePersonalSpace(space) },
   ]);
 }
 

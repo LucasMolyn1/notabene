@@ -14,6 +14,8 @@ export interface SpaceRow {
   icon: string;
   description: string;
   visibility: 'private' | 'public';
+  kind: 'shared' | 'personal';
+  owner_id: string | null;
   position: number;
   created_at: number;
   updated_at: number;
@@ -25,6 +27,8 @@ export const toSpace = (s: SpaceRow) => ({
   icon: s.icon,
   description: s.description,
   visibility: s.visibility,
+  kind: s.kind,
+  ownerId: s.owner_id,
   createdAt: s.created_at,
   updatedAt: s.updated_at,
 });
