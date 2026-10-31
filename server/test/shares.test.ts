@@ -231,10 +231,11 @@ describe('liste et espaces personnels', () => {
     const ed1 = await login('ed1');
     const mine = (await call(ed1, 'POST', '/api/v3/spaces/personal')).json() as { id: string };
     const page = (await call(ed1, 'POST', '/api/v3/pages', { spaceId: mine.id, title: 'Note perso' })).json() as { id: string };
-    expect((await call(ed1, 'PUT', `/api/v3/pages/${page.id}/share`, {})).statusCode).toBe(201);
-    expect(await names('ed1')).toEqual(['Note perso', 'Racine']);
+    // Un espace personnel ne se partage pas : aucun administrateur ne pourrait lister ni retirer ces liens.
+    expect((await call(ed1, 'PUT', `/api/v3/pages/${page.id}/share`, {})).statusCode).toBe(403);
+    expect(db.prepare('SELECT sharing_enabled FROM spaces WHERE id = ?').get(mine.id)).toEqual({ sharing_enabled: 0 });
+    expect(await names('ed1')).toEqual(['Racine']);
     expect(await names('admin')).not.toContain('Note perso');
-    expect((await call(await login('admin'), 'DELETE', `/api/v3/pages/${page.id}/share`)).statusCode).toBe(404);
   });
 });
 
@@ -265,6 +266,76 @@ describe('journaux et enveloppe de l’application', () => {
     const closed = await share('ed1', 'enfant');
     expect((await app.inject({ method: 'GET', url: `/share/${closed}` })).headers['x-robots-tag']).toBe('noindex, nofollow');
     expect((await app.inject({ method: 'GET', url: '/share/jeton-inconnu-0123456789abcdef0123456789' })).headers['x-robots-tag']).toBe('noindex, nofollow');
+  });
+});
+
+describe('relecture : cas limites', () => {
+  it('au-delà de 500 sous-pages, une sous-page restreinte et son enfant ne fuient jamais', async () => {
+    await enable();
+    const ins = db.prepare("INSERT INTO pages (id, space_id, parent_id, title, content, text, created_at, updated_at, position) VALUES (?, 'sp', ?, ?, ?, ?, 1, 1, ?)");
+    const content = doc(para(text('x')));
+    db.transaction(() => {
+      for (let i = 0; i < 520; i++) ins.run(`n${i}`, 'root', `Note ${i}`, content, 'x', i % 3);
+      ins.run('res', 'root', 'Restreinte haute position', content, 'x', 9);
+      ins.run('res-enfant', 'res', 'Enfant de restreinte', doc(para(text('contenu fuite'))), 'x', 0);
+    })();
+    db.prepare("INSERT INTO page_acl (page_id, user_id, level) VALUES ('res', 'ed2', 'write')").run();
+    const token = await share('ed1', 'root', { includeChildren: true });
+    const data = (await pub(token)).json() as { tree: { id: string }[] };
+    expect(data.tree.length).toBeLessThanOrEqual(500);
+    expect(JSON.stringify(data)).not.toMatch(/Restreinte haute|Enfant de restreinte|"res"|res-enfant/);
+    expect((await pub(token, '/pages/res-enfant')).statusCode).toBe(404);
+    expect((await pub(token, '/pages/res')).statusCode).toBe(404);
+  });
+
+  it('une page restreinte plus bas dans l’arbre et son sous-arbre restent exclus', async () => {
+    await enable();
+    const ins = db.prepare("INSERT INTO pages (id, space_id, parent_id, title, content, text, created_at, updated_at, position) VALUES (?, 'sp', ?, ?, ?, 'x', 1, 1, 0)");
+    ins.run('profonde', 'enfant', 'Profonde restreinte', doc(para(text('x'))));
+    ins.run('profonde-fille', 'profonde', 'Fille de profonde', doc(para(text('contenu fuite'))));
+    db.prepare("INSERT INTO page_acl (page_id, user_id, level) VALUES ('profonde', 'ed2', 'write')").run();
+    const token = await share('ed1', 'root', { includeChildren: true });
+    const data = (await pub(token)).json() as { tree: { id: string }[] };
+    expect(data.tree.map((t) => t.id).sort()).toEqual(['enfant', 'petit']);
+    expect((await pub(token, '/pages/profonde')).statusCode).toBe(404);
+    expect((await pub(token, '/pages/profonde-fille')).statusCode).toBe(404);
+  });
+
+  it('la confirmation d’une page restreinte ne vaut que pour CETTE restriction', async () => {
+    await enable();
+    const ed2 = await login('ed2');
+    const url = (await call(ed2, 'PUT', '/api/v3/pages/secret/share', { confirmRestricted: true })).json().url as string;
+    const token = tokenOf(url);
+    expect((await pub(token)).statusCode).toBe(200);
+    // Régler le partage ne redemande rien tant que la restriction est la même.
+    expect((await call(ed2, 'PUT', '/api/v3/pages/secret/share', { includeChildren: true })).statusCode).toBe(200);
+    // La restriction change (autre liste) : le lien se tait, même si la page reste restreinte.
+    db.prepare("INSERT INTO page_acl (page_id, user_id, level) VALUES ('secret', 'rd', 'read')").run();
+    expect((await pub(token)).statusCode).toBe(404);
+    expect((await call(ed2, 'PUT', '/api/v3/pages/secret/share', { includeChildren: false })).statusCode).toBe(409);
+    expect((await call(ed2, 'GET', '/api/v3/pages/secret/share')).json().confirmed).toBe(false);
+    expect((await call(ed2, 'PUT', '/api/v3/pages/secret/share', { confirmRestricted: true })).statusCode).toBe(200);
+    expect((await pub(token)).statusCode).toBe(200);
+    // Retirer puis remettre d'autres permissions : autre restriction, lien muet.
+    db.prepare("DELETE FROM page_acl WHERE page_id = 'secret' AND user_id = 'ed2'").run();
+    expect((await pub(token)).statusCode).toBe(404);
+  });
+
+  it('un espace créé sans partage l’interdit vraiment, et un lien coupé ne revit pas à la réouverture', async () => {
+    await enable();
+    const admin = await login('admin');
+    const closed = (await call(admin, 'POST', '/api/v3/spaces', { name: 'Fermé', access: 'everyone', sharing: false })).json() as { id: string; sharing: boolean };
+    expect(closed.sharing).toBe(false);
+    expect(db.prepare('SELECT sharing_enabled FROM spaces WHERE id = ?').get(closed.id)).toEqual({ sharing_enabled: 0 });
+    const page = (await call(await login('ed1'), 'POST', '/api/v3/pages', { spaceId: closed.id, title: 'Dans le fermé' })).json() as { id: string };
+    expect((await call(await login('ed1'), 'PUT', `/api/v3/pages/${page.id}/share`, {})).statusCode).toBe(403);
+
+    const token = await share('ed1', 'root');
+    expect((await call(await login('ed1'), 'POST', '/api/v3/pages/root/move', { parentId: null, spaceId: closed.id })).statusCode).toBe(200);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM page_shares').get()).toEqual({ n: 0 }); // changer d'espace retire le lien
+    await call(admin, 'PATCH', `/api/v3/spaces/${closed.id}`, { sharing: true });
+    expect((await pub(token)).statusCode).toBe(404);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'space.sharing'").get()).toEqual({ n: 1 });
   });
 });
 

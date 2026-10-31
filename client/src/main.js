@@ -89,6 +89,16 @@ async function boot() {
   document.body.classList.toggle('embed', app.embed);
   document.body.classList.toggle('sb-collapsed', !prefs.sidebar);
 
+  // Page partagée publiquement : lisible sans compte, donc sans session, sans espaces, sans flux temps réel ni présence.
+  if (parseRoute(location.pathname).kind === 'share') {
+    const shareRoute = () => { if (parseRoute(location.pathname).kind === 'share') route(); else location.reload(); }; // sortir du partage : démarrage normal
+    window.addEventListener('popstate', shareRoute);
+    window.addEventListener('navigate', shareRoute);
+    document.addEventListener('click', onLinkClick);
+    route();
+    return;
+  }
+
   upgradeLegacyHash();
   // Lien de réinitialisation reçu par e-mail : le jeton est dans le fragment (jamais envoyé au serveur) et retiré de l'URL.
   window.addEventListener('hashchange', () => { if (/^#\/reset\//.test(location.hash)) location.reload(); });

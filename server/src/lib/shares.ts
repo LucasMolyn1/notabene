@@ -4,7 +4,7 @@
 // d'ancre de commentaire.
 import type { DB } from '../db.js';
 import type { DocNode } from './content.js';
-import { governingPage } from './page-acl.js';
+import { entriesOf, governingPage } from './page-acl.js';
 
 const KEY = 'public_sharing';
 export const MAX_SHARED_DESCENDANTS = 500;
@@ -37,10 +37,21 @@ export function setSharingEnabled(db: DB, enabled: boolean, userId: string): num
 }
 
 export interface ShareRow {
-  id: string; page_id: string; token: string; include_children: number; indexing: number; allow_restricted: number;
+  id: string; page_id: string; token: string; include_children: number; indexing: number; restricted_key: string | null;
   created_by: string | null; created_at: number; updated_at: number;
 }
 interface SharedPage { id: string; space_id: string; parent_id: string | null; title: string; icon: string; content: string; updated_at: number }
+
+/**
+ * Empreinte de la restriction qui gouverne une page : la page restreinte la plus proche et ses entrées. Null si la page n'est pas
+ * restreinte. Elle sert à ne servir un lien confirmé pour une page restreinte que tant que la restriction n'a pas changé.
+ */
+export function restrictionKey(db: DB, pageId: string): string | null {
+  const gov = governingPage(db, pageId);
+  if (!gov) return null;
+  const entries = entriesOf(db, gov).map((e) => `${e.userId ? 'u' : 'g'}:${e.userId ?? e.groupId}:${e.level}`).sort();
+  return `${gov}|${entries.join(',')}`;
+}
 
 /** Le partage de `token`, s'il est encore valable, avec sa page racine. Sinon null (jamais de détail sur la raison). */
 export function activeShare(db: DB, token: string): { share: ShareRow; page: SharedPage } | null {
@@ -52,8 +63,9 @@ export function activeShare(db: DB, token: string): { share: ShareRow; page: Sha
      WHERE p.id = ? AND p.deleted_at IS NULL AND s.sharing_enabled = 1`,
   ).get(share.page_id) as SharedPage | undefined;
   if (!page) return null;
-  // Une page devenue restreinte depuis le partage n'est plus servie, sauf si le partage a été confirmé pour une page restreinte.
-  if (!share.allow_restricted && governingPage(db, page.id)) return null;
+  // Une page restreinte (ou dont la restriction a changé) depuis la confirmation n'est plus servie : il faut reconfirmer.
+  const key = restrictionKey(db, page.id);
+  if (key !== null && share.restricted_key !== key) return null;
   return { share, page };
 }
 
@@ -62,21 +74,16 @@ export function activeShare(db: DB, token: string): { share: ShareRow; page: Sha
  * propres permissions (avec leur sous-arbre) : une restriction plus étroite que celle de la racine ne s'ouvre jamais.
  */
 export function sharedDescendants(db: DB, rootId: string): { id: string; parentId: string | null; title: string; icon: string; position: number }[] {
-  const rows = db.prepare(
-    `WITH RECURSIVE sub(id, parent_id, depth) AS (
-       SELECT id, parent_id, 0 FROM pages WHERE parent_id = ? AND deleted_at IS NULL
-       UNION ALL SELECT p.id, p.parent_id, sub.depth + 1 FROM pages p JOIN sub ON p.parent_id = sub.id WHERE p.deleted_at IS NULL AND sub.depth < 50)
-     SELECT p.id, p.parent_id AS parentId, p.title, p.icon, p.position,
-       (EXISTS (SELECT 1 FROM page_acl a WHERE a.page_id = p.id) OR EXISTS (SELECT 1 FROM page_acl_groups g WHERE g.page_id = p.id)) AS own_acl
-     FROM pages p JOIN sub ON sub.id = p.id ORDER BY p.position, p.created_at LIMIT ?`,
-  ).all(rootId, MAX_SHARED_DESCENDANTS) as { id: string; parentId: string | null; title: string; icon: string; position: number; own_acl: number }[];
-  const blocked = new Set(rows.filter((r) => r.own_acl).map((r) => r.id));
-  const parent = new Map(rows.map((r) => [r.id, r.parentId]));
-  const excluded = (id: string): boolean => {
-    for (let cur: string | null | undefined = id, n = 0; cur && n < 60; cur = parent.get(cur), n++) if (blocked.has(cur)) return true;
-    return false;
-  };
-  return rows.filter((r) => !excluded(r.id)).map(({ own_acl: _acl, ...r }) => r);
+  // Une page qui a ses propres permissions n'entre jamais dans le partage, ni son sous-arbre : on ne descend pas dedans (avant toute
+  // limite, pour qu'une troncature ne puisse pas faire réapparaître un enfant dont le parent restreint a été coupé).
+  const open = `NOT EXISTS (SELECT 1 FROM page_acl a WHERE a.page_id = p.id) AND NOT EXISTS (SELECT 1 FROM page_acl_groups g WHERE g.page_id = p.id)`;
+  return db.prepare(
+    `WITH RECURSIVE sub(id, depth) AS (
+       SELECT p.id, 0 FROM pages p WHERE p.parent_id = ? AND p.deleted_at IS NULL AND ${open}
+       UNION ALL SELECT p.id, sub.depth + 1 FROM pages p JOIN sub ON p.parent_id = sub.id WHERE p.deleted_at IS NULL AND sub.depth < 50 AND ${open})
+     SELECT p.id, p.parent_id AS parentId, p.title, p.icon, p.position FROM pages p JOIN sub ON sub.id = p.id
+     ORDER BY sub.depth, p.position, p.created_at LIMIT ?`,
+  ).all(rootId, MAX_SHARED_DESCENDANTS) as { id: string; parentId: string | null; title: string; icon: string; position: number }[];
 }
 
 /**

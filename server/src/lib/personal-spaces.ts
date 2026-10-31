@@ -31,7 +31,7 @@ export function createPersonalSpace(db: DB, user: { id: string; name: string }):
   const now = Date.now();
   const id = newId();
   const position = (db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM spaces').get() as { p: number }).p;
-  db.prepare("INSERT INTO spaces (id, name, icon, description, visibility, kind, owner_id, position, created_at, updated_at) VALUES (?, ?, 'home', '', 'private', 'personal', ?, ?, ?, ?)")
+  db.prepare("INSERT INTO spaces (id, name, icon, description, visibility, kind, owner_id, sharing_enabled, position, created_at, updated_at) VALUES (?, ?, 'home', '', 'private', 'personal', ?, 0, ?, ?, ?)")
     .run(id, `Espace de ${user.name}`.slice(0, 80), user.id, position, now, now);
   return id;
 }

@@ -51,10 +51,10 @@ export default async function spaceRoutes(app: FastifyInstance) {
     const now = Date.now();
     const id = newId();
     const position = (db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM spaces').get() as { p: number }).p;
-    db.prepare('INSERT INTO spaces (id, name, icon, description, visibility, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, body.name, body.icon, body.description, body.visibility, position, now, now);
+    db.prepare('INSERT INTO spaces (id, name, icon, description, visibility, sharing_enabled, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, body.name, body.icon, body.description, body.visibility, body.sharing ? 1 : 0, position, now, now);
     if (body.access === 'everyone') db.prepare('INSERT INTO space_members (space_id, group_id, role) VALUES (?, ?, ?)').run(id, EVERYONE, 'edit');
-    audit(db, req, 'space.create', id, { visibility: body.visibility, access: body.access });
+    audit(db, req, 'space.create', id, { visibility: body.visibility, access: body.access, sharing: body.sharing });
     app.bus.publish({ type: 'space.changed' });
     return reply.status(201).send({ ...toSpace(db.prepare('SELECT * FROM spaces WHERE id = ?').get(id) as SpaceRow), role: spaceRoleOf(db, req, id) });
   });
@@ -79,9 +79,9 @@ export default async function spaceRoutes(app: FastifyInstance) {
       db.prepare('UPDATE spaces SET name = ?, icon = ?, description = ?, visibility = ?, sharing_enabled = ?, updated_at = ? WHERE id = ?')
         .run(next.name, next.icon, next.description, next.visibility, next.sharing_enabled, next.updated_at, id);
       // Fermer le partage d'un espace retire les liens publics de toutes ses pages.
-      if (next.sharing_enabled === 0 && current.sharing_enabled === 1) {
-        const removed = db.prepare('DELETE FROM page_shares WHERE page_id IN (SELECT id FROM pages WHERE space_id = ?)').run(id).changes;
-        audit(db, req, 'space.sharing', id, { enabled: false, removed });
+      if (next.sharing_enabled !== current.sharing_enabled) {
+        const removed = next.sharing_enabled === 0 ? db.prepare('DELETE FROM page_shares WHERE page_id IN (SELECT id FROM pages WHERE space_id = ?)').run(id).changes : 0;
+        audit(db, req, 'space.sharing', id, { enabled: next.sharing_enabled === 1, removed });
       }
     })();
     if (next.visibility !== current.visibility) audit(db, req, 'space.visibility', id, { visibility: next.visibility });

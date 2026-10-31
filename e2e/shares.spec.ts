@@ -60,3 +60,19 @@ test('le réglage d’instance et la liste se trouvent dans Paramètres, Pages p
   await expect(page.getByLabel('Autoriser le partage public par lien')).toBeChecked();
   await expect(page.getByRole('heading', { name: 'Pages partagées' }).first()).toBeVisible();
 });
+
+test('un visiteur sans compte lit la page même sur une instance sans espace public', async ({ browser }) => {
+  // Le démarrage d'une page partagée ne charge ni session, ni espaces : il ne doit pas afficher l'écran de connexion.
+  const visitor = await browser.newContext({ baseURL: 'http://localhost:3100' });
+  const tab = await visitor.newPage();
+  await tab.route('**/api/v3/spaces', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await tab.goto('/share/jeton-inexistant-0123456789abcdefghij');
+  await expect(tab.getByText('Lien introuvable ou expiré')).toBeVisible();
+  await expect(tab.getByLabel('Adresse e-mail')).toHaveCount(0);
+  const calls: string[] = [];
+  tab.on('request', (r) => calls.push(new URL(r.url()).pathname));
+  await tab.reload();
+  await expect(tab.getByText('Lien introuvable ou expiré')).toBeVisible();
+  expect(calls.filter((c) => c.startsWith('/api/v3/') && !c.startsWith('/api/v3/public/'))).toEqual([]); // ni session, ni espaces, ni flux
+  await visitor.close();
+});

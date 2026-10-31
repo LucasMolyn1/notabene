@@ -380,13 +380,16 @@ export const MIGRATIONS: string[] = [
     token            TEXT NOT NULL UNIQUE,
     include_children INTEGER NOT NULL DEFAULT 0,
     indexing         INTEGER NOT NULL DEFAULT 0,
-    -- Page à permissions restreintes partagée en connaissance de cause (confirmation explicite à la création).
-    allow_restricted INTEGER NOT NULL DEFAULT 0,
+    -- Empreinte de la restriction de la page au moment où elle a été partagée en connaissance de cause (NULL : page non restreinte).
+    -- Le lien n'est servi que tant que la restriction est exactement celle-là : elle change, il se tait jusqu'à une nouvelle confirmation.
+    restricted_key   TEXT,
     created_by       TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at       INTEGER NOT NULL,
     updated_at       INTEGER NOT NULL
   );
   ALTER TABLE spaces ADD COLUMN sharing_enabled INTEGER NOT NULL DEFAULT 1;
+  -- Les espaces personnels ne se partagent pas (aucun administrateur ne pourrait ni lister ni retirer ces liens).
+  UPDATE spaces SET sharing_enabled = 0 WHERE kind = 'personal';
   `,
 ];
 

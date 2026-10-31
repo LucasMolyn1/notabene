@@ -11,8 +11,8 @@ import { audit } from '../lib/audit.js';
 import type { DocNode } from '../lib/content.js';
 import { randomToken } from '../lib/crypto.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
-import { canWritePage, filterReadable, governingPage } from '../lib/page-acl.js';
-import { activeShare, publicDoc, setSharingEnabled, sharedDescendants, sharingEnabled, type ShareRow } from '../lib/shares.js';
+import { canWritePage, filterReadable } from '../lib/page-acl.js';
+import { activeShare, publicDoc, restrictionKey, setSharingEnabled, sharedDescendants, sharingEnabled, type ShareRow } from '../lib/shares.js';
 
 const putBody = z.object({
   includeChildren: z.boolean().optional(),
@@ -33,7 +33,7 @@ export default async function shareRoutes(app: FastifyInstance) {
     return auth;
   };
   const shareOf = (pageId: string) => db.prepare('SELECT * FROM page_shares WHERE page_id = ?').get(pageId) as ShareRow | undefined;
-  const view = (s: ShareRow) => ({ id: s.id, url: urlOf(s.token), includeChildren: !!s.include_children, indexing: !!s.indexing, allowRestricted: !!s.allow_restricted, createdAt: s.created_at, updatedAt: s.updated_at });
+  const view = (s: ShareRow) => ({ id: s.id, url: urlOf(s.token), includeChildren: !!s.include_children, indexing: !!s.indexing, allowRestricted: !!s.restricted_key, createdAt: s.created_at, updatedAt: s.updated_at });
   const spaceAllows = (spaceId: string) => !!db.prepare('SELECT 1 FROM spaces WHERE id = ? AND sharing_enabled = 1').get(spaceId);
 
   // ---- Gestion ----------------------------------------------------------------------------
@@ -46,7 +46,8 @@ export default async function shareRoutes(app: FastifyInstance) {
       available: sharingEnabled(db) && spaceAllows(page.space_id),
       instanceEnabled: sharingEnabled(db),
       canManage: writable,
-      restricted: !!governingPage(db, page.id),
+      restricted: restrictionKey(db, page.id) !== null,
+      confirmed: share ? share.restricted_key === restrictionKey(db, page.id) : false,
       share: share && writable ? view(share) : null, // le lien n'est montré qu'à qui peut modifier la page
     };
   });
@@ -61,17 +62,19 @@ export default async function shareRoutes(app: FastifyInstance) {
     const b = req.body as z.output<typeof putBody>;
     if (!sharingEnabled(db)) throw new HttpError(403, 'Le partage public n’est pas activé sur cette instance');
     if (!spaceAllows(page.space_id)) throw new HttpError(403, 'Le partage public est désactivé dans cet espace');
-    const restricted = !!governingPage(db, page.id);
-    if (restricted && !b.confirmRestricted) throw new HttpError(409, 'Cette page a des permissions restreintes : confirmez pour la rendre publique', { code: 'restricted' });
-    const now = Date.now();
+    const key = restrictionKey(db, page.id);
+    const restricted = key !== null;
     const existing = shareOf(page.id);
+    // Une page restreinte demande une confirmation, sauf si ce partage l'a déjà reçue pour exactement cette restriction.
+    if (restricted && !b.confirmRestricted && existing?.restricted_key !== key) throw new HttpError(409, 'Cette page a des permissions restreintes : confirmez pour la rendre publique', { code: 'restricted' });
+    const now = Date.now();
     if (!existing) {
-      db.prepare('INSERT INTO page_shares (id, page_id, token, include_children, indexing, allow_restricted, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(newId(), page.id, randomToken(24), b.includeChildren ? 1 : 0, b.indexing ? 1 : 0, restricted ? 1 : 0, req.auth!.user.id, now, now);
+      db.prepare('INSERT INTO page_shares (id, page_id, token, include_children, indexing, restricted_key, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(newId(), page.id, randomToken(24), b.includeChildren ? 1 : 0, b.indexing ? 1 : 0, key, req.auth!.user.id, now, now);
       audit(db, req, 'share.create', page.id, { children: !!b.includeChildren, indexing: !!b.indexing, restricted });
     } else {
-      db.prepare('UPDATE page_shares SET include_children = ?, indexing = ?, allow_restricted = ?, token = ?, updated_at = ? WHERE id = ?')
-        .run(b.includeChildren === undefined ? existing.include_children : b.includeChildren ? 1 : 0, b.indexing === undefined ? existing.indexing : b.indexing ? 1 : 0, restricted ? 1 : 0, b.regenerate ? randomToken(24) : existing.token, now, existing.id);
+      db.prepare('UPDATE page_shares SET include_children = ?, indexing = ?, restricted_key = ?, token = ?, updated_at = ? WHERE id = ?')
+        .run(b.includeChildren === undefined ? existing.include_children : b.includeChildren ? 1 : 0, b.indexing === undefined ? existing.indexing : b.indexing ? 1 : 0, key, b.regenerate ? randomToken(24) : existing.token, now, existing.id);
       audit(db, req, b.regenerate ? 'share.regenerate' : 'share.update', page.id, { children: b.includeChildren ?? !!existing.include_children, indexing: b.indexing ?? !!existing.indexing });
     }
     return reply.status(existing ? 200 : 201).send(view(shareOf(page.id)!));

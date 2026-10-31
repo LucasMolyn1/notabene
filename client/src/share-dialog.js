@@ -52,9 +52,14 @@ async function openShare(pageId) {
       return;
     }
     const link = h('input', { class: 'input', readonly: true, value: share.url, 'aria-label': 'Lien public' });
+    const reconsent = h('input', { type: 'checkbox', 'aria-label': 'Je confirme rendre cette page publique malgré ses nouvelles permissions' });
     body.replaceChildren(...[
+      state.restricted && !state.confirmed && h('div', { class: 'notice warn' },
+        h('p', null, 'Les permissions de cette page ont changé depuis la création du lien : il ne répond plus (« lien introuvable ») tant que vous ne le confirmez pas.'),
+        h('label', { class: 'check-row' }, reconsent, h('span', null, 'Je confirme rendre cette page publique')),
+        h('button', { class: 'btn btn-primary btn-sm', onClick: () => { if (!reconsent.checked) { reconsent.focus(); return; } confirmRestricted = true; put({}); } }, 'Réactiver le lien')),
       h('div', { class: 'row' }, link, h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { link.select(); navigator.clipboard.writeText(share.url).then(() => toast('Lien copié')); } }, icon('copy', 14), 'Copier')),
-      state.restricted && h('div', { class: 'notice warn' }, 'Cette page a des permissions restreintes : le lien la rend pourtant lisible de quiconque l’a.'),
+      state.restricted && state.confirmed && h('div', { class: 'notice warn' }, 'Cette page a des permissions restreintes : le lien la rend pourtant lisible de quiconque l’a.'),
       check('Inclure les sous-pages', 'Les sous-pages qui ont leurs propres permissions restent exclues.', share.includeChildren, (v) => put({ includeChildren: v })),
       check('Autoriser les moteurs de recherche', 'Sinon la page porte « noindex » : les moteurs ne la retiennent pas.', share.indexing, (v) => put({ indexing: v })),
       h('div', { class: 'row' },
