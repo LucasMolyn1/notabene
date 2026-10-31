@@ -6,6 +6,7 @@ import { type GroupRoles, cleanName, roleFromGroupList } from '../auth/external.
 import { LdapDirectory } from '../auth/ldap.js';
 import { BINDING_TTL_SECONDS, bindingCookieName, bindingMatches, newBinding } from '../auth/login-binding.js';
 import { safeReturnTo, upsertUser } from '../auth/oidc.js';
+import { syncGroups } from '../lib/groups.js';
 import { samlFor, userFromProfile } from '../auth/saml.js';
 import { createSession, destroySession, sessionCookieName } from '../auth/session.js';
 import type { Role } from '../auth/context.js';
@@ -29,13 +30,14 @@ export default async function ssoRoutes(app: FastifyInstance, opts: { ldap?: Lda
   const samlBindingOptions = { path: '/', httpOnly: true, secure: config.secureCookies, sameSite: 'none' as const };
   const publicOrigin = new URL(config.PUBLIC_URL).origin;
 
-  const complete = (req: FastifyRequest, reply: FastifyReply, input: { sub: string; email: string | null; name: string; role: Role; method: string }) => {
+  const complete = (req: FastifyRequest, reply: FastifyReply, input: { sub: string; email: string | null; name: string; role: Role; method: string; groups?: string[] }) => {
     const existing = db.prepare('SELECT disabled FROM users WHERE sub = ?').get(input.sub) as { disabled: number } | undefined;
     if (existing?.disabled) {
       audit(db, req, 'auth.denied', input.sub, { reason: 'disabled', method: input.method });
       return false;
     }
     const userId = upsertUser(db, { sub: input.sub, email: input.email, name: input.name, role: input.role });
+    if (input.method === 'ldap' || input.method === 'saml') syncGroups(db, userId, input.method, input.groups ?? []);
     const previous = req.cookies[cookieName];
     if (previous) destroySession(db, previous);
     const session = createSession(db, userId, null, config.SESSION_TTL_HOURS);
@@ -73,7 +75,7 @@ export default async function ssoRoutes(app: FastifyInstance, opts: { ldap?: Lda
         audit(db, req, 'auth.denied', `ldap:${user.username}`, { reason: 'group' });
         throw new HttpError(403, 'Votre compte n’appartient à aucun groupe autorisé. Demandez l’accès à un administrateur.');
       }
-      if (!complete(req, reply, { sub: `ldap:${user.username.toLowerCase()}`, email: user.email, name: cleanName(user.name, user.username), role, method: 'ldap' })) {
+      if (!complete(req, reply, { sub: `ldap:${user.username.toLowerCase()}`, email: user.email, name: cleanName(user.name, user.username), role, method: 'ldap', groups: user.groups })) {
         throw new HttpError(401, 'Identifiants invalides');
       }
       return { redirect: '/' };
@@ -130,7 +132,7 @@ export default async function ssoRoutes(app: FastifyInstance, opts: { ldap?: Lda
             audit(db, req, 'auth.denied', `saml:${user.subject}`, { reason: 'group' });
             return reply.redirect('/?auth_error=forbidden');
           }
-          if (!complete(req, reply, { sub: `saml:${user.subject}`, email: user.email, name: cleanName(user.name, user.email ?? user.subject), role, method: 'saml' })) {
+          if (!complete(req, reply, { sub: `saml:${user.subject}`, email: user.email, name: cleanName(user.name, user.email ?? user.subject), role, method: 'saml', groups: user.groups })) {
             return reply.redirect('/?auth_error=forbidden');
           }
           return reply.redirect(saved.return_to);

@@ -15,6 +15,7 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | **API REST** | `/api/v3`, jetons personnels à portées (`read`, `write`, `ai`, `admin`) et expiration, documentation OpenAPI sur `/api/docs` |
 | **Collaboration** | Mise à jour en temps réel (SSE), présence des lecteurs, détection des modifications concurrentes, historique des versions |
 | **Commentaires et notifications** | Commentaires par page (fils, réponses, résolution, texte commenté surligné), mentions `@personne`, suivi de pages, cloche en temps réel, e-mails facultatifs sans contenu de page |
+| **Groupes et espaces** | Groupes locaux ou liés à un groupe OIDC, LDAP ou SAML (adhésion recopiée à chaque connexion) ; chaque espace a ses membres (personnes ou groupes) en lecture, édition ou gestion ; le rôle global reste un plafond et le droit le plus élevé l’emporte ; un nouvel espace n’est ouvert qu’aux administrateurs |
 | **Permissions par page** | Un administrateur réserve une page et ses sous-pages à des personnes, en lecture ou en écriture ; appliqué partout (liste, recherche, export, IA, flux, co-édition) |
 | **Organisation** | Glisser-déposer, favoris, libellés, modèles de pages, corbeille, export Markdown / HTML, import Markdown et HTML (Wiki.js), intégration iframe pour un portfolio |
 | **Adresses et référencement** | Adresses lisibles `/p/titre-de-la-page-<id>` ; pour les espaces publics, contenu rendu en HTML, `sitemap.xml` et `robots.txt` (désactivable : `SEO_INDEX=false`). Voir [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) |

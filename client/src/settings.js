@@ -10,6 +10,8 @@ import { renderAbout, renderApi, renderAppearance, renderProfile, renderTokens }
 import { renderAi } from './settings/ai.js';
 import { renderDiagrams, renderEmbed, renderEmbeds, renderTools, renderWebhooks } from './settings/features.js';
 import { renderImport, renderInstance } from './settings/instance.js';
+import { renderGroups } from './settings/groups.js';
+import { store } from './store.js';
 
 // ---- Page -----------------------------------------------------------------------------
 
@@ -23,7 +25,8 @@ const SECTIONS = [
   { group: 'Fonctionnalités', id: 'tools', label: 'Outils', ico: 'qrcode', render: renderTools },
   { group: 'Fonctionnalités', id: 'api', label: 'API REST', ico: 'code', render: renderApi },
   { group: 'Fonctionnalités', id: 'embed', label: 'Intégration portfolio', ico: 'globe', sensitive: true, render: renderEmbed },
-  { group: 'Administration', id: 'spaces', label: 'Espaces', ico: 'folder', admin: true, render: renderSpaces },
+  { group: 'Administration', id: 'spaces', label: 'Espaces', ico: 'folder', manager: true, render: renderSpaces },
+  { group: 'Administration', id: 'groups', label: 'Groupes', ico: 'users', admin: true, render: renderGroups },
   { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', admin: true, sensitive: true, render: renderAuth },
   { group: 'Administration', id: 'mail', label: 'E-mail', ico: 'mail', admin: true, sensitive: true, render: renderMail },
   { group: 'Administration', id: 'embeds', label: 'Contenus intégrés', ico: 'globe', admin: true, sensitive: true, render: renderEmbeds },
@@ -36,7 +39,9 @@ const SECTIONS = [
 
 export function showSettings(sectionId) {
   beginView();
-  const sections = SECTIONS.filter((s) => !s.admin || session.can('admin'));
+  // Un gestionnaire d'espace (rôle « full ») accède aux espaces qu'il gère, sans le reste de l'administration.
+  const manager = store.spaces.some((s) => s.role === 'full');
+  const sections = SECTIONS.filter((s) => !s.admin || session.can('admin')).filter((s) => !s.manager || session.can('admin') || manager);
   const section = sections.find((s) => s.id === sectionId) || sections[0];
   document.title = `${section.label} · Paramètres · Notabene`;
 
@@ -58,5 +63,5 @@ export function showSettings(sectionId) {
       h('div', { class: 'set-main' }, h('h1', null, icon(section.ico, 24), ` ${section.label}`), section.sensitive && session.can('admin') ? reauthNotice() : null, content))));
   section.render(content);
   // Les sections qui affichent des espaces se rafraîchissent quand ils changent.
-  setView({ kind: 'settings', id: section.id, onStore: (evt) => { if (['spaces', 'embed'].includes(section.id) && evt.type !== 'page') section.render(content); } });
+  setView({ kind: 'settings', id: section.id, onStore: (evt) => { if (['spaces', 'groups', 'embed'].includes(section.id) && evt.type !== 'page') section.render(content); } });
 }

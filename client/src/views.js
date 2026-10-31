@@ -97,7 +97,7 @@ function mountPage(page) {
   savePrefs();
   presence.setPage(id);
 
-  const canWrite = session.can('write');
+  const canWrite = session.can('write') && store.canWriteIn(page.spaceId);
   const readOnly = () => app.embed || prefs.readOnly || !canWrite;
   // Co-édition : le contenu passe par Yjs ; la requête PATCH ne sert plus qu'au titre, à l'icône et à la largeur.
   const useCollab = !!session.config.collab && canWrite && !app.embed;
@@ -449,7 +449,7 @@ export function showSpace(spaceId) {
   presence.setPage(null);
   document.title = `${space.name} · Notabene`;
   tidyAddress(spacePath(space));
-  const canWrite = session.can('write');
+  const canWrite = session.can('write') && store.canWriteIn(spaceId);
 
   const scroller = h('div', { class: 'scroller' });
   function render() {

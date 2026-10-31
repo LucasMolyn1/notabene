@@ -212,6 +212,27 @@ describe('co-édition en temps réel', () => {
     expect(wsC.state.closed).toBe(4403);
   });
 
+  it('coupe la co-édition ouverte quand l’espace est retiré à la personne (groupe « tout le monde » ou adhésion)', async () => {
+    const space = (db.prepare('SELECT space_id AS s FROM pages WHERE id = ?').get(pageId) as { s: string }).s;
+    // Par l'API de gestion des membres : les connexions sont évincées tout de suite.
+    const a = await login('editor');
+    const wsA = await connect(a.cookie);
+    await until(() => textOf(wsA.json()).length > 10);
+    const admin = await login('admin');
+    const res = await app.inject({ method: 'DELETE', url: `/api/v3/spaces/${space}/members/group/everyone`, cookies: { nb_session: admin.cookie }, headers: { 'x-csrf-token': admin.csrf } });
+    expect(res.statusCode).toBe(204);
+    await until(() => wsA.state.closed !== null);
+    // Et la revérification périodique l'attrape aussi si l'adhésion disparaît sans passer par l'API.
+    db.prepare("INSERT INTO space_members (space_id, group_id, role) VALUES (?, 'everyone', 'edit')").run(space);
+    const b = await login('editor');
+    const wsB = await connect(b.cookie);
+    await until(() => textOf(wsB.json()).length > 10);
+    db.prepare('DELETE FROM space_members').run();
+    app.collab!.recheckAll();
+    await until(() => wsB.state.closed !== null);
+    expect(wsB.state.closed).toBe(4403);
+  });
+
   it('ne perd pas les frappes en attente quand les permissions de la page changent, et en nomme l’auteur', async () => {
     const editor = await login('editor');
     const admin = await login('admin');

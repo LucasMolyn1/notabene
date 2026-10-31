@@ -6,6 +6,19 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## Non publié
 
+### Ajouté
+- **Groupes et droits par espace** : groupes locaux (Paramètres, Groupes), membres d'un espace (personnes ou groupes) avec les rôles lecture, édition et gestion, permissions de page visant un groupe. Le rôle global reste un plafond, le droit le plus élevé entre plusieurs chemins l'emporte, et la permission de page ne fait que restreindre. Un gestionnaire d'espace gère les membres et le nom de son espace. Nouvelles routes `/api/v3/groups`, `/spaces/:id/members`, `/spaces/:id/member-candidates`.
+- **Synchronisation des groupes OIDC, LDAP et SAML** : un groupe local peut être lié à un groupe du fournisseur d'identité ; son adhésion est recopiée à chaque connexion.
+- Un nouvel espace n'est ouvert qu'aux administrateurs (option « Tout le monde, en édition » à la création). Le groupe système « Tout le monde » est un groupe de tous les comptes.
+- L'export des données personnelles inclut les groupes et les rôles d'espace.
+
+### Attention à la mise à jour
+- Migration v14 : le groupe « Tout le monde » reçoit le droit d'édition sur chaque espace existant, donc aucun accès ne change. Pour fermer un espace, retirez ce groupe de ses membres (Paramètres, Espaces, Membres).
+
+### Corrigé
+- Renommer un espace (PATCH avec le seul nom) ne remet plus sa visibilité à « privé », ni son icône et sa description à leur valeur par défaut.
+- La recherche de personnes pour les mentions trouve les noms commençant par une majuscule accentuée (« Élodie »).
+
 ## [3.8.0] - 2026-10-31
 
 ### Ajouté

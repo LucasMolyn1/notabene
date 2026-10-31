@@ -9,22 +9,29 @@ import { toast, confirmModal, openModal } from '../ui.js';
 import { askReauth, providerCard } from '../provider-settings.js';
 import * as A from '../actions.js';
 import { REPO_URL } from './account.js';
+import { openSpaceMembers } from '../space-members.js';
 import { card, copyable, kv, loadingEl, pill, status } from './ui.js';
 
 export const ROLE_LABELS = { admin: 'Administrateur', editor: 'Éditeur', reader: 'Lecteur' };
 
 export function renderSpaces(el) {
-  el.replaceChildren(
-    card('Espaces', 'Organisez le wiki par équipe ou par projet. La visibilité « public » rend un espace lisible sans connexion.',
-      h('div', { class: 'table' }, store.spaces.map((s) => h('div', { class: 'table-row' },
-        h('span', { class: 'space-ico' }, icon(s.icon || 'folder', 18)),
-        h('span', { class: 'grow' }, h('strong', null, s.name), h('small', null, `${store.pagesIn(s.id).length} pages · ${s.description || 'Sans description'}`)),
-        s.visibility === 'public' ? pill('Public', 'ok') : pill('Privé', 'off'),
-        h('button', { class: 'icon-btn', title: 'Modifier', onClick: () => A.spaceForm(s) }, icon('edit')),
-        store.spaces.length > 1 && h('button', { class: 'icon-btn danger', title: 'Supprimer', onClick: () => A.deleteSpace(s) }, icon('trash'))))),
-      h('button', { class: 'btn btn-primary btn-sm', onClick: () => A.spaceForm() }, icon('plus', 15), 'Nouvel espace')),
-    card('Corbeille', 'Les pages supprimées restent restaurables jusqu’à leur suppression définitive.',
-      h('button', { class: 'btn btn-ghost btn-sm', onClick: A.openTrash }, icon('trash', 14), 'Ouvrir la corbeille')));
+  const admin = session.can('admin');
+  // Un gestionnaire (rôle « full ») ne voit que ses espaces et ne peut ni en créer ni en supprimer.
+  const spaces = admin ? store.spaces : store.spaces.filter((s) => s.role === 'full');
+  el.replaceChildren(...[
+    card('Espaces', admin
+      ? 'Organisez le wiki par équipe ou par projet. Un espace se voit par ses membres (personnes, groupes ou « Tout le monde ») ; la visibilité « public » le rend aussi lisible sans connexion.'
+      : 'Les espaces dont vous êtes gestionnaire : vous y réglez les membres et le nom.',
+    h('div', { class: 'table' }, spaces.map((s) => h('div', { class: 'table-row' },
+      h('span', { class: 'space-ico' }, icon(s.icon || 'folder', 18)),
+      h('span', { class: 'grow' }, h('strong', null, s.name), h('small', null, `${store.pagesIn(s.id).length} pages · ${s.description || 'Sans description'}`)),
+      s.visibility === 'public' ? pill('Public', 'ok') : pill('Privé', 'off'),
+      h('button', { class: 'icon-btn', title: 'Membres', 'aria-label': `Membres de ${s.name}`, onClick: () => openSpaceMembers(s) }, icon('users')),
+      h('button', { class: 'icon-btn', title: 'Modifier', 'aria-label': `Modifier ${s.name}`, onClick: () => A.spaceForm(s) }, icon('edit')),
+      admin && store.spaces.length > 1 && h('button', { class: 'icon-btn danger', title: 'Supprimer', 'aria-label': `Supprimer ${s.name}`, onClick: () => A.deleteSpace(s) }, icon('trash'))))),
+    admin && h('button', { class: 'btn btn-primary btn-sm', onClick: () => A.spaceForm() }, icon('plus', 15), 'Nouvel espace')),
+    admin && card('Corbeille', 'Les pages supprimées restent restaurables jusqu’à leur suppression définitive.',
+      h('button', { class: 'btn btn-ghost btn-sm', onClick: A.openTrash }, icon('trash', 14), 'Ouvrir la corbeille'))].filter(Boolean));
 }
 
 export async function renderAuth(el) {

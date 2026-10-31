@@ -4,7 +4,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard } from '../auth/context.js';
-import { loadWritablePage, readableSpaceIds } from '../lib/access.js';
+import { loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
 import { BUILTIN_TEMPLATES, builtinTemplate } from '../lib/builtin-templates.js';
 import { sanitizeDoc } from '../lib/content.js';
@@ -92,6 +92,7 @@ export default async function templateRoutes(app: FastifyInstance) {
     schema: { tags, summary: 'Renommer un modèle (auteur ou administrateur)', params: idParams, body: renameBody },
   }, async (req) => {
     const row = readableRow(req, (req.params as { id: string }).id);
+    requireSpaceRole(db, req, row.space_id, 'edit');
     manageable(req, row);
     db.prepare('UPDATE page_templates SET name = ?, updated_at = ? WHERE id = ?').run((req.body as z.output<typeof renameBody>).name, Date.now(), row.id);
     audit(db, req, 'template.rename', row.id);
@@ -103,6 +104,7 @@ export default async function templateRoutes(app: FastifyInstance) {
     schema: { tags, summary: 'Supprimer un modèle (auteur ou administrateur)', params: idParams },
   }, async (req, reply) => {
     const row = readableRow(req, (req.params as { id: string }).id);
+    requireSpaceRole(db, req, row.space_id, 'edit');
     manageable(req, row);
     db.prepare('DELETE FROM page_templates WHERE id = ?').run(row.id);
     audit(db, req, 'template.delete', row.id);

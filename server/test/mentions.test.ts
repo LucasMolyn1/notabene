@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { sanitizeDoc } from '../src/lib/content.js';
-import { type DB, openDb } from '../src/db.js';
+import { type DB, MIGRATIONS, openDb } from '../src/db.js';
 import { hashPassword } from '../src/lib/password.js';
 import { seedDemo } from '../src/seed.js';
 import { oldDb } from './migrations.js';
@@ -302,7 +302,7 @@ describe('migration v13', () => {
       old.prepare("INSERT INTO page_comments (id, page_id, author_id, body, created_at, updated_at) VALUES ('c1', 'p1', 'u1', 'ancien', 1, 1)").run();
     });
     const up = openDb(file);
-    expect(up.pragma('user_version', { simple: true })).toBe(13);
+    expect(up.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
     expect(up.prepare('SELECT id, type, count, created_at FROM notifications').all()).toEqual([{ id: 'n1', type: 'comment', count: 3, created_at: 5 }]);
     expect(up.prepare('SELECT body, anchor_text FROM page_comments').all()).toEqual([{ body: 'ancien', anchor_text: null }]);
     up.prepare("INSERT INTO notifications (id, user_id, type, page_id, created_at) VALUES ('n2', 'u1', 'mention', 'p1', 6)").run();

@@ -9,7 +9,7 @@ import { adminContext, api, createLocalUser, loginUi, PASSWORD, sessionContext }
 // Sans animation : axe mesure les contrastes d'un menu ou d'une palette en pleine transition, d'où de fausses alertes.
 test.use({ reducedMotion: 'reduce' });
 
-const SECTIONS = ['profile', 'appearance', 'tokens', 'about', 'ai', 'diagrams', 'tools', 'api', 'embed', 'spaces', 'auth', 'mail', 'embeds', 'webhooks', 'import', 'users', 'audit', 'instance'];
+const SECTIONS = ['profile', 'appearance', 'tokens', 'about', 'ai', 'diagrams', 'tools', 'api', 'embed', 'spaces', 'groups', 'auth', 'mail', 'embeds', 'webhooks', 'import', 'users', 'audit', 'instance'];
 
 async function violations(page: Page, label: string) {
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();

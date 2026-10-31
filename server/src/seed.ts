@@ -52,6 +52,8 @@ export function seedDemo(db: DB) {
       const id = newId();
       db.prepare('INSERT INTO spaces (id, name, icon, description, visibility, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(id, name, icon, description, visibility, position, now, now);
+      // Comme les espaces d'une instance mise à jour (migration v14) : tout le monde en édition, le rôle global plafonne.
+      db.prepare("INSERT INTO space_members (space_id, group_id, role) VALUES (?, 'everyone', 'edit')").run(id);
       return id;
     };
     const page = (spaceId: string, parentId: string | null, icon: string, title: string, content: DocNode) =>

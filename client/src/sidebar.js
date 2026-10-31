@@ -114,7 +114,7 @@ function onTreeKey(e) {
   const focusRow = (r) => { if (!r) return; rows.forEach((x) => { x.tabIndex = -1; }); r.tabIndex = 0; r.focus(); };
   const kids = store.children(page.spaceId, page.id);
   const open = !!prefs.expanded[page.id];
-  const canWrite = session.can('write');
+  const canWrite = session.can('write') && store.canWriteIn(page.spaceId);
 
   if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
     if (!canWrite) return;
@@ -261,7 +261,7 @@ export function renderSidebar() {
     return;
   }
 
-  const canWrite = session.can('write');
+  const canWrite = session.can('write') && store.canWriteIn(space.id);
   const activeId = A.currentPageId();
   const onSpaceHome = location.pathname === spacePath(space);
   const roots = store.children(space.id, null);

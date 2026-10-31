@@ -308,6 +308,56 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE notifications_v13 RENAME TO notifications;
   CREATE INDEX notifications_user ON notifications(user_id, created_at DESC);
   `,
+  // v14 : groupes et droits par espace.
+  // `everyone` est un groupe système sans lignes d'adhésion : tous les comptes en font partie. Pour que personne ne gagne ni ne
+  // perde d'accès à la mise à jour, il reçoit le droit d'édition sur chaque espace existant (le rôle global reste un plafond :
+  // un lecteur n'a toujours que la lecture).
+  `
+  CREATE TABLE groups (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    -- source : local (créé à la main), system (everyone) ou le fournisseur d'identité dont l'adhésion est recopiée à la connexion.
+    source      TEXT NOT NULL DEFAULT 'local' CHECK (source IN ('local', 'system', 'oidc', 'ldap', 'saml')),
+    external_id TEXT,
+    created_at  INTEGER NOT NULL,
+    CHECK ((source IN ('oidc', 'ldap', 'saml')) = (external_id IS NOT NULL))
+  );
+  -- Un groupe du fournisseur n'est lié qu'à un seul groupe local.
+  CREATE UNIQUE INDEX groups_external ON groups(source, external_id) WHERE external_id IS NOT NULL;
+
+  CREATE TABLE group_members (
+    group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (group_id, user_id)
+  );
+  CREATE INDEX group_members_user ON group_members(user_id);
+
+  CREATE TABLE space_members (
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    user_id  TEXT REFERENCES users(id) ON DELETE CASCADE,
+    group_id TEXT REFERENCES groups(id) ON DELETE CASCADE,
+    role     TEXT NOT NULL CHECK (role IN ('view', 'edit', 'full')),
+    CHECK ((user_id IS NULL) != (group_id IS NULL))
+  );
+  CREATE UNIQUE INDEX space_members_user ON space_members(space_id, user_id) WHERE user_id IS NOT NULL;
+  CREATE UNIQUE INDEX space_members_group ON space_members(space_id, group_id) WHERE group_id IS NOT NULL;
+  CREATE INDEX space_members_by_user ON space_members(user_id) WHERE user_id IS NOT NULL;
+  CREATE INDEX space_members_by_group ON space_members(group_id) WHERE group_id IS NOT NULL;
+
+  -- Permissions de page accordées à un groupe (en plus de page_acl, qui vise une personne).
+  CREATE TABLE page_acl_groups (
+    page_id  TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    level    TEXT NOT NULL CHECK (level IN ('read', 'write')),
+    PRIMARY KEY (page_id, group_id)
+  );
+  CREATE INDEX page_acl_groups_group ON page_acl_groups(group_id);
+
+  INSERT INTO groups (id, name, description, source, external_id, created_at)
+    VALUES ('everyone', 'Tout le monde', 'Tous les comptes de l''instance', 'system', NULL, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
+  INSERT INTO space_members (space_id, group_id, role) SELECT id, 'everyone', 'edit' FROM spaces;
+  `,
 ];
 
 export function openDb(file: string): DB {
@@ -316,6 +366,8 @@ export function openDb(file: string): DB {
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
   db.pragma('secure_delete = ON');
+  // lower() de SQLite ne replie que l'ASCII : « Équipe » ne serait pas trouvé en tapant « équipe ». Pour les recherches de noms.
+  db.function('lower_fr', { deterministic: true }, (v) => (typeof v === 'string' ? v.toLocaleLowerCase('fr') : v));
   migrate(db);
   return db;
 }

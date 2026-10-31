@@ -74,7 +74,8 @@ export default async function coreRoutes(app: FastifyInstance) {
       if (event.type === 'notification' && (event.data as { userId?: string } | undefined)?.userId !== req.auth?.user.id) return;
       if (event.spaceId && !spaces.has(event.spaceId)) return;
       // Page restreinte : l'événement n'est diffusé qu'à ceux qui y ont accès (page détruite : plus de restriction à appliquer).
-      if (event.pageId && hasAnyAcl(db) && pageExists.get(event.pageId) && !canReadPage(db, req.auth, event.pageId)) return;
+      // Sans espace dans l'événement, le droit sur l'espace de la page est aussi relu (canReadPage).
+      if (event.pageId && (!event.spaceId || hasAnyAcl(db)) && pageExists.get(event.pageId) && !canReadPage(db, req.auth, event.pageId)) return;
       res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
     };
     res.write('retry: 5000\n\n');
