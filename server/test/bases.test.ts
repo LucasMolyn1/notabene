@@ -493,6 +493,114 @@ describe('relecture : tailles, export et noms', () => {
   });
 });
 
+describe('formules', () => {
+  async function priced() {
+    const ed = await login('ed1@example.com');
+    const b = await newBase(ed);
+    const id = b.page.id;
+    const prix = (await addProp(ed, id, { name: 'Prix', type: 'number' })).id;
+    const qte = (await addProp(ed, id, { name: 'Quantité', type: 'number' })).id;
+    const total = (await addProp(ed, id, { name: 'Total', type: 'formula', formula: 'prop("Prix") * prop("Quantité")' })).id;
+    const row = (await call(ed, 'POST', `/api/v3/bases/${id}/rows`, { values: { [prix]: 4, [qte]: 3 } })).json() as { id: string; values: Record<string, unknown> };
+    return { ed, id, prix, qte, total, row };
+  }
+
+  it('une colonne calculée se met à jour avec les cellules, et se lit en lecture, en export et après modification', async () => {
+    const { ed, id, prix, total, row } = await priced();
+    expect(row.values[total]).toBe(12);
+    expect((await get(ed, id)).rows[0]!.values[total]).toBe(12);
+    const patched = (await call(ed, 'PATCH', `/api/v3/bases/${id}/rows/${row.id}`, { values: { [prix]: 5 } })).json() as { values: Record<string, unknown> };
+    expect(patched.values[total]).toBe(15);
+    expect((await call(ed, 'GET', `/api/v3/bases/${id}/export`)).body).toContain('5,3,15');
+    // Une formule dont une cellule manque n'a pas de valeur.
+    const empty = (await call(ed, 'POST', `/api/v3/bases/${id}/rows`, { values: {} })).json() as { values: Record<string, unknown> };
+    expect(empty.values[total]).toBeUndefined();
+  });
+
+  it('une colonne calculée ne s’écrit pas et aucune valeur n’est stockée', async () => {
+    const { ed, id, total, row } = await priced();
+    expect((await call(ed, 'PATCH', `/api/v3/bases/${id}/rows/${row.id}`, { values: { [total]: 99 } })).statusCode).toBe(400);
+    expect((await call(ed, 'POST', `/api/v3/bases/${id}/rows`, { values: { [total]: 99 } })).statusCode).toBe(400);
+    expect((db.prepare('SELECT vals FROM base_rows WHERE id = ?').get(row.id) as { vals: string }).vals).not.toContain(total);
+  });
+
+  it('formules refusées à l’enregistrement : syntaxe, colonne inconnue, chaîne de formules, formule sur une colonne ordinaire, plafond', async () => {
+    const { ed, id, total } = await priced();
+    const add = (body: object) => call(ed, 'POST', `/api/v3/bases/${id}/properties`, body);
+    expect((await add({ name: 'F1', type: 'formula', formula: '1 +' })).statusCode).toBe(400);
+    expect((await add({ name: 'F2', type: 'formula', formula: 'eval("1")' })).statusCode).toBe(400);
+    expect((await add({ name: 'F3', type: 'formula', formula: 'prop("Inconnue")' })).statusCode).toBe(400);
+    expect((await add({ name: 'F4', type: 'formula', formula: 'prop("Total") + 1' })).statusCode).toBe(400);
+    expect((await add({ name: 'F5', type: 'formula' })).statusCode).toBe(400);
+    expect((await add({ name: 'F6', type: 'text', formula: '1' })).statusCode).toBe(400);
+    expect((await add({ name: 'F7', type: 'formula', formula: '1'.repeat(501) })).statusCode).toBe(400);
+    expect((await call(ed, 'PATCH', `/api/v3/bases/${id}/properties/${total}`, { formula: 'prop("Total")' })).statusCode).toBe(400);
+    const plain = (await addProp(ed, id, { name: 'Simple', type: 'text' })).id;
+    expect((await call(ed, 'PATCH', `/api/v3/bases/${id}/properties/${plain}`, { formula: '1' })).statusCode).toBe(400);
+    for (let i = 0; i < 9; i++) expect((await add({ name: `ok${i}`, type: 'formula', formula: `prop("Prix") + ${i}` })).statusCode).toBe(201);
+    expect((await add({ name: 'de trop', type: 'formula', formula: '1' })).statusCode).toBe(409);
+  });
+
+  it('on ne renomme ni ne supprime une colonne lue par une formule, et on peut corriger la formule', async () => {
+    const { ed, id, prix, total, row } = await priced();
+    expect((await call(ed, 'PATCH', `/api/v3/bases/${id}/properties/${prix}`, { name: 'Tarif' })).statusCode).toBe(409);
+    expect((await call(ed, 'DELETE', `/api/v3/bases/${id}/properties/${prix}`)).statusCode).toBe(409);
+    const fixed = await call(ed, 'PATCH', `/api/v3/bases/${id}/properties/${total}`, { formula: 'prop("Prix") * 2' });
+    expect(fixed.statusCode).toBe(200);
+    expect((await get(ed, id)).rows.find((r) => r.id === row.id)!.values[total]).toBe(8);
+    expect((await call(ed, 'PATCH', `/api/v3/bases/${id}/properties/${prix}`, { name: 'Tarif' })).statusCode).toBe(409);
+    expect((await call(ed, 'DELETE', `/api/v3/bases/${id}/properties/${total}`)).statusCode).toBe(204);
+    expect((await call(ed, 'PATCH', `/api/v3/bases/${id}/properties/${prix}`, { name: 'Tarif' })).statusCode).toBe(200);
+  });
+
+  it('une formule ne révèle ni le nom d’une personne ni le titre d’une page que le lecteur ne peut pas lire', async () => {
+    const ed1 = await login('ed1@example.com');
+    const ed2 = await login('ed2@example.com');
+    const b = await newBase(ed1);
+    const id = b.page.id;
+    const who = (await addProp(ed1, id, { name: 'Responsable', type: 'person' })).id;
+    const link = (await addProp(ed1, id, { name: 'Page', type: 'page_link' })).id;
+    const f1 = (await addProp(ed1, id, { name: 'Qui', type: 'formula', formula: 'prop("Responsable")' })).id;
+    const f2 = (await addProp(ed1, id, { name: 'Où', type: 'formula', formula: 'upper(prop("Page"))' })).id;
+    insertPage('pagesecrete02', teamSpace(), 'Titre confidentiel');
+    await call(await login('admin@example.com'), 'PUT', '/api/v3/pages/pagesecrete02/permissions', { entries: [{ userId: 'ed1', level: 'write' }] });
+    await call(ed1, 'POST', `/api/v3/bases/${id}/rows`, { values: { [who]: 'ed1', [link]: 'pagesecrete02' } });
+    const mine = (await get(ed1, id)).rows[0]!.values;
+    expect(mine[f1]).toBe('Nom ed1');
+    expect(mine[f2]).toBe('TITRE CONFIDENTIEL');
+    const theirs = (await call(ed2, 'GET', `/api/v3/bases/${id}`)).body;
+    expect(theirs).not.toContain('TITRE CONFIDENTIEL');
+    expect(theirs).not.toContain('Titre confidentiel');
+    // Personne désactivée : son nom n'apparaît plus, formules comprises.
+    db.prepare("UPDATE users SET disabled = 1 WHERE id = 'ed1'").run();
+    const after = (await call(ed2, 'GET', `/api/v3/bases/${id}`)).json() as { rows: unknown[] };
+    expect(JSON.stringify(after.rows)).not.toContain('Nom ed1');
+  });
+
+  it('dupliquer une base copie ses formules, qui continuent de calculer', async () => {
+    const { ed, id } = await priced();
+    const dup = (await call(ed, 'POST', `/api/v3/pages/${id}/duplicate`)).json() as { id: string };
+    const copy = await get(ed, dup.id);
+    const f = copy.properties.find((p) => p.name === 'Total')!;
+    expect(copy.rows[0]!.values[f.id]).toBe(12);
+  });
+
+  it('la migration v18 garde les colonnes existantes et accepte le type formule', () => {
+    const file = oldDb(17, (raw) => {
+      raw.prepare("INSERT INTO pages (id, space_id, title, content, text, created_at, updated_at, kind) VALUES ('b1', 's1', 'Base', '{}', '', 0, 0, 'base')").run();
+      raw.prepare("INSERT INTO base_properties (id, base_id, name, type, options, position, created_at) VALUES ('c1', 'b1', 'Nom', 'text', '[]', 0, 0)").run();
+    });
+    const up = openDb(file);
+    expect(up.prepare("SELECT name, type, formula FROM base_properties WHERE id = 'c1'").get()).toEqual({ name: 'Nom', type: 'text', formula: null });
+    up.prepare("INSERT INTO base_properties (id, base_id, name, type, options, position, created_at, formula) VALUES ('c2', 'b1', 'F', 'formula', '[]', 1, 0, '1')").run();
+    expect(() => up.prepare("INSERT INTO base_properties (id, base_id, name, type, options, position, created_at) VALUES ('c3', 'b1', 'F', 'formula', '[]', 2, 0)").run()).toThrow();
+    expect(() => up.prepare("INSERT INTO base_properties (id, base_id, name, type, options, position, created_at, formula) VALUES ('c4', 'b1', 'T', 'text', '[]', 3, 0, '1')").run()).toThrow();
+    up.prepare("DELETE FROM pages WHERE id = 'b1'").run();
+    expect((up.prepare('SELECT COUNT(*) AS n FROM base_properties').get() as { n: number }).n).toBe(0);
+    up.close();
+  });
+});
+
 describe('copie, recherche, événements, migration', () => {
   it('dupliquer une base copie colonnes, lignes et vues avec de nouveaux identifiants', async () => {
     const ed = await login('ed1@example.com');

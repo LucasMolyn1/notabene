@@ -15,7 +15,7 @@ const PAGE_SIZE = 300;
 
 export const TYPE_LABELS = {
   text: 'Texte', number: 'Nombre', date: 'Date', select: 'Sélection', multi_select: 'Multi-sélection',
-  status: 'Statut', checkbox: 'Case à cocher', person: 'Personne', page_link: 'Lien vers une page',
+  status: 'Statut', checkbox: 'Case à cocher', person: 'Personne', page_link: 'Lien vers une page', formula: 'Formule',
 };
 const COLORS = { gray: 'Gris', red: 'Rouge', orange: 'Orange', yellow: 'Jaune', green: 'Vert', blue: 'Bleu', purple: 'Violet', pink: 'Rose' };
 const OPERATORS = {
@@ -26,8 +26,9 @@ const OPERATORS = {
   multi: [['contains', 'contient'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
   checkbox: [['eq', 'est']],
   link: [['contains', 'contient'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
+  formula: [['contains', 'contient'], ['eq', '='], ['neq', '≠'], ['gt', '>'], ['lt', '<'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
 };
-const opKind = (t) => ({ text: 'text', number: 'number', date: 'date', select: 'option', status: 'option', multi_select: 'multi', checkbox: 'checkbox', person: 'link', page_link: 'link' }[t]);
+const opKind = (t) => ({ text: 'text', number: 'number', date: 'date', select: 'option', status: 'option', multi_select: 'multi', checkbox: 'checkbox', person: 'link', page_link: 'link', formula: 'formula' }[t]);
 // replaceChildren transforme null, false et les tableaux en texte : on aplatit et on écarte avant.
 const put = (el, ...parts) => el.replaceChildren(...parts.flat(Infinity).filter(Boolean));
 const fold = (s) => String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('fr');
@@ -80,6 +81,7 @@ export async function showBase(initial) {
     if (v === undefined || v === null) return '';
     switch (p.type) {
       case 'checkbox': return v ? 'oui' : 'non';
+      case 'formula': return typeof v === 'boolean' ? (v ? 'oui' : 'non') : String(v);
       case 'select': case 'status': return optName(p, v);
       case 'multi_select': return v.map((x) => optName(p, x)).join(', ');
       case 'person': return v.name;
@@ -102,6 +104,13 @@ export async function showBase(initial) {
         const w = fold(want);
         return f.op === 'contains' ? t.includes(w) : f.op === 'eq' ? t === w : t !== w;
       }
+      case 'formula': {
+        const n = Number(want);
+        if (typeof v === 'number' && want !== null && want !== '' && Number.isFinite(n)) return f.op === 'eq' ? v === n : f.op === 'neq' ? v !== n : f.op === 'gt' ? v > n : f.op === 'lt' ? v < n : textOf(p, v).includes(String(want));
+        const t = fold(textOf(p, v));
+        const w = fold(want);
+        return f.op === 'contains' ? t.includes(w) : f.op === 'eq' ? t === w : f.op === 'neq' ? t !== w : f.op === 'gt' ? t > w : t < w;
+      }
       case 'number': {
         if (v === undefined) return f.op === 'neq';
         const n = Number(want);
@@ -120,7 +129,7 @@ export async function showBase(initial) {
     if (isEmpty(p, va) && isEmpty(p, vb)) return 0;
     if (isEmpty(p, va)) return 1; // les cellules vides vont toujours en dernier
     if (isEmpty(p, vb)) return -1;
-    if (p.type === 'number') return va - vb;
+    if (p.type === 'number' || (p.type === 'formula' && typeof va === 'number' && typeof vb === 'number')) return va - vb;
     if (p.type === 'date') return va < vb ? -1 : va > vb ? 1 : 0;
     if (p.type === 'checkbox') return Number(va === true) - Number(vb === true);
     if (p.type === 'select' || p.type === 'status') return p.options.findIndex((o) => o.id === va) - p.options.findIndex((o) => o.id === vb);
@@ -174,6 +183,7 @@ export async function showBase(initial) {
       case 'page_link': return h('a', { class: 'bt-link', href: pagePath({ id: v.id, title: v.title }), onClick: (e) => e.stopPropagation() }, v.title || 'Sans titre');
       case 'date': return fmtDate(v);
       case 'number': return String(v);
+      case 'formula': return typeof v === 'boolean' ? (v ? 'oui' : 'non') : String(v);
       default: return String(v);
     }
   }
@@ -305,7 +315,8 @@ export async function showBase(initial) {
     }
     const content = display(p, v);
     const td = h('td', { class: `bt-cell bt-t-${p.type}` });
-    if (canWrite()) {
+    // Une colonne calculée ne se modifie pas : pas de bouton, le résultat est du texte.
+    if (canWrite() && p.type !== 'formula') {
       const shownText = textOf(p, v);
       const btn = h('button', { class: 'bt-cell-btn', 'data-prop': p.id, 'aria-label': shownText ? `${shownText} (modifier ${p.name})` : `Modifier ${p.name}`, onClick: () => editCell(td, row, p) }, content ?? h('span', { class: 'bt-placeholder' }, ' '));
       td.append(btn);
@@ -319,9 +330,15 @@ export async function showBase(initial) {
     name.value = existing?.name ?? '';
     const type = h('select', { class: 'input', 'aria-label': 'Type', disabled: !!existing }, Object.entries(TYPE_LABELS).map(([k, l]) => h('option', { value: k }, l)));
     type.value = existing?.type ?? 'text';
+    const formula = h('textarea', { class: 'input bt-formula-input', rows: '3', maxlength: '500', spellcheck: 'false', 'aria-label': 'Formule', placeholder: 'prop("Prix") * prop("Quantité")' });
+    formula.value = existing?.formula ?? '';
+    const formulaHelp = h('p', { class: 'muted bt-formula-help' }, 'Lisez une colonne avec prop("Nom"). Opérateurs : + - * / % == != < > <= >= && || !. Fonctions : if, round, floor, ceil, abs, min, max, length, upper, lower, concat, contains, isEmpty, number, text, dateDiff, year, month. Une cellule vide donne un résultat vide.');
+    const formulaBox = h('div', { class: 'field' }, h('span', null, 'Formule'), formula, formulaHelp);
     const optionsHost = h('div', { class: 'bt-options' });
     let opts = (existing?.options ?? []).map((o) => ({ ...o }));
     const hasOptions = () => ['select', 'multi_select', 'status'].includes(type.value);
+    const isFormula = () => type.value === 'formula';
+    const showFormula = () => { formulaBox.hidden = !isFormula(); };
     const drawOptions = () => {
       optionsHost.replaceChildren();
       if (!hasOptions()) return;
@@ -338,15 +355,17 @@ export async function showBase(initial) {
       });
       optionsHost.append(h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => { opts.push({ name: '', color: 'gray' }); drawOptions(); } }, icon('plus', 14), 'Ajouter une option'));
     };
-    type.addEventListener('change', () => { if (type.value === 'status' && !opts.length) opts = [{ name: 'À faire', color: 'gray' }, { name: 'En cours', color: 'blue' }, { name: 'Terminé', color: 'green' }]; drawOptions(); });
+    type.addEventListener('change', () => { showFormula(); if (type.value === 'status' && !opts.length) opts = [{ name: 'À faire', color: 'gray' }, { name: 'En cours', color: 'blue' }, { name: 'Terminé', color: 'green' }]; drawOptions(); });
     drawOptions();
+    showFormula();
     const el = h('div', { class: 'stack' },
       h('label', { class: 'field' }, h('span', null, 'Nom'), name),
       h('label', { class: 'field' }, h('span', null, 'Type'), type),
-      optionsHost);
+      optionsHost, formulaBox);
     const payload = () => ({
       name: name.value.trim(),
       ...(existing ? {} : { type: type.value }),
+      ...(isFormula() ? { formula: formula.value.trim() } : {}),
       ...(hasOptions() ? { options: opts.filter((o) => o.name.trim()).map((o) => ({ ...(o.id ? { id: o.id } : {}), name: o.name.trim(), color: o.color })) } : {}),
     });
     return { el, payload, focus: () => name.focus() };

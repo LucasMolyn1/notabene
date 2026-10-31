@@ -9,6 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { Auth } from '../auth/context.js';
 import type { DB } from '../db.js';
+import { evaluate, FormulaError, parseFormula, referencedProperties, type Value } from './formula.js';
 import { HttpError, newId } from './http.js';
 import { readersAmong } from './mentions.js';
 import { canReadPage, filterReadable } from './page-acl.js';
@@ -19,10 +20,11 @@ export const MAX_ROWS = 5000;
 export const MAX_OPTIONS = 100;
 export const MAX_VIEWS = 10;
 export const MAX_TEXT = 2000;
+export const MAX_FORMULAS = 10;
 export const MAX_ROW_CHARS = 20_000;
 export const MAX_BASE_CHARS = 10_000_000;
 
-export const PROPERTY_TYPES = ['text', 'number', 'date', 'select', 'multi_select', 'status', 'checkbox', 'person', 'page_link'] as const;
+export const PROPERTY_TYPES = ['text', 'number', 'date', 'select', 'multi_select', 'status', 'checkbox', 'person', 'page_link', 'formula'] as const;
 export type PropertyType = typeof PROPERTY_TYPES[number];
 export const OPTION_COLORS = ['gray', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink'] as const;
 const WITH_OPTIONS = new Set<PropertyType>(['select', 'multi_select', 'status']);
@@ -52,11 +54,11 @@ export const viewConfigSchema = z.object({
 }).strict();
 export type ViewConfig = z.output<typeof viewConfigSchema>;
 
-interface PropertyRow { id: string; base_id: string; name: string; type: PropertyType; options: string; position: number; created_at: number }
-export interface Property { id: string; name: string; type: PropertyType; options: Option[]; position: number }
+interface PropertyRow { id: string; base_id: string; name: string; type: PropertyType; options: string; position: number; created_at: number; formula: string | null }
+export interface Property { id: string; name: string; type: PropertyType; options: Option[]; position: number; formula: string | null }
 interface RowRow { id: string; base_id: string; position: number; vals: string; created_by: string | null; created_at: number; updated_by: string | null; updated_at: number }
 
-const toProperty = (r: PropertyRow): Property => ({ id: r.id, name: r.name, type: r.type, options: JSON.parse(r.options) as Option[], position: r.position });
+const toProperty = (r: PropertyRow): Property => ({ id: r.id, name: r.name, type: r.type, options: JSON.parse(r.options) as Option[], position: r.position, formula: r.formula });
 
 export const propertiesOf = (db: DB, baseId: string): Property[] =>
   (db.prepare('SELECT * FROM base_properties WHERE base_id = ? ORDER BY position, created_at').all(baseId) as PropertyRow[]).map(toProperty);
@@ -92,14 +94,32 @@ function normalizeOptions(type: PropertyType, input: z.input<typeof optionSchema
   });
 }
 
-export function addProperty(db: DB, baseId: string, input: { name: string; type: PropertyType; options?: z.input<typeof optionSchema>[] }): Property {
+/**
+ * Une formule se vérifie à l'enregistrement : syntaxe, fonctions connues, et colonnes lues qui existent et ne sont pas elles-mêmes
+ * calculées (pas de chaînes de formules, donc pas de cycle).
+ */
+export function checkFormula(props: Property[], formula: string, selfId?: string): string {
+  let names: string[];
+  try { names = referencedProperties(parseFormula(formula)); } catch (err) {
+    if (err instanceof FormulaError) throw new HttpError(400, `Formule : ${err.message}`);
+    throw err;
+  }
+  const readable = new Map(props.filter((p) => p.type !== 'formula' && p.id !== selfId).map((p) => [p.name, p]));
+  for (const n of names) if (!readable.has(n)) throw new HttpError(400, `Formule : la colonne « ${n} » n'existe pas (ou est elle-même calculée)`);
+  return formula;
+}
+
+export function addProperty(db: DB, baseId: string, input: { name: string; type: PropertyType; options?: z.input<typeof optionSchema>[]; formula?: string }): Property {
   return db.transaction(() => {
     const props = propertiesOf(db, baseId);
     if (props.length >= MAX_PROPERTIES) throw new HttpError(409, `Au plus ${MAX_PROPERTIES} colonnes par base`);
+    if ((input.type === 'formula') !== (input.formula !== undefined)) throw new HttpError(400, input.type === 'formula' ? 'Une colonne calculée demande une formule' : 'Seule une colonne calculée a une formule');
+    if (input.type === 'formula' && props.filter((p) => p.type === 'formula').length >= MAX_FORMULAS) throw new HttpError(409, `Au plus ${MAX_FORMULAS} colonnes calculées par base`);
+    const formula = input.formula === undefined ? null : checkFormula(props, input.formula);
     const options = normalizeOptions(input.type, input.options ?? (input.type === 'status' ? defaultStatus() : undefined));
     const id = newId();
-    db.prepare('INSERT INTO base_properties (id, base_id, name, type, options, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(id, baseId, input.name, input.type, JSON.stringify(options), props.length ? props[props.length - 1]!.position + 1 : 0, Date.now());
+    db.prepare('INSERT INTO base_properties (id, base_id, name, type, options, position, created_at, formula) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, baseId, input.name, input.type, JSON.stringify(options), props.length ? props[props.length - 1]!.position + 1 : 0, Date.now(), formula);
     return propertyById(db, baseId, id);
   })();
 }
@@ -109,11 +129,19 @@ const defaultStatus = (): z.input<typeof optionSchema>[] => [
 ];
 
 /** Renomme une colonne ou change ses options. Une option retirée disparaît des cellules qui la portaient. */
-export function updateProperty(db: DB, baseId: string, id: string, input: { name?: string; options?: z.input<typeof optionSchema>[] }): Property {
+export function updateProperty(db: DB, baseId: string, id: string, input: { name?: string; options?: z.input<typeof optionSchema>[]; formula?: string }): Property {
   return db.transaction(() => {
     const prop = propertyById(db, baseId, id);
+    const props = propertiesOf(db, baseId);
+    if (input.formula !== undefined && prop.type !== 'formula') throw new HttpError(400, 'Seule une colonne calculée a une formule');
+    const formula = input.formula === undefined ? prop.formula : checkFormula(props, input.formula, id);
+    // Renommer une colonne lue par une formule la casserait en silence : on refuse, la formule se corrige d'abord.
+    if (input.name !== undefined && input.name !== prop.name) {
+      const user = formulaUsing(props, prop.name, id);
+      if (user) throw new HttpError(409, `La colonne « ${prop.name} » est lue par la formule de « ${user} » : modifiez d'abord cette formule`);
+    }
     const options = input.options === undefined ? prop.options : normalizeOptions(prop.type, input.options, prop.options);
-    db.prepare('UPDATE base_properties SET name = ?, options = ? WHERE id = ?').run(input.name ?? prop.name, JSON.stringify(options), id);
+    db.prepare('UPDATE base_properties SET name = ?, options = ?, formula = ? WHERE id = ?').run(input.name ?? prop.name, JSON.stringify(options), formula, id);
     if (input.options !== undefined) {
       const alive = new Set(options.map((o) => o.id));
       const removed = prop.options.filter((o) => !alive.has(o.id)).map((o) => o.id);
@@ -131,9 +159,20 @@ export function updateProperty(db: DB, baseId: string, id: string, input: { name
   })();
 }
 
+/** Nom de la première colonne calculée qui lit la colonne `name` (hors `exceptId`), sinon null. */
+function formulaUsing(props: Property[], name: string, exceptId: string): string | null {
+  for (const p of props) {
+    if (p.type !== 'formula' || p.id === exceptId || !p.formula) continue;
+    try { if (referencedProperties(parseFormula(p.formula)).includes(name)) return p.name; } catch { /* formule déjà invalide : elle ne lit rien */ }
+  }
+  return null;
+}
+
 export function removeProperty(db: DB, baseId: string, id: string): void {
   db.transaction(() => {
-    propertyById(db, baseId, id);
+    const removed = propertyById(db, baseId, id);
+    const user = formulaUsing(propertiesOf(db, baseId), removed.name, id);
+    if (user) throw new HttpError(409, `La colonne « ${removed.name} » est lue par la formule de « ${user} » : modifiez d'abord cette formule`);
     if (propertiesOf(db, baseId).length <= 1) throw new HttpError(409, 'Une base garde au moins une colonne');
     db.prepare('DELETE FROM base_properties WHERE id = ?').run(id);
     rewriteRows(db, baseId, (vals) => vals.delete(id));
@@ -176,6 +215,8 @@ export function checkValue(ctx: Ctx, prop: Property, v: unknown): unknown {
   if (v === null) return null;
   const bad = (m: string): never => { throw new HttpError(400, `Colonne « ${prop.name} » : ${m}`); };
   switch (prop.type) {
+    case 'formula':
+      return bad('colonne calculée, non modifiable');
     case 'text': {
       if (typeof v !== 'string') return bad('texte attendu');
       const t = v.replace(CONTROL, '');
@@ -300,6 +341,12 @@ export function presentRows(ctx: Ctx, props: Property[], canSeeNames: boolean, o
     for (const pg of filterReadable(db, ctx.auth, found.filter((f) => ctx.spaces.has(f.space_id)))) pageInfo.set(pg.id, { id: pg.id, title: pg.title, icon: pg.icon });
   }
   const kinds = new Map(props.map((p) => [p.id, p.type]));
+  // Formules : analysées une fois, évaluées par ligne sur les valeurs telles que CE lecteur les voit (un nom ou un titre qu'il ne peut
+  // pas lire est déjà absent à ce stade, donc la formule ne peut pas le révéler).
+  const formulas = props.filter((p) => p.type === 'formula' && p.formula).flatMap((p) => {
+    try { return [{ id: p.id, ast: parseFormula(p.formula!) }]; } catch { return []; }
+  });
+  const byName = new Map(props.filter((p) => p.type !== 'formula').map((p) => [p.name, p]));
   return parsed.map(({ r, vals }) => {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(vals)) {
@@ -309,8 +356,24 @@ export function presentRows(ctx: Ctx, props: Property[], canSeeNames: boolean, o
       else if (t === 'page_link') { const info = typeof v === 'string' ? pageInfo.get(v) : undefined; if (info) out[k] = info; }
       else out[k] = v;
     }
+    for (const f of formulas) {
+      const result = evaluate(f.ast, (name) => { const p = byName.get(name); return p ? primitive(p, out[p.id]) : null; });
+      if (result !== null) out[f.id] = result;
+    }
     return { id: r.id, position: r.position, values: out, createdAt: r.created_at, updatedAt: r.updated_at };
   });
+}
+
+/** Valeur d'une cellule telle que la lit une formule : un nombre, un texte ou un booléen (jamais un objet). */
+function primitive(p: Property, v: unknown): Value {
+  if (v === undefined || v === null) return null;
+  switch (p.type) {
+    case 'select': case 'status': return p.options.find((o) => o.id === v)?.name ?? null;
+    case 'multi_select': return (v as string[]).map((x) => p.options.find((o) => o.id === x)?.name).filter(Boolean).join(', ') || null;
+    case 'person': return (v as { name: string }).name;
+    case 'page_link': return (v as { title: string }).title;
+    default: return typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean' ? v : null;
+  }
 }
 
 // ---------- Vues ----------
@@ -356,11 +419,11 @@ export function copyBaseData(db: DB, srcId: string, dstId: string, userId: strin
     db.prepare('DELETE FROM base_properties WHERE base_id = ?').run(dstId);
     db.prepare('DELETE FROM base_views WHERE base_id = ?').run(dstId);
     const map = new Map<string, string>();
-    const insProp = db.prepare('INSERT INTO base_properties (id, base_id, name, type, options, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const insProp = db.prepare('INSERT INTO base_properties (id, base_id, name, type, options, position, created_at, formula) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     for (const p of db.prepare('SELECT * FROM base_properties WHERE base_id = ? ORDER BY position, created_at').all(srcId) as PropertyRow[]) {
       const id = newId();
       map.set(p.id, id);
-      insProp.run(id, dstId, p.name, p.type, p.options, p.position, Date.now());
+      insProp.run(id, dstId, p.name, p.type, p.options, p.position, Date.now(), p.formula);
     }
     const now = Date.now();
     const insRow = db.prepare('INSERT INTO base_rows (id, base_id, position, vals, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
@@ -428,6 +491,7 @@ export function toCsv(props: Property[], rows: PresentedRow[]): string {
     if (v === undefined || v === null) return '';
     switch (p.type) {
       case 'checkbox': return v ? 'oui' : 'non';
+      case 'formula': return typeof v === 'boolean' ? (v ? 'oui' : 'non') : String(v);
       case 'select': case 'status': return p.options.find((o) => o.id === v)?.name ?? '';
       case 'multi_select': return (v as string[]).map((x) => p.options.find((o) => o.id === x)?.name).filter(Boolean).join(', ');
       case 'person': return (v as { name: string }).name;

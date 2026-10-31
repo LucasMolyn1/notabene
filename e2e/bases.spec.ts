@@ -143,6 +143,35 @@ test('modifier les cellules de chaque type : date, case, multi-sélection, perso
   await expect(again.getByRole('link', { name: 'Page cible e2e' })).toBeVisible();
 });
 
+test('une colonne calculée se crée depuis l’interface, se met à jour et ne se modifie pas', async ({ page, browser }) => {
+  const base = await newBaseVia(browser, 'Base formules e2e');
+  const admin = await adminContext(browser);
+  const prix = (await (await api(admin.request, 'POST', `/bases/${base.page.id}/properties`, { name: 'Prix', type: 'number' })).json()).id as string;
+  await api(admin.request, 'POST', `/bases/${base.page.id}/rows`, { values: { [prix]: 4 } });
+  await admin.close();
+
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto(`/p/${base.page.id}`);
+  await page.getByRole('button', { name: 'Ajouter une colonne' }).click();
+  await page.getByRole('textbox', { name: 'Nom de la colonne' }).fill('Double');
+  await page.getByLabel('Type', { exact: true }).selectOption('formula');
+  // Une formule invalide est refusée avec une explication.
+  await page.getByRole('textbox', { name: 'Formule' }).fill('prop("Prix") *');
+  await page.getByRole('button', { name: 'Ajouter', exact: true }).click();
+  await expect(page.getByText(/Formule : Expression incomplète/)).toBeVisible();
+  await page.getByRole('textbox', { name: 'Formule' }).fill('prop("Prix") * 2');
+  await page.getByRole('button', { name: 'Ajouter', exact: true }).click();
+  const row = page.locator('tbody tr').first();
+  await expect(row.getByRole('cell', { name: '8' })).toBeVisible();
+  await expect(row.getByRole('button', { name: /modifier Double/i })).toHaveCount(0);
+
+  // Modifier la cellule source recalcule.
+  await row.getByRole('button', { name: /modifier Prix/i }).click();
+  await page.getByRole('spinbutton', { name: 'Prix' }).fill('10');
+  await page.keyboard.press('Enter');
+  await expect(row.getByRole('cell', { name: '20' })).toBeVisible();
+});
+
 test('un lecteur voit la base sans pouvoir la modifier', async ({ browser }) => {
   const base = await newBaseVia(browser, 'Base lecture seule e2e');
   const admin = await adminContext(browser);

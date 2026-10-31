@@ -11,6 +11,7 @@ import {
   PROPERTY_TYPES, reindexBase, removeProperty, removeRows, rowCount, toCsv, touchBase, updateProperty, viewConfigSchema, viewsOf,
   type Ctx,
 } from '../lib/bases.js';
+import { MAX_FORMULA_CHARS } from '../lib/formula.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { canWritePage } from '../lib/page-acl.js';
 import { inPersonalSpace } from '../lib/personal-spaces.js';
@@ -27,8 +28,8 @@ const createBody = z.object({
   title: z.string().max(300).optional(),
   icon: z.string().max(16).optional(),
 });
-const propertyBody = z.object({ name: propertyName, type: z.enum(PROPERTY_TYPES), options: z.array(optionSchema).max(100).optional() });
-const propertyPatch = z.object({ name: propertyName.optional(), options: z.array(optionSchema).max(100).optional() });
+const propertyBody = z.object({ name: propertyName, type: z.enum(PROPERTY_TYPES), options: z.array(optionSchema).max(100).optional(), formula: z.string().max(MAX_FORMULA_CHARS).optional() });
+const propertyPatch = z.object({ name: propertyName.optional(), options: z.array(optionSchema).max(100).optional(), formula: z.string().max(MAX_FORMULA_CHARS).optional() });
 const propParams = z.object({ id: idSchema, propId: idSchema });
 const rowParams = z.object({ id: idSchema, rowId: idSchema });
 const viewParams = z.object({ id: idSchema, viewId: idSchema });
