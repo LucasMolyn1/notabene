@@ -19,6 +19,7 @@ import { startWebhooks } from './lib/webhooks.js';
 import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
 import labelRoutes from './routes/labels.js';
+import { effectiveEmbedHosts } from './lib/embed.js';
 import pageQueryRoutes from './routes/pages-query.js';
 import templateRoutes from './routes/templates.js';
 import seoRoutes from './routes/seo.js';
@@ -155,7 +156,9 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
         fontSrc: ["'self'", 'data:'],
         connectSrc: ["'self'"],
         workerSrc: ["'self'", 'blob:'],
-        frameSrc: drawioOrigin ? [drawioOrigin] : ["'none'"],
+        // Liste relue à chaque réponse (contenus intégrés autorisés depuis les paramètres, sans redémarrage) ; rien par défaut.
+        // Les hôtes sont revalidés ici à chaque réponse : une valeur enregistrée en base n'entre jamais dans l'en-tête sans contrôle.
+        frameSrc: [() => [...(drawioOrigin ? [drawioOrigin] : []), ...effectiveEmbedHosts(rt.get().CONTENT_EMBED_HOSTS, config.PUBLIC_URL).map((h) => `https://${h}`)].join(' ') || "'none'"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'"],

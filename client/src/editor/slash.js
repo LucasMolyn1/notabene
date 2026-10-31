@@ -2,7 +2,8 @@
 import { h, norm, pickFile } from '../util.js';
 import { icon } from '../icons.js';
 import { session } from '../session.js';
-import { toast } from '../ui.js';
+import { openModal, toast } from '../ui.js';
+import { allowedHosts, embedUrl } from './embed.js';
 import { DEFAULT_MATH, DEFAULT_MERMAID, DEFAULT_PLANTUML, openDrawio, openExcalidraw } from '../diagrams.js';
 
 // ---- Images ---------------------------------------------------------------
@@ -95,6 +96,14 @@ const SLASH_ITEMS = [
     },
   },
   {
+    group: 'Médias', title: 'Intégrer une adresse', desc: 'Vidéo ou contenu d’un site autorisé par un administrateur', ico: 'globe', keys: 'embed integrer iframe video youtube vimeo url',
+    when: () => allowedHosts().length > 0,
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).run();
+      askEmbedUrl((url) => editor.chain().focus().insertContent({ type: 'embed', attrs: { url } }).run());
+    },
+  },
+  {
     group: 'Médias', title: 'Image', desc: 'Importer depuis votre ordinateur', ico: 'upload', keys: 'image photo upload',
     run: async (editor, range) => {
       editor.chain().focus().deleteRange(range).run();
@@ -122,6 +131,31 @@ const SLASH_ITEMS = [
     },
   },
 ];
+
+// Demande l'adresse à intégrer ; elle doit être en https et sur un hôte autorisé par un administrateur.
+function askEmbedUrl(onOk) {
+  const input = h('input', { class: 'input', type: 'url', 'aria-label': 'Adresse à intégrer', placeholder: 'https://…', maxlength: '2048' });
+  const error = h('p', { class: 'notice warning', role: 'alert', hidden: true });
+  const submit = () => {
+    const url = embedUrl(input.value.trim());
+    const host = url && new URL(url).hostname;
+    if (!url || !allowedHosts().includes(host)) {
+      error.hidden = false;
+      error.textContent = `Adresse refusée : https obligatoire, sur un de ces hôtes : ${allowedHosts().join(', ')}.`;
+      return false;
+    }
+    onOk(url);
+    return undefined;
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.closest('dialog')?.querySelector('.btn-primary')?.click(); } });
+  openModal({
+    title: 'Intégrer une adresse',
+    body: h('div', { class: 'stack' }, h('label', { class: 'field' }, h('span', null, 'Adresse (https)'), input), error,
+      h('p', { class: 'muted' }, `Hôtes autorisés : ${allowedHosts().join(', ')}.`)),
+    actions: [{ label: 'Annuler' }, { label: 'Intégrer', primary: true, onClick: submit }],
+  });
+  setTimeout(() => input.focus(), 30);
+}
 
 // Met à jour les attributs du nœud inséré à `pos`, s'il est toujours du bon type.
 function updateNodeAt(editor, pos, type, attrs) {

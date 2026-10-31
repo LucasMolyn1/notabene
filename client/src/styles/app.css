@@ -332,6 +332,15 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
   border-bottom: 1px solid var(--border); color: var(--text-3); font-size: 12.5px;
 }
 
+/* Contenus intégrés */
+.embed { margin: 10px 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.embed.selected { outline: 2px solid var(--accent); }
+.embed-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; font-size: 12.5px; color: var(--text-2); background: var(--hover); }
+.embed-host { display: inline-flex; align-items: center; gap: 4px; }
+.embed-open { color: var(--accent-text); }
+.embed-frame { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; background: var(--bg, #fff); }
+.embed-card { display: grid; gap: 6px; justify-items: start; padding: 16px 18px; }
+.embed-card p { margin: 0; }
 /* Historique : différences ; rétroliens */
 .hist-modes { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .hist-modes .chip.active { background: var(--accent-soft); color: var(--text); border-color: var(--accent); }

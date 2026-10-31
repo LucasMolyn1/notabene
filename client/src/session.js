@@ -7,7 +7,7 @@ export const session = {
   mfaSetupRequired: false,
   provider: null,
   permissions: { read: false, write: false, ai: false, admin: false },
-  config: { auth: { oidc: false, devLogin: false, local: false, setupRequired: false, ldap: false, saml: false }, drawioUrl: null, ai: false },
+  config: { auth: { oidc: false, devLogin: false, local: false, setupRequired: false, ldap: false, saml: false }, drawioUrl: null, embedHosts: [], ai: false },
 
   async load() {
     const [config, me] = await Promise.all([api.get('/config'), api.get('/me')]);

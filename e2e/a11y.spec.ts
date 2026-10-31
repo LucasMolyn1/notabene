@@ -9,7 +9,7 @@ import { adminContext, api, createLocalUser, loginUi, PASSWORD, sessionContext }
 // Sans animation : axe mesure les contrastes d'un menu ou d'une palette en pleine transition, d'où de fausses alertes.
 test.use({ reducedMotion: 'reduce' });
 
-const SECTIONS = ['profile', 'appearance', 'tokens', 'about', 'ai', 'diagrams', 'tools', 'api', 'embed', 'spaces', 'auth', 'mail', 'webhooks', 'import', 'users', 'audit', 'instance'];
+const SECTIONS = ['profile', 'appearance', 'tokens', 'about', 'ai', 'diagrams', 'tools', 'api', 'embed', 'spaces', 'auth', 'mail', 'embeds', 'webhooks', 'import', 'users', 'audit', 'instance'];
 
 async function violations(page: Page, label: string) {
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
@@ -106,6 +106,25 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.getByRole('textbox', { name: 'Nouveau commentaire' }).fill('Salut @Adm');
       await page.getByRole('option', { name: /Admin E2E/ }).waitFor();
       found.push(...await violations(page, 'commentaires et liste de mentions'));
+      expect(found).toEqual([]);
+    });
+
+    test('contenus intégrés : carte avant affichage et hôte non autorisé', async ({ page, browser }) => {
+      const root = await adminContext(browser);
+      await createLocalUser(root.request, 'embed.admin@e2e.test', 'Admin intégrations', 'admin'); // session dédiée : ne consomme pas la ressaisie du mot de passe de l'administrateur commun
+      const admin = await sessionContext(browser, 'embed.admin@e2e.test', PASSWORD);
+      await api(admin.request, 'PUT', '/admin/settings/embeds', { config: { enabled: true, hosts: ['videos.example.test'] }, reauth: { password: PASSWORD } });
+      const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+      const created = await (await api(admin.request, 'POST', '/pages', {
+        spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: `A11y intégrations ${scheme}`,
+        content: { type: 'doc', content: [{ type: 'embed', attrs: { url: 'https://videos.example.test/v/1' } }, { type: 'embed', attrs: { url: 'https://refuse.example.test/v/2' } }] },
+      })).json();
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.goto(`/p/${created.id}`);
+      await page.locator('.embed-card').first().waitFor();
+      const found = await violations(page, 'contenus intégrés');
+      await api(admin.request, 'POST', '/admin/settings/embeds/reset', { reauth: { password: PASSWORD } });
+      await Promise.all([admin.close(), root.close()]);
       expect(found).toEqual([]);
     });
 

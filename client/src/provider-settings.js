@@ -260,6 +260,24 @@ export function providerCard(name, data, { card, copyable, refresh, kvRows = [] 
 }
 
 // Sites autorisés à intégrer le wiki (CSP frame-ancestors), sans test de connexion.
+// Hôtes dont le contenu peut être intégré dans une page (iframe). Liste vide : fonction inactive.
+export function embedHostsCard(data, { card, refresh }) {
+  const view = data.sections.embeds;
+  const area = h('textarea', { class: 'input', rows: 5, spellcheck: 'false', placeholder: 'www.youtube-nocookie.com\nplayer.vimeo.com', 'aria-label': 'Hôtes autorisés' });
+  area.value = listToText(view.values.hosts);
+  area.disabled = view.locked;
+  const save = h('button', { class: 'btn btn-primary btn-sm', disabled: view.locked }, 'Enregistrer');
+  save.addEventListener('click', async () => {
+    const hosts = textToList(area.value);
+    if (await call('put', '/admin/settings/embeds', { config: { enabled: true, hosts } }, 'modifier les hôtes intégrables')) { toast('Hôtes intégrables mis à jour'); refresh(); }
+  });
+  return card('Hôtes autorisés', 'Un nom de domaine par ligne, exact (pas de joker, de chemin ni de port). Appliqué immédiatement, sans redémarrage (en-tête CSP frame-src).',
+    h('div', { class: 'row wrap' }, sourcePill(view)),
+    view.locked && h('div', { class: 'notice info' }, 'Configuration verrouillée (CONFIG_LOCKED) : modifiable uniquement dans l’environnement du déploiement (CONTENT_EMBED_HOSTS).'),
+    !view.values.hosts.length && h('div', { class: 'notice warning' }, 'Aucun hôte autorisé : aucun contenu externe ne peut être intégré.'),
+    area, h('div', { class: 'prov-actions' }, save));
+}
+
 export function embedOriginsCard(data, { card, refresh }) {
   const view = data.sections.embed;
   const area = h('textarea', { class: 'input', rows: 4, spellcheck: 'false', placeholder: 'https://portfolio.exemple.fr' });

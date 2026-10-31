@@ -6,7 +6,7 @@ import { store } from '../store.js';
 import { session } from '../session.js';
 import { toast, confirmModal } from '../ui.js';
 import { qrSvg } from '../qr.js';
-import { embedOriginsCard } from '../provider-settings.js';
+import { embedHostsCard, embedOriginsCard } from '../provider-settings.js';
 import { openDrawio, openExcalidraw } from '../diagrams.js';
 import * as A from '../actions.js';
 import { card, pill, status } from './ui.js';
@@ -28,6 +28,17 @@ export function renderDiagrams(el) {
       tool('hexagon', 'Draw.io', drawio ? `Instance auto-hébergée : ${drawio}` : 'Nécessite le conteneur Draw.io et la variable DRAWIO_URL.',
         status(!!drawio, 'Configuré', 'Non configuré'), '/drawio', drawio && (() => openDrawio({ xml: '', svg: '' }, scratch('Draw.io')))))),
     card('Sécurité', null, h('p', { class: 'muted' }, 'Les dessins Excalidraw et Draw.io sont enregistrés en SVG et affichés comme images : aucun script ne peut s’exécuter dans la page. Les messages de Draw.io ne sont acceptés que depuis l’origine configurée.')));
+}
+
+export async function renderEmbeds(el) {
+  const cfgData = await A.attempt(() => api.get('/admin/settings'));
+  if (!cfgData) return;
+  el.replaceChildren(
+    card('Intégrer du contenu externe dans les pages', 'Par défaut, aucune page ne peut afficher le contenu d’un autre site.',
+      h('div', { class: 'notice warning' },
+        'Autoriser un hôte, c’est accepter que le navigateur de chaque lecteur le contacte pour afficher le contenu : ce site voit l’adresse IP des lecteurs et peut déposer ses propres cookies. Chaque lecteur doit cliquer pour afficher le contenu d’un hôte (le choix vaut pour l’hôte, jusqu’à la fermeture de l’onglet), dans un cadre isolé (bac à sable). N’autorisez que des sites de confiance, par exemple un hébergeur vidéo.'),
+      h('p', { class: 'hint' }, 'Les éditeurs ne peuvent intégrer que des adresses https sur ces hôtes ; une page qui renvoie vers un autre hôte l’affiche comme un lien.')),
+    embedHostsCard(cfgData, { card, refresh: () => renderEmbeds(el) }));
 }
 
 export async function renderEmbed(el) {

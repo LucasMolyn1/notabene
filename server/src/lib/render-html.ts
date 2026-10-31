@@ -36,6 +36,7 @@ export function renderHtml(doc: DocNode, titleOf: TitleOf, mentionName: MentionN
       case 'blockquote': return `<blockquote>${children(node)}</blockquote>`;
       case 'callout': return `<aside>${children(node)}</aside>`;
       case 'codeBlock': return `<pre><code>${text(node)}</code></pre>`;
+      case 'embed': return `<p><a href="${escapeHtml(String(a.url))}" rel="nofollow ugc noopener noreferrer">${escapeHtml(String(a.url))}</a></p>`;
       case 'math': return `<pre><code>${escapeHtml(String(a.code ?? ''))}</code></pre>`;
       case 'details': { const [summary, body] = node.content ?? []; return `<details><summary>${inline(summary?.content)}</summary>${(body?.content ?? []).map(block).join('')}</details>`; }
       case 'columns': return `<div>${(node.content ?? []).map((c) => `<div>${children(c)}</div>`).join('')}</div>`;

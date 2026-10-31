@@ -5,9 +5,10 @@ import { z } from 'zod';
 import type { Config } from '../config.js';
 import type { DB } from '../db.js';
 import type { SecretBox } from './crypto.js';
+import { normalizeEmbedHost, sameSiteAsSelf, selfHost } from './embed.js';
 
-export type SectionName = 'embed' | 'oidc' | 'ldap' | 'saml' | 'smtp';
-export const SECTION_NAMES: SectionName[] = ['embed', 'oidc', 'ldap', 'saml', 'smtp'];
+export type SectionName = 'embed' | 'embeds' | 'oidc' | 'ldap' | 'saml' | 'smtp';
+export const SECTION_NAMES: SectionName[] = ['embed', 'embeds', 'oidc', 'ldap', 'saml', 'smtp'];
 
 const list = z.array(z.string().trim().min(1).max(200)).max(50).default([]);
 const role = z.enum(['reader', 'none']).default('none');
@@ -48,6 +49,22 @@ const SPECS: Record<SectionName, SectionSpec> = {
     }),
     toEnv: (v) => ({ EMBED_ALLOWED_ORIGINS: arr(v.origins) }),
     fromEnv: (c) => ({ enabled: true, values: { origins: c.EMBED_ALLOWED_ORIGINS } }),
+  },
+
+  // Contenus intégrés (iframe) : liste d'hôtes autorisés, vide par défaut. Alimente la directive CSP `frame-src`.
+  embeds: {
+    secrets: [],
+    schema: (env) => z.object({
+      hosts: z.array(z.string().trim().max(253)).max(20).superRefine((all, ctx) => {
+        for (const raw of all) {
+          const host = normalizeEmbedHost(raw);
+          if (!host) ctx.addIssue({ code: 'custom', message: `hôte invalide : ${raw} (nom de domaine, sans https://, chemin, port ni joker)` });
+          else if (sameSiteAsSelf(host, selfHost(env.PUBLIC_URL))) ctx.addIssue({ code: 'custom', message: `${host} est du même site que Notabene (${selfHost(env.PUBLIC_URL)}) : il ne peut pas être intégré` });
+        }
+      }).transform((all) => [...new Set(all.map((h) => normalizeEmbedHost(h)!))]).default([]),
+    }),
+    toEnv: (v) => ({ CONTENT_EMBED_HOSTS: arr(v.hosts) }),
+    fromEnv: (c) => ({ enabled: c.CONTENT_EMBED_HOSTS.length > 0, values: { hosts: c.CONTENT_EMBED_HOSTS } }),
   },
 
   oidc: {
@@ -145,6 +162,7 @@ const SPECS: Record<SectionName, SectionSpec> = {
 // Clés d'environnement mises à undefined quand une section est désactivée.
 const DISABLE: Record<SectionName, Partial<Config>> = {
   embed: { EMBED_ALLOWED_ORIGINS: [] },
+  embeds: { CONTENT_EMBED_HOSTS: [] },
   oidc: { OIDC_ISSUER: undefined, OIDC_CLIENT_ID: undefined, OIDC_CLIENT_SECRET: undefined },
   ldap: { LDAP_URL: undefined },
   saml: { SAML_ENTRY_POINT: undefined },
