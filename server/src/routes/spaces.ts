@@ -6,6 +6,8 @@ import { guard, requireAuth, requireScope } from '../auth/context.js';
 import { readableSpaces, requireSpaceRole, type SpaceRow, spaceRoleOf, toSpace } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
 import { EVERYONE } from '../lib/space-access.js';
+import { reauthInput, requireReauth } from '../lib/reauth.js';
+import { createPersonalSpace, personalSpaceOf, personalSpacesEnabled } from '../lib/personal-spaces.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
 
 const fields = {
@@ -37,6 +39,7 @@ export default async function spaceRoutes(app: FastifyInstance) {
     const auth = requireAuth(req);
     if (auth.via === 'token' && !auth.scopes.has('admin')) throw new HttpError(403, 'Un jeton doit porter la portée admin pour gérer les membres');
     requireSpaceRole(db, req, id, 'full');
+    if ((db.prepare('SELECT kind FROM spaces WHERE id = ?').get(id) as { kind: string } | undefined)?.kind === 'personal') throw new HttpError(409, 'Un espace personnel n’a pas d’autres membres');
   };
 
   app.get('/spaces', { schema: { tags, summary: 'Lister les espaces visibles (avec votre rôle : view, edit ou full)' } }, async (req) =>
@@ -60,7 +63,10 @@ export default async function spaceRoutes(app: FastifyInstance) {
     schema: { tags, summary: 'Modifier un espace (gestionnaire ou administrateur ; la visibilité publique est réservée aux administrateurs)', params: idParams, body: patchBody },
   }, async (req) => {
     const { id } = req.params as { id: string };
-    manage(req, id);
+    const caller = requireAuth(req);
+    if (caller.via === 'token' && !caller.scopes.has('admin')) throw new HttpError(403, 'Un jeton doit porter la portée admin pour modifier un espace');
+    requireSpaceRole(db, req, id, 'full');
+    if ((req.body as { visibility?: string }).visibility !== undefined && (db.prepare('SELECT kind FROM spaces WHERE id = ?').get(id) as { kind: string } | undefined)?.kind === 'personal') throw new HttpError(409, 'Un espace personnel est toujours privé');
     if ((req.body as { visibility?: string }).visibility !== undefined && !isAdmin(req)) throw new HttpError(403, 'Seul un administrateur change la visibilité d’un espace');
     const current = db.prepare('SELECT * FROM spaces WHERE id = ?').get(id) as SpaceRow | undefined;
     if (!current) throw new HttpError(404, 'Espace introuvable');
@@ -72,14 +78,50 @@ export default async function spaceRoutes(app: FastifyInstance) {
     return { ...toSpace(next), role: spaceRoleOf(db, req, id) };
   });
 
+  // ---- Espace personnel -------------------------------------------------------------------
+  app.post('/spaces/personal', {
+    preHandler: guard('write'),
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    schema: { tags, summary: 'Créer mon espace personnel (si l’instance l’autorise) ; renvoie l’existant sinon' },
+  }, async (req, reply) => {
+    const auth = requireAuth(req);
+    const mine = personalSpaceOf(db, auth.user.id);
+    if (mine) return { ...toSpace(mine), role: spaceRoleOf(db, req, mine.id) };
+    if (!personalSpacesEnabled(db)) throw new HttpError(403, 'Les espaces personnels ne sont pas activés sur cette instance');
+    const id = createPersonalSpace(db, auth.user);
+    audit(db, req, 'space.personal.create', id);
+    app.bus.publish({ type: 'space.changed' });
+    return reply.status(201).send({ ...toSpace(db.prepare('SELECT * FROM spaces WHERE id = ?').get(id) as SpaceRow), role: spaceRoleOf(db, req, id) });
+  });
+
+  // Suppression sans corbeille : session web et mot de passe redemandé (un jeton, même de portée écriture, ne détruit pas un espace).
+  app.post('/spaces/personal/delete', {
+    preHandler: guard('write'),
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    schema: { tags, summary: 'Supprimer mon espace personnel et toutes ses pages (session et mot de passe)', body: z.object({ reauth: reauthInput }) },
+  }, async (req, reply) => {
+    const auth = requireAuth(req);
+    if (auth.via !== 'session') throw new HttpError(403, 'Réservé à la session web');
+    await requireReauth(app, req, (req.body as { reauth: z.output<typeof reauthInput> }).reauth, { strict: true });
+    const mine = personalSpaceOf(db, auth.user.id);
+    if (!mine) throw new HttpError(404, 'Vous n’avez pas d’espace personnel');
+    db.prepare('DELETE FROM spaces WHERE id = ?').run(mine.id);
+    audit(db, req, 'space.personal.delete', mine.id);
+    app.bus.publish({ type: 'space.changed' });
+    return reply.status(204).send();
+  });
+
   app.delete('/spaces/:id', {
     preHandler: guard('admin'),
     schema: { tags, summary: 'Supprimer un espace et toutes ses pages (admin)', params: idParams },
   }, async (req, reply) => {
     requireScope(req, 'admin');
     const { id } = req.params as { id: string };
-    const count = (db.prepare('SELECT COUNT(*) AS n FROM spaces').get() as { n: number }).n;
-    if (count <= 1) throw new HttpError(409, 'Impossible de supprimer le dernier espace');
+    // L'espace personnel d'un compte existant n'appartient qu'à lui (introuvable pour un administrateur) ; un orphelin se supprime ici.
+    const target = db.prepare('SELECT kind, owner_id FROM spaces WHERE id = ?').get(id) as { kind: string; owner_id: string | null } | undefined;
+    if (target?.kind === 'personal' && target.owner_id) throw new HttpError(404, 'Espace introuvable');
+    const count = (db.prepare("SELECT COUNT(*) AS n FROM spaces WHERE kind = 'shared'").get() as { n: number }).n;
+    if (count <= 1 && target?.kind !== 'personal') throw new HttpError(409, 'Impossible de supprimer le dernier espace');
     if (db.prepare('DELETE FROM spaces WHERE id = ?').run(id).changes === 0) throw new HttpError(404, 'Espace introuvable');
     audit(db, req, 'space.delete', id);
     app.bus.publish({ type: 'space.changed' });

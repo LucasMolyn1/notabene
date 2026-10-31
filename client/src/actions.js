@@ -4,6 +4,7 @@ import { icon } from './icons.js';
 import { request } from './api.js';
 import { store } from './store.js';
 import { session } from './session.js';
+import { askReauth } from './provider-settings.js';
 import { prefs, savePrefs, setTheme, currentTheme, app } from './prefs.js';
 import { canonicalPath, pagePathById, parseRoute } from './urls.js';
 import { toast, openModal, confirmModal, pageIcon } from './ui.js';
@@ -314,7 +315,7 @@ export function spaceForm(space = null) {
     h('option', { value: 'public' }, 'Public : lisible sans connexion (portfolio)'));
   visibility.value = space?.visibility || 'private';
   // Seul un administrateur change la visibilité publique ; un gestionnaire d'espace règle le nom, l'icône et la description.
-  const isAdmin = session.can('admin');
+  const isAdmin = session.can('admin') && space?.kind !== 'personal'; // un espace personnel est toujours privé
   const access = h('select', { class: 'input', 'aria-label': 'Qui y a accès au départ' },
     h('option', { value: 'admins' }, 'Les administrateurs seulement (j’ajoute ensuite des membres)'),
     h('option', { value: 'everyone' }, 'Tout le monde, en édition'));
@@ -342,8 +343,32 @@ export function spaceForm(space = null) {
   setTimeout(() => name.focus(), 30);
 }
 
+export async function createPersonalSpace() {
+  const id = await attempt(() => store.createPersonalSpace());
+  if (!id) return;
+  prefs.space = id;
+  savePrefs();
+  go(`/s/${id}`);
+}
+
+export async function deletePersonalSpace(space) {
+  const n = store.pagesIn(space.id).length;
+  const ok = await confirmModal({
+    title: 'Supprimer mon espace personnel ?',
+    message: `L’espace et ses ${n} page${n > 1 ? 's' : ''} seront supprimés définitivement, sans corbeille. Copiez d’abord ce que vous voulez garder dans un autre espace.`,
+    confirm: 'Supprimer mon espace',
+    danger: true,
+  });
+  if (!ok) return;
+  const reauth = await askReauth('supprimer définitivement mon espace personnel', { strict: true });
+  if (!reauth || !(await attempt(() => store.deletePersonalSpace(reauth).then(() => true)))) return;
+  prefs.space = store.spaces[0]?.id;
+  savePrefs();
+  go(prefs.space ? `/s/${prefs.space}` : '/');
+}
+
 export async function deleteSpace(space) {
-  if (store.spaces.length <= 1) { toast('Il faut garder au moins un espace.'); return; }
+  if (store.spaces.filter((s) => s.kind !== 'personal').length <= 1) { toast('Il faut garder au moins un espace.'); return; }
   const n = store.pagesIn(space.id).length;
   const ok = await confirmModal({
     title: `Supprimer « ${space.name} » ?`,

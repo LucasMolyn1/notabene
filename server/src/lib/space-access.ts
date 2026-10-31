@@ -4,7 +4,7 @@
 //  - le droit d'une personne sur un espace est le PLUS ÉLEVÉ de tous ses chemins : son adhésion directe, celle de ses groupes
 //    et celle du groupe `everyone` (tous les comptes) ;
 //  - le rôle global reste un plafond : un lecteur n'a jamais plus que `view`, quel que soit le rôle de l'espace ;
-//  - un administrateur a `full` partout ; un espace public se lit sans adhésion (visiteurs anonymes compris) ;
+//  - un administrateur a `full` partout, sauf dans l'espace personnel d'un autre compte (réservé à son propriétaire) ; un espace public se lit sans adhésion (visiteurs anonymes compris) ;
 //  - sans adhésion, sur un espace privé : aucun accès.
 // La permission de page (page-acl.ts) ne fait que restreindre ce niveau, jamais l'élargir.
 import type { Auth } from '../auth/context.js';
@@ -33,8 +33,14 @@ const MEMBERSHIPS = `
  * sont pas regardées ici : c'est le rôle de la route (guard) ; seul le rôle global plafonne.
  */
 export function spaceRoles(db: DB, auth: Auth | null): Map<string, SpaceRole> {
-  const spaces = db.prepare('SELECT id, visibility FROM spaces').all() as { id: string; visibility: 'private' | 'public' }[];
+  const all = db.prepare('SELECT id, visibility, kind, owner_id FROM spaces').all() as { id: string; visibility: 'private' | 'public'; kind: 'shared' | 'personal'; owner_id: string | null }[];
   const roles = new Map<string, SpaceRole>();
+  // Un espace personnel n'appartient qu'à son propriétaire : aucune adhésion, aucun rôle global (administrateur compris) ne l'ouvre.
+  const personal = all.filter((s) => s.kind === 'personal');
+  const spaces = all.filter((s) => s.kind !== 'personal');
+  if (auth) {
+    for (const s of personal) if (s.owner_id === auth.user.id) roles.set(s.id, auth.user.role === 'reader' ? 'view' : 'full');
+  }
   if (!auth) {
     for (const s of spaces) if (s.visibility === 'public') roles.set(s.id, 'view');
     return roles;

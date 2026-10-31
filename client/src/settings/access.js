@@ -10,7 +10,7 @@ import { askReauth, providerCard } from '../provider-settings.js';
 import * as A from '../actions.js';
 import { REPO_URL } from './account.js';
 import { openSpaceMembers } from '../space-members.js';
-import { card, copyable, kv, loadingEl, pill, status } from './ui.js';
+import { card, copyable, kv, loadingEl, pill, status, toggle } from './ui.js';
 
 export const ROLE_LABELS = { admin: 'Administrateur', editor: 'Éditeur', reader: 'Lecteur' };
 
@@ -26,12 +26,45 @@ export function renderSpaces(el) {
       h('span', { class: 'space-ico' }, icon(s.icon || 'folder', 18)),
       h('span', { class: 'grow' }, h('strong', null, s.name), h('small', null, `${store.pagesIn(s.id).length} pages · ${s.description || 'Sans description'}`)),
       s.visibility === 'public' ? pill('Public', 'ok') : pill('Privé', 'off'),
-      h('button', { class: 'icon-btn', title: 'Membres', 'aria-label': `Membres de ${s.name}`, onClick: () => openSpaceMembers(s) }, icon('users')),
+      s.kind !== 'personal' && h('button', { class: 'icon-btn', title: 'Membres', 'aria-label': `Membres de ${s.name}`, onClick: () => openSpaceMembers(s) }, icon('users')),
       h('button', { class: 'icon-btn', title: 'Modifier', 'aria-label': `Modifier ${s.name}`, onClick: () => A.spaceForm(s) }, icon('edit')),
-      admin && store.spaces.length > 1 && h('button', { class: 'icon-btn danger', title: 'Supprimer', 'aria-label': `Supprimer ${s.name}`, onClick: () => A.deleteSpace(s) }, icon('trash'))))),
+      admin && s.kind !== 'personal' && store.spaces.filter((x) => x.kind !== 'personal').length > 1 && h('button', { class: 'icon-btn danger', title: 'Supprimer', 'aria-label': `Supprimer ${s.name}`, onClick: () => A.deleteSpace(s) }, icon('trash'))))),
     admin && h('button', { class: 'btn btn-primary btn-sm', onClick: () => A.spaceForm() }, icon('plus', 15), 'Nouvel espace')),
+    admin && personalSpacesCard(),
     admin && card('Corbeille', 'Les pages supprimées restent restaurables jusqu’à leur suppression définitive.',
       h('button', { class: 'btn btn-ghost btn-sm', onClick: A.openTrash }, icon('trash', 14), 'Ouvrir la corbeille'))].filter(Boolean));
+}
+
+// Espaces personnels : réglage d'instance et espaces sans propriétaire. Les administrateurs ne voient jamais leur contenu.
+function personalSpacesCard() {
+  const box = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Chargement…'));
+  const paint = async () => {
+    try {
+      const data = await api.get('/admin/personal-spaces');
+      box.replaceChildren(...[
+        toggle('Autoriser les espaces personnels', 'Chaque personne qui peut écrire peut créer un espace à elle. Désactiver n’empêche que d’en créer de nouveaux : ceux qui existent restent à leurs propriétaires.', data.enabled, async (value) => {
+          try { await api.put('/admin/personal-spaces', { enabled: value }); toast(value ? 'Espaces personnels autorisés' : 'Création d’espaces personnels désactivée'); } catch (err) { toast(err.message, { kind: 'error' }); paint(); }
+        }),
+        h('p', { class: 'hint' }, `${data.count} espace${data.count > 1 ? 's' : ''} personnel${data.count > 1 ? 's' : ''}. Personne d’autre que le propriétaire n’y a accès, administrateurs compris.`),
+        data.orphans.length > 0 && h('div', { class: 'stack' },
+          h('strong', null, 'Espaces sans propriétaire'),
+          h('p', { class: 'muted' }, 'Le compte a été supprimé. Ces espaces restent invisibles de tous. Reprendre un espace le rend visible des administrateurs comme un espace partagé (action journalisée) ; le supprimer efface ses pages.'),
+          h('div', { class: 'table' }, data.orphans.map((o) => h('div', { class: 'table-row' },
+            h('span', { class: 'grow' }, h('strong', null, o.name), h('small', null, `${o.pages} page${o.pages > 1 ? 's' : ''}`)),
+            h('button', { class: 'btn btn-ghost btn-sm', 'aria-label': `Reprendre ${o.name}`, onClick: async () => {
+              const reauth = await askReauth('reprendre un espace personnel dont le compte a été supprimé', { strict: true });
+              if (!reauth) return;
+              if (await A.attempt(() => api.post(`/admin/personal-spaces/${o.id}/recover`, { reauth }).then(() => true))) { toast('Espace repris'); await store.load(); paint(); }
+            } }, 'Reprendre'),
+            h('button', { class: 'btn btn-ghost btn-sm danger', 'aria-label': `Supprimer ${o.name}`, onClick: async () => {
+              if (!(await confirmModal({ title: 'Supprimer cet espace ?', message: `« ${o.name} » et ses ${o.pages} page${o.pages > 1 ? 's' : ''} seront supprimés définitivement.`, confirm: 'Supprimer', danger: true }))) return;
+              if (await A.attempt(() => api.del(`/spaces/${o.id}`).then(() => true))) { toast('Espace supprimé'); paint(); }
+            } }, 'Supprimer'))))),
+      ].filter(Boolean));
+    } catch (err) { box.textContent = err.message; }
+  };
+  paint();
+  return card('Espaces personnels', 'Un espace par compte, réservé à son propriétaire.', box);
 }
 
 export async function renderAuth(el) {

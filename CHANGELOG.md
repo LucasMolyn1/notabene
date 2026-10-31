@@ -12,6 +12,8 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 - Un nouvel espace n'est ouvert qu'aux administrateurs (option « Tout le monde, en édition » à la création). Le groupe système « Tout le monde » est un groupe de tous les comptes.
 - L'export des données personnelles inclut les groupes et les rôles d'espace.
 
+- **Espaces personnels** : un espace par compte, créé à la demande (menu des espaces), lisible de son seul propriétaire, administrateurs compris. Réglage d'instance dans Paramètres, Espaces (désactivé par défaut). Les espaces dont le compte a été supprimé se reprennent ou se suppriment depuis le même écran. Migration v15.
+
 ### Attention à la mise à jour
 - Migration v14 : le groupe « Tout le monde » reçoit le droit d'édition sur chaque espace existant, donc aucun accès ne change. Pour fermer un espace, retirez ce groupe de ses membres (Paramètres, Espaces, Membres).
 

@@ -6,6 +6,7 @@ import { type Auth, can, requireAuth } from '../auth/context.js';
 import { aiProviderLabel, isAiReady } from '../ai/settings.js';
 import { canReadPage, filterReadable, hasAnyAcl } from '../lib/page-acl.js';
 import { spaceRoles } from '../lib/space-access.js';
+import { personalSpacesEnabled } from '../lib/personal-spaces.js';
 import type { AppEvent } from '../lib/events.js';
 import { idSchema } from '../lib/http.js';
 import { reauthUntil } from '../lib/reauth.js';
@@ -24,6 +25,7 @@ export default async function coreRoutes(app: FastifyInstance) {
     embedHosts: effectiveEmbedHosts(app.rt.get().CONTENT_EMBED_HOSTS, config.PUBLIC_URL),
     collab: config.COLLAB_ENABLED,
     ai: isAiReady(db),
+    personalSpaces: personalSpacesEnabled(db),
   }));
 
   app.get('/me', { schema: { tags: ['session'], summary: 'Utilisateur courant et permissions' } }, async (req) => {

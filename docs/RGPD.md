@@ -7,7 +7,7 @@ Ce document aide la personne ou l'organisation qui **déploie** Notabene à resp
 | Catégorie | Contenu | Où |
 |---|---|---|
 | Compte | nom, adresse e-mail, rôle, date de création et de dernière connexion ; pour un compte local : hash du mot de passe, secret TOTP chiffré | base SQLite |
-| Contenu | pages, versions, commentaires (et personnes mentionnées), libellés, modèles, favoris, suivis, permissions, appartenance aux groupes et aux espaces (y compris celle recopiée du fournisseur d'identité à chaque connexion) ; l'auteur est rattaché par identifiant | base SQLite |
+| Contenu | pages, versions, commentaires (et personnes mentionnées), libellés, modèles, favoris, suivis, permissions, appartenance aux groupes et aux espaces (y compris celle recopiée du fournisseur d'identité à chaque connexion), espace personnel (lisible de son seul propriétaire) ; l'auteur est rattaché par identifiant | base SQLite |
 | Photo de profil (facultative) | une image réduite à 256 px, envoyée par la personne elle-même ; visible des personnes connectées ; métadonnées retirées par le navigateur ; supprimée avec le compte, ou par la personne, ou par un administrateur | base SQLite |
 | Sessions et jetons | hash de l'identifiant de session, hash des jetons d'API, dates | base SQLite |
 | Journal d'audit | action, date, identifiant de l'utilisateur, **adresse IP** | base SQLite |
@@ -50,6 +50,7 @@ La suppression est une **anonymisation** : le compte et ce qui lui est propre di
 - Le texte d'un commentaire peut contenir des données personnelles écrites par la personne ; un administrateur peut le supprimer à part si la demande le justifie.
 - **Sauvegardes** : une personne effacée reste présente dans les sauvegardes existantes jusqu'à leur rotation (`BACKUP_KEEP`, 14 par défaut). Indiquez ce délai dans votre politique ; en cas de restauration, rejouez les effacements demandés depuis la sauvegarde.
 
+- **Espace personnel** : l'effacement du compte ne supprime pas son espace personnel, qui devient orphelin (invisible de tous). Un administrateur doit ensuite le **supprimer** (Paramètres, Espaces, Espaces personnels) ou le **reprendre** s'il contient des documents à conserver. Sans cette étape, des données personnelles subsistent dans la base.
 ## Destinataires et sous-traitants possibles
 
 - **Fournisseur d'identité** (Authentik, annuaire LDAP, SAML) : il fournit nom, e-mail et groupes.

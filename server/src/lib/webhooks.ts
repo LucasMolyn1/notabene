@@ -64,6 +64,9 @@ export async function deliver(db: DB, box: SecretBox, allowPrivate: boolean, hoo
 export function startWebhooks(db: DB, bus: EventBus, box: SecretBox, allowPrivate: boolean) {
   return bus.subscribe((e: AppEvent) => {
     if (e.type === 'presence') return;
+    // Rien d'un espace personnel ne sort vers un service externe.
+    const spaceId = e.spaceId ?? (e.pageId ? (db.prepare('SELECT space_id FROM pages WHERE id = ?').get(e.pageId) as { space_id: string } | undefined)?.space_id : undefined);
+    if (spaceId && db.prepare("SELECT 1 FROM spaces WHERE id = ? AND kind = 'personal'").get(spaceId)) return;
     const hooks = db.prepare('SELECT id, url, secret, events, failures FROM webhooks WHERE enabled = 1').all() as Row[];
     const payload = { pageId: e.pageId, spaceId: e.spaceId, version: e.version, by: e.by };
     for (const hook of hooks) {

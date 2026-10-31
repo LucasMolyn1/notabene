@@ -168,6 +168,19 @@ export const store = {
     emit({ type: 'space', id });
   },
 
+  /** Mon espace personnel (créé s'il n'existe pas et si l'instance l'autorise). */
+  async createPersonalSpace() {
+    const space = await api.post('/spaces/personal');
+    if (!state.spaces.some((s) => s.id === space.id)) state.spaces.push(space);
+    emit({ type: 'space', id: space.id });
+    return space.id;
+  },
+  async deletePersonalSpace(reauth) {
+    await api.post('/spaces/personal/delete', { reauth });
+    await store.load();
+  },
+  personalSpace: (userId) => state.spaces.find((s) => s.kind === 'personal' && s.ownerId === userId) || null,
+
   async deleteSpace(id) {
     await api.del(`/spaces/${id}`);
     await store.load();
