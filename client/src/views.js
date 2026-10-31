@@ -249,6 +249,7 @@ function mountPage(page) {
       },
       pickPage: (cb) => openPalette({ mode: 'pick', onPick: cb, exclude: id }),
       pageId: id,
+      spaceId: page.spaceId,
       onComment: canWrite && !app.embed ? (selection) => openComments(id, { getEditor: () => editor, anchor: selection }) : null,
       onAssist: canWrite && session.permissions.ai && !app.embed ? (selection) => openAssistant(editor, { pageId: id, selection }) : null,
       onAnchorClick: (commentId) => openComments(id, { getEditor: () => editor, focus: commentId }),

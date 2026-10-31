@@ -43,6 +43,7 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
       case 'callout': return quote(`[!${ALERT[String(a.type)] ?? 'NOTE'}]\n${blocks(node.content)}`);
       case 'codeBlock': return `\`\`\`${a.language ?? ''}\n${(node.content ?? []).map((t) => t.text).join('')}\n\`\`\``;
       case 'plantuml': return `\`\`\`plantuml\n${a.code ?? ''}\n\`\`\``;
+      case 'baseBlock': { const t = titleOf(String(a.id)); return t === null ? '' : `[${t.replace(/([\\*_`~[\]])/g, '\\$1')}](/p/${String(a.id)})`; }
       case 'embed': return `[${String(a.url).replace(/([\\*_`~[\]])/g, '\\$1')}](${mdUrl(String(a.url))})`;
       case 'mermaid': return `\`\`\`mermaid\n${a.code ?? ''}\n\`\`\``;
       case 'math': return `$$\n${String(a.code ?? '').replace(/\$\$/g, '$ $')}\n$$`;

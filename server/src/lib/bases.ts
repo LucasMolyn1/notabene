@@ -45,7 +45,11 @@ export interface Option { id: string; name: string; color: typeof OPTION_COLORS[
 
 // Vue : tri, filtres, colonnes masquées. Rien d'exécutable : des identifiants de colonnes, des opérateurs d'une liste fermée.
 export const FILTER_OPS = ['contains', 'eq', 'neq', 'gt', 'lt', 'empty', 'notempty'] as const;
+export const VIEW_TYPES = ['table', 'kanban'] as const;
 export const viewConfigSchema = z.object({
+  // `kanban` : les lignes sont des cartes rangées en colonnes selon la valeur d'une colonne Sélection ou Statut (`groupBy`).
+  type: z.enum(VIEW_TYPES).default('table'),
+  groupBy: z.string().max(40).optional(),
   sort: z.array(z.object({ propertyId: z.string().max(40), dir: z.enum(['asc', 'desc']) })).max(3).default([]),
   filters: z.array(z.object({
     propertyId: z.string().max(40),
@@ -189,7 +193,10 @@ export function removeProperty(db: DB, baseId: string, id: string): void {
     // Les vues ne gardent aucune référence à une colonne qui n'existe plus.
     for (const v of viewsOf(db, baseId)) {
       const c = v.config;
-      const next: ViewConfig = { sort: c.sort.filter((s) => s.propertyId !== id), filters: c.filters.filter((f) => f.propertyId !== id), hidden: c.hidden.filter((h) => h !== id) };
+      // Un Kanban dont la colonne de rangement disparaît redevient un tableau.
+      const lost = c.groupBy === id;
+      // Clés dans l'ordre du schéma : la comparaison ci-dessous ne réécrit que les vues qui changent vraiment.
+      const next: ViewConfig = { type: lost ? 'table' : c.type, ...(!lost && c.groupBy ? { groupBy: c.groupBy } : {}), sort: c.sort.filter((s) => s.propertyId !== id), filters: c.filters.filter((f) => f.propertyId !== id), hidden: c.hidden.filter((h) => h !== id) };
       if (JSON.stringify(next) !== JSON.stringify(c)) db.prepare('UPDATE base_views SET config = ? WHERE id = ?').run(JSON.stringify(next), v.id);
     }
   })();
@@ -399,9 +406,14 @@ export const viewsOf = (db: DB, baseId: string) =>
 
 /** Une vue ne cite que des colonnes de la base. */
 export function checkViewConfig(db: DB, baseId: string, config: ViewConfig): ViewConfig {
-  const ids = new Set(propertiesOf(db, baseId).map((p) => p.id));
-  const all = [...config.sort.map((s) => s.propertyId), ...config.filters.map((f) => f.propertyId), ...config.hidden];
+  const props = propertiesOf(db, baseId);
+  const ids = new Set(props.map((p) => p.id));
+  const all = [...config.sort.map((s) => s.propertyId), ...config.filters.map((f) => f.propertyId), ...config.hidden, ...(config.groupBy ? [config.groupBy] : [])];
   if (all.some((id) => !ids.has(id))) throw new HttpError(400, 'La vue cite une colonne inconnue');
+  if (config.type === 'kanban') {
+    const group = props.find((p) => p.id === config.groupBy);
+    if (!group || (group.type !== 'select' && group.type !== 'status')) throw new HttpError(400, 'Un Kanban se range selon une colonne Sélection ou Statut');
+  } else if (config.groupBy !== undefined) throw new HttpError(400, 'Seule une vue Kanban se range par colonne');
   return config;
 }
 
@@ -450,10 +462,13 @@ export function copyBaseData(db: DB, srcId: string, dstId: string, userId: strin
     for (const v of viewsOf(db, srcId)) {
       const c = v.config;
       const next: ViewConfig = {
+        type: c.type,
+        ...(c.groupBy && map.has(c.groupBy) ? { groupBy: map.get(c.groupBy)! } : {}),
         sort: c.sort.filter((s) => map.has(s.propertyId)).map((s) => ({ ...s, propertyId: map.get(s.propertyId)! })),
         filters: c.filters.filter((f) => map.has(f.propertyId)).map((f) => ({ ...f, propertyId: map.get(f.propertyId)! })),
         hidden: c.hidden.filter((h) => map.has(h)).map((h) => map.get(h)!),
       };
+      if (next.type === 'kanban' && !next.groupBy) next.type = 'table';
       insView.run(newId(), dstId, v.name, JSON.stringify(next), v.position, now);
     }
     reindexBase(db, dstId);

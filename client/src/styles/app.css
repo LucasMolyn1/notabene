@@ -1166,4 +1166,30 @@ tr:hover .bt-row-actions, .bt-row-actions:focus-within { opacity: 1; }
 .bt-formula-help { font-size: 12.5px; margin: 6px 0 0; }
 .bt-t-formula { color: var(--text-2); font-style: normal; background: var(--bg-soft); }
 .bt-cell.bt-t-formula { padding: 4px 10px; }
+
+/* Kanban */
+.bt-board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
+.bt-lane { flex: 0 0 272px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; display: grid; gap: 8px; max-height: calc(100vh - 280px); grid-template-rows: auto minmax(0, 1fr) auto; }
+.bt-lane.over { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.bt-lane-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px; }
+.bt-lane-head .muted { margin-left: auto; }
+.bt-lane-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; overflow-y: auto; align-content: start; min-height: 24px; }
+.bt-card { position: relative; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px 34px 8px 10px; display: grid; gap: 4px; box-shadow: var(--shadow-sm); }
+.bt-card[draggable='true'] { cursor: grab; }
+.bt-card.dragging { opacity: 0.5; }
+.bt-card-title { font-weight: 600; overflow-wrap: anywhere; }
+.bt-card-name { text-align: left; color: var(--text); border-radius: 4px; padding: 0; }
+.bt-card-name:hover { background: var(--hover); }
+.bt-card-name:focus-visible, .bt-card-menu:focus-visible { outline: 2px solid var(--accent); }
+.bt-card-field { font-size: 13px; overflow-wrap: anywhere; }
+.bt-card-menu { position: absolute; top: 4px; right: 4px; }
+.bt-lane-add { justify-content: flex-start; }
+.bt-group { width: auto; min-width: 150px; height: 30px; }
+@media (max-width: 640px) { .bt-lane { flex-basis: 84vw; } }
+
+/* Bloc base dans une page */
+.base-block { margin: 12px 0; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; background: var(--bg); }
+.base-block .bt-mini { margin: 0; border: 0; border-radius: 0; max-height: 360px; }
+.base-block .bt-lane { flex-basis: 220px; max-height: 320px; }
+.base-block .bt-board { padding: 8px; }
 .field > label { font-size: 12.5px; font-weight: 500; color: var(--text-2); }

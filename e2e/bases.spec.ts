@@ -3,6 +3,13 @@ import { expect, test } from '@playwright/test';
 import { ADMIN } from './accounts';
 import { adminContext, api, createLocalUser, loginUi, PASSWORD, sessionContext } from './helpers';
 
+async function csrfOf(ctx: import('@playwright/test').BrowserContext) {
+  return ((await (await ctx.request.get('/api/v3/me')).json()) as { csrf: string }).csrf;
+}
+async function adminId(ctx: import('@playwright/test').BrowserContext) {
+  return ((await (await ctx.request.get('/api/v3/me')).json()) as { user?: { id: string }; id?: string }).user?.id ?? ((await (await ctx.request.get('/api/v3/me')).json()) as { id: string }).id;
+}
+
 async function newBaseVia(browser: import('@playwright/test').Browser, title: string) {
   const admin = await adminContext(browser);
   const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
@@ -172,6 +179,93 @@ test('une colonne calculée se crée depuis l’interface, se met à jour et ne 
   await expect(row.getByRole('cell', { name: '20' })).toBeVisible();
 });
 
+test('Kanban : cartes par statut, déplacement par glisser-déposer et au clavier, nouvelle carte', async ({ page, browser }) => {
+  const base = await newBaseVia(browser, 'Kanban e2e');
+  const admin = await adminContext(browser);
+  const status = await (await api(admin.request, 'POST', `/bases/${base.page.id}/properties`, { name: 'Avancement', type: 'status' })).json() as { id: string; options: { id: string; name: string }[] };
+  for (const [nom, o] of [['Carte A', 0], ['Carte B', 1], ['Carte C', 0]] as const) {
+    await api(admin.request, 'POST', `/bases/${base.page.id}/rows`, { values: { [base.properties[0]!.id]: nom, [status.id]: status.options[o]!.id } });
+  }
+  const views = (await (await api(admin.request, 'GET', `/bases/${base.page.id}`)).json()) as { views: { id: string }[] };
+  await api(admin.request, 'PATCH', `/bases/${base.page.id}/views/${views.views[0]!.id}`, { config: { type: 'kanban', groupBy: status.id, sort: [], filters: [], hidden: [] } });
+  await admin.close();
+
+  // Fenêtre large : toutes les colonnes visibles, sinon le défilement du tableau pendant le geste décale la carte saisie.
+  await page.setViewportSize({ width: 1700, height: 900 });
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto(`/p/${base.page.id}`);
+  const lane = (name: string) => page.locator('section.bt-lane').filter({ has: page.getByText(name, { exact: true }) });
+  await expect(lane('À faire').getByText('Carte A')).toBeVisible();
+  await expect(lane('En cours').getByText('Carte B')).toBeVisible();
+
+  // Glisser-déposer.
+  await lane('À faire').getByText('Carte A').dragTo(lane('Terminé'));
+  await expect(lane('Terminé').getByText('Carte A')).toBeVisible();
+
+  // Alternative au clavier : le menu de la carte.
+  await lane('En cours').getByRole('button', { name: /Actions de la carte Carte B/ }).focus();
+  await page.keyboard.press('Enter');
+  await page.getByRole('menuitem', { name: 'Terminé' }).press('Enter');
+  await expect(lane('Terminé').getByText('Carte B')).toBeVisible();
+  // Le focus suit la carte déplacée et le déplacement est annoncé.
+  await expect(lane('Terminé').locator('li.bt-card', { hasText: 'Carte B' }).getByRole('button', { name: /modifier le titre/ })).toBeFocused();
+  await expect(page.getByRole('status')).toContainText('Carte « Carte B » déplacée vers Terminé');
+
+  // Modifier le titre d'une carte : le champ se laisse cliquer et saisir.
+  await lane('Terminé').getByRole('button', { name: 'Carte A (modifier le titre)' }).click();
+  const field = page.getByRole('textbox', { name: /Nom/ });
+  await field.click();
+  await field.fill('Carte A renommée');
+  await page.keyboard.press('Enter');
+  await expect(lane('Terminé').getByText('Carte A renommée')).toBeVisible();
+
+  // Un texte glissé depuis ailleurs n'est pas pris pour une carte.
+  await page.evaluate(() => {
+    const target = document.querySelector('section.bt-lane[data-lane=""]') ?? document.querySelector('section.bt-lane');
+    const dt = new DataTransfer();
+    dt.setData('text/plain', 'identifiant-de-ligne-forge');
+    target!.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  });
+  await expect(lane('Terminé').locator('li.bt-card')).toHaveCount(2);
+
+  // Nouvelle carte dans une colonne.
+  await lane('En cours').getByRole('button', { name: /Nouvelle carte/ }).click();
+  await expect(lane('En cours').locator('li.bt-card')).toHaveCount(1);
+
+  // Persistant après rechargement.
+  await page.reload();
+  await expect(lane('Terminé').getByText('Carte A')).toBeVisible();
+  await expect(lane('Terminé').getByText('Carte B')).toBeVisible();
+});
+
+test('un bloc affiche une base dans une page, avec les droits du lecteur', async ({ page, browser }) => {
+  const base = await newBaseVia(browser, 'Base du bloc e2e');
+  const admin = await adminContext(browser);
+  await api(admin.request, 'POST', `/bases/${base.page.id}/rows`, { values: { [base.properties[0]!.id]: 'Ligne du bloc' } });
+  const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+  const host = await (await api(admin.request, 'POST', '/pages', { spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: 'Page hôte du bloc' })).json() as { id: string; version: number };
+  const put = await admin.request.patch(`/api/v3/pages/${host.id}`, { data: { content: { type: 'doc', content: [{ type: 'baseBlock', attrs: { id: base.page.id } }, { type: 'paragraph' }] } }, headers: { 'If-Match': `"${host.version}"`, 'X-CSRF-Token': await csrfOf(admin) } });
+  expect(put.status()).toBe(200);
+  // Restreint la base à l'administrateur : une autre personne ne voit qu'un bloc neutre.
+  await createLocalUser(admin.request, 'bloc.other@e2e.test', 'Autre bloc', 'editor');
+  await api(admin.request, 'PUT', `/pages/${base.page.id}/permissions`, { entries: [{ userId: (await adminId(admin)), level: 'write' }] });
+  await admin.close();
+
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto(`/p/${host.id}`);
+  await expect(page.getByRole('table', { name: /Aperçu de la base/ })).toBeVisible();
+  await expect(page.getByText('Ligne du bloc')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Ouvrir la base' })).toBeVisible();
+
+  const ctx = await sessionContext(browser, 'bloc.other@e2e.test', PASSWORD);
+  const other = await ctx.newPage();
+  await other.goto(`/p/${host.id}`);
+  await expect(other.getByText('Base introuvable, ou vous n’y avez pas accès.')).toBeVisible();
+  await expect(other.getByText('Ligne du bloc')).toHaveCount(0);
+  await expect(other.getByText('Base du bloc e2e')).toHaveCount(0);
+  await ctx.close();
+});
+
 test('un lecteur voit la base sans pouvoir la modifier', async ({ browser }) => {
   const base = await newBaseVia(browser, 'Base lecture seule e2e');
   const admin = await adminContext(browser);
@@ -230,6 +324,37 @@ for (const scheme of ['light', 'dark'] as const) {
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Ajouter une colonne' }).click();
     await scan('nouvelle colonne');
+    expect(found).toEqual([]);
+    await ctx.close();
+  });
+}
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`accessibilité du Kanban et du bloc base, thème ${scheme}`, async ({ browser }) => {
+    const base = await newBaseVia(browser, `Kanban a11y ${scheme}`);
+    const admin = await adminContext(browser);
+    const status = await (await api(admin.request, 'POST', `/bases/${base.page.id}/properties`, { name: 'Statut', type: 'status' })).json() as { id: string; options: { id: string }[] };
+    for (const [i, o] of status.options.entries()) await api(admin.request, 'POST', `/bases/${base.page.id}/rows`, { values: { [base.properties[0]!.id]: `Carte ${i}`, [status.id]: o.id } });
+    const detail = (await (await api(admin.request, 'GET', `/bases/${base.page.id}`)).json()) as { views: { id: string }[] };
+    await api(admin.request, 'PATCH', `/bases/${base.page.id}/views/${detail.views[0]!.id}`, { config: { type: 'kanban', groupBy: status.id, sort: [], filters: [], hidden: [] } });
+    const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+    const host = await (await api(admin.request, 'POST', '/pages', { spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: `Hôte a11y ${scheme}` })).json() as { id: string; version: number };
+    await admin.request.patch(`/api/v3/pages/${host.id}`, { data: { content: { type: 'doc', content: [{ type: 'baseBlock', attrs: { id: base.page.id, view: detail.views[0]!.id } }, { type: 'paragraph' }] } }, headers: { 'If-Match': `"${host.version}"`, 'X-CSRF-Token': await csrfOf(admin) } });
+    await admin.close();
+    const ctx = await browser.newContext({ colorScheme: scheme, reducedMotion: 'reduce' });
+    const page = await ctx.newPage();
+    await loginUi(page, ADMIN.email, ADMIN.password);
+    const found: string[] = [];
+    const scan = async (label: string) => {
+      const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+      found.push(...r.violations.map((v) => `${label} | ${v.id} | ${v.nodes.slice(0, 2).map((n) => n.target.join(' ')).join(' ; ')}`));
+    };
+    await page.goto(`/p/${base.page.id}`);
+    await expect(page.locator('li.bt-card')).toHaveCount(3);
+    await scan('kanban');
+    await page.goto(`/p/${host.id}`);
+    await expect(page.locator('.base-block li.bt-card').first()).toBeVisible();
+    await scan('bloc base');
     expect(found).toEqual([]);
     await ctx.close();
   });

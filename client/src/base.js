@@ -7,11 +7,13 @@ import { store } from './store.js';
 import { session } from './session.js';
 import { pagePath } from './urls.js';
 import { closePopover, confirmModal, openMenu, openModal, openPopover, pageIcon, toast } from './ui.js';
+import { applyView, fmtDate, textOf } from './base-model.js';
 import { crumbsFor, setView, topbar } from './views.js';
 import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
 const PAGE_SIZE = 300;
+const CARD_TYPE = 'application/x-notabene-card';
 
 export const TYPE_LABELS = {
   text: 'Texte', number: 'Nombre', date: 'Date', select: 'Sélection', multi_select: 'Multi-sélection',
@@ -31,8 +33,6 @@ const OPERATORS = {
 const opKind = (t) => ({ text: 'text', number: 'number', date: 'date', select: 'option', status: 'option', multi_select: 'multi', checkbox: 'checkbox', person: 'link', page_link: 'link', formula: 'formula' }[t]);
 // replaceChildren transforme null, false et les tableaux en texte : on aplatit et on écarte avant.
 const put = (el, ...parts) => el.replaceChildren(...parts.flat(Infinity).filter(Boolean));
-const fold = (s) => String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('fr');
-const fmtDate = (s) => { const d = new Date(`${s}T00:00:00`); return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString('fr-FR'); };
 
 export async function showBase(initial) {
   const id = initial.id;
@@ -40,6 +40,7 @@ export async function showBase(initial) {
   let activeView = null;
   let shown = PAGE_SIZE;
   let editing = false;
+  const laneShown = new Map(); // cartes affichées par colonne (Kanban)
   let pendingFocus = null; // cellule à refocaliser après le rendu qui suit une saisie
   let destroyed = false;
   let lastOwnWrite = 0; // les écritures de cet écran reviennent aussi par le flux : on n'y réagit pas
@@ -47,7 +48,10 @@ export async function showBase(initial) {
 
   const body = h('div', { class: 'bt-body' });
   const crumbsEl = h('nav', { class: 'crumbs', 'aria-label': 'Fil d’Ariane' });
-  const root = h('div', { class: 'scroller' }, h('div', { class: 'page-wrap bt-wrap' }, body));
+  // Annonce aux lecteurs d'écran (déplacement d'une carte) : la région vit hors du tableau, que chaque rendu reconstruit.
+  const live = h('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite' });
+  const announce = (text) => { live.textContent = ''; setTimeout(() => { live.textContent = text; }, 50); };
+  const root = h('div', { class: 'scroller' }, h('div', { class: 'page-wrap bt-wrap' }, body, live));
   main().replaceChildren(topbar(crumbsEl, []), root);
   document.title = `${initial.title || 'Base'} · Notabene`;
 
@@ -59,7 +63,9 @@ export async function showBase(initial) {
   const config = () => {
     const c = localConfigs[view().id] ?? view().config;
     const known = (pid) => !!propById(pid);
-    return { sort: c.sort.filter((x) => known(x.propertyId)), filters: c.filters.filter((x) => known(x.propertyId)), hidden: c.hidden.filter(known) };
+    const group = c.groupBy && propById(c.groupBy);
+    const board = c.type === 'kanban' && group && (group.type === 'select' || group.type === 'status');
+    return { type: board ? 'kanban' : 'table', ...(board ? { groupBy: c.groupBy } : {}), sort: c.sort.filter((x) => known(x.propertyId)), filters: c.filters.filter((x) => known(x.propertyId)), hidden: c.hidden.filter(known) };
   };
   const fail = (err) => toast(err?.message || 'Une erreur est survenue', { kind: 'error' });
 
@@ -75,82 +81,7 @@ export async function showBase(initial) {
     render();
   }
 
-  // ---- Valeurs : texte affiché, comparaison, filtre ----
-  const optName = (p, oid) => p.options.find((o) => o.id === oid)?.name ?? '';
-  function textOf(p, v) {
-    if (v === undefined || v === null) return '';
-    switch (p.type) {
-      case 'checkbox': return v ? 'oui' : 'non';
-      case 'formula': return typeof v === 'boolean' ? (v ? 'oui' : 'non') : String(v);
-      case 'select': case 'status': return optName(p, v);
-      case 'multi_select': return v.map((x) => optName(p, x)).join(', ');
-      case 'person': return v.name;
-      case 'page_link': return v.title || 'Sans titre';
-      case 'date': return fmtDate(v);
-      default: return String(v);
-    }
-  }
-  const isEmpty = (p, v) => v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length) || (p.type === 'checkbox' && v !== true);
-  function matches(row, f) {
-    const p = propById(f.propertyId);
-    if (!p) return true;
-    const v = row.values[p.id];
-    if (f.op === 'empty') return isEmpty(p, v);
-    if (f.op === 'notempty') return !isEmpty(p, v);
-    const want = f.value;
-    switch (p.type) {
-      case 'text': case 'person': case 'page_link': {
-        const t = fold(textOf(p, v));
-        const w = fold(want);
-        return f.op === 'contains' ? t.includes(w) : f.op === 'eq' ? t === w : t !== w;
-      }
-      case 'formula': {
-        const n = Number(String(want).replace(',', '.'));
-        if (typeof v === 'number' && want !== null && want !== '' && Number.isFinite(n)) return f.op === 'eq' ? v === n : f.op === 'neq' ? v !== n : f.op === 'gt' ? v > n : f.op === 'lt' ? v < n : textOf(p, v).includes(String(want));
-        const t = fold(textOf(p, v));
-        const w = fold(want);
-        return f.op === 'contains' ? t.includes(w) : f.op === 'eq' ? t === w : f.op === 'neq' ? t !== w : f.op === 'gt' ? t > w : t < w;
-      }
-      case 'number': {
-        if (v === undefined) return f.op === 'neq';
-        const n = Number(want);
-        return f.op === 'eq' ? v === n : f.op === 'neq' ? v !== n : f.op === 'gt' ? v > n : v < n;
-      }
-      case 'date': return v !== undefined && (f.op === 'eq' ? v === want : f.op === 'gt' ? v > want : v < want);
-      case 'checkbox': return (v === true) === (want === true);
-      case 'select': case 'status': return f.op === 'eq' ? v === want : v !== want;
-      case 'multi_select': return Array.isArray(v) && v.includes(want);
-      default: return true;
-    }
-  }
-  function compare(a, b, p) {
-    const va = a.values[p.id];
-    const vb = b.values[p.id];
-    if (isEmpty(p, va) && isEmpty(p, vb)) return 0;
-    if (isEmpty(p, va)) return 1; // les cellules vides vont toujours en dernier
-    if (isEmpty(p, vb)) return -1;
-    if (p.type === 'number' || (p.type === 'formula' && typeof va === 'number' && typeof vb === 'number')) return va - vb;
-    if (p.type === 'date') return va < vb ? -1 : va > vb ? 1 : 0;
-    if (p.type === 'checkbox') return Number(va === true) - Number(vb === true);
-    if (p.type === 'select' || p.type === 'status') return p.options.findIndex((o) => o.id === va) - p.options.findIndex((o) => o.id === vb);
-    return textOf(p, va).localeCompare(textOf(p, vb), 'fr', { numeric: true, sensitivity: 'base' });
-  }
-  function visibleRows() {
-    const c = config();
-    let rows = data.rows.filter((r) => c.filters.every((f) => matches(r, f)));
-    for (const s of [...c.sort].reverse()) {
-      const p = propById(s.propertyId);
-      if (!p) continue;
-      const dir = s.dir === 'desc' ? -1 : 1;
-      rows = [...rows].sort((a, b) => {
-        const ea = isEmpty(p, a.values[p.id]);
-        const eb = isEmpty(p, b.values[p.id]);
-        if (ea || eb) return compare(a, b, p); // vides toujours en dernier, quel que soit le sens
-        return dir * compare(a, b, p);
-      });
-    }
-    return rows;
-  }
+  const visibleRows = () => applyView(props(), data.rows, config());
 
   // ---- Vue : enregistrement (écrivains) ou mémoire locale (lecteurs) ----
   // Un envoi différé par vue : passer à une autre vue pendant l'attente ne perd pas le réglage de la première.
@@ -417,14 +348,15 @@ export async function showBase(initial) {
   }
 
   // ---- Lignes ----
-  async function addRow() {
+  async function addRow(values = {}) {
     lastOwnWrite = Date.now();
     try {
-      const row = await api.post(`/bases/${id}/rows`, { values: {} });
+      const row = await api.post(`/bases/${id}/rows`, { values });
       data.rows.push(row);
+      pendingFocus = { rowId: row.id, card: config().type === 'kanban' };
       render();
-      const first = body.querySelector(`tr[data-row="${row.id}"] .bt-cell-btn`);
-      first?.focus();
+      if (config().type !== 'kanban') body.querySelector(`tr[data-row="${row.id}"] .bt-cell-btn`)?.focus();
+      else announce('Carte ajoutée');
     } catch (err) { fail(err); }
   }
   async function removeRow(row) {
@@ -434,6 +366,86 @@ export async function showBase(initial) {
       data.rows = data.rows.filter((r) => r.id !== row.id);
       render();
     } catch (err) { fail(err); await load(true); }
+  }
+
+  // ---- Kanban : une colonne par option de la colonne de rangement, une carte par ligne ----
+  function boardEl(c, rows) {
+    const g = propById(c.groupBy);
+    const titleProp = props()[0];
+    const fields = props().filter((p) => p.id !== titleProp.id && p.id !== g.id && !c.hidden.includes(p.id)).slice(0, 3);
+    const lanes = [...g.options.map((o) => ({ id: o.id, label: o.name, color: o.color })), { id: null, label: 'Sans valeur', color: 'gray' }];
+    const move = (row, laneId) => {
+      if ((row.values[g.id] ?? null) === laneId) return;
+      pendingFocus = { rowId: row.id, card: true };
+      const name = textOf(titleProp, row.values[titleProp.id]) || 'Sans titre';
+      announce(`Carte « ${name} » déplacée vers ${lanes.find((l) => l.id === laneId)?.label ?? 'Sans valeur'}`);
+      commit(row, g, laneId);
+    };
+
+    const card = (row, lane) => {
+      const title = textOf(titleProp, row.values[titleProp.id]) || 'Sans titre';
+      const head = h('div', { class: 'bt-card-head' });
+      const titleEl = h('div', { class: 'bt-card-title' }, title);
+      const el = h('li', { class: 'bt-card', 'data-row': row.id, draggable: canWrite() ? 'true' : null }, head,
+        fields.map((p) => {
+          const shown = display(p, row.values[p.id]);
+          return shown && h('div', { class: 'bt-card-field' }, h('span', { class: 'muted' }, `${p.name} : `), shown);
+        }),
+        canWrite() && h('button', {
+          class: 'icon-btn bt-card-menu', 'aria-label': `Actions de la carte ${title}`, title: 'Déplacer ou supprimer',
+          onClick: (e) => openMenu(e.currentTarget, [
+            { heading: 'Déplacer vers' },
+            ...lanes.map((l) => ({ label: l.label, checked: l.id === lane.id, onClick: () => move(row, l.id) })),
+            { sep: true },
+            { label: 'Supprimer la carte', icon: 'trash', danger: true, onClick: () => removeRow(row) },
+          ]),
+        }, icon('more', 15)));
+      // Le titre se modifie dans son propre conteneur ; pendant la saisie la carte n'est plus déplaçable (on peut alors cliquer et sélectionner dans le champ).
+      if (canWrite() && titleProp.type === 'text') {
+        head.append(h('button', { class: 'bt-card-name', 'aria-label': `${title} (modifier le titre)`, onClick: () => { el.removeAttribute('draggable'); editCell(head, row, titleProp); } }, titleEl));
+      } else head.append(titleEl);
+      if (canWrite()) {
+        // Type propre à cette application, avec la base : un texte glissé depuis ailleurs n'est jamais pris pour une carte.
+        el.addEventListener('dragstart', (e) => { e.dataTransfer.setData(CARD_TYPE, JSON.stringify({ baseId: id, rowId: row.id })); e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); });
+        el.addEventListener('dragend', () => el.classList.remove('dragging'));
+      }
+      return el;
+    };
+
+    return h('div', { class: 'bt-board', role: 'group', 'aria-label': `Kanban, rangé par ${g.name}` }, lanes.map((lane) => {
+      const inLane = rows.filter((r) => (r.values[g.id] ?? null) === lane.id);
+      if (lane.id === null && !inLane.length && canWrite() === false) return null;
+      const cap = laneShown.get(lane.id) ?? PAGE_SIZE;
+      const list = h('ul', { class: 'bt-lane-list', 'aria-label': `${lane.label}, ${inLane.length} carte${inLane.length > 1 ? 's' : ''}` }, inLane.slice(0, cap).map((r) => card(r, lane)));
+      const laneEl = h('section', { class: 'bt-lane', 'data-lane': lane.id ?? '' },
+        h('header', { class: 'bt-lane-head' }, h('span', { class: `bt-dot c-${lane.color}` }), h('strong', null, lane.label), h('span', { class: 'muted' }, String(inLane.length))),
+        list,
+        inLane.length > cap && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { laneShown.set(lane.id, cap + PAGE_SIZE); render(); } }, `Afficher ${Math.min(PAGE_SIZE, inLane.length - cap)} cartes de plus (${cap} sur ${inLane.length})`),
+        canWrite() && h('button', { class: 'btn btn-ghost btn-sm bt-lane-add', disabled: data.rows.length >= data.limits.rows, onClick: () => addRow(lane.id ? { [g.id]: lane.id } : {}) }, icon('plus', 14), `Nouvelle carte (${lane.label})`));
+      if (canWrite()) {
+        laneEl.addEventListener('dragover', (e) => { if (!e.dataTransfer.types.includes(CARD_TYPE)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; laneEl.classList.add('over'); });
+        laneEl.addEventListener('dragleave', (e) => { if (!laneEl.contains(e.relatedTarget)) laneEl.classList.remove('over'); });
+        laneEl.addEventListener('drop', (e) => {
+          laneEl.classList.remove('over');
+          if (!e.dataTransfer.types.includes(CARD_TYPE)) return;
+          e.preventDefault();
+          let drop = null;
+          try { drop = JSON.parse(e.dataTransfer.getData(CARD_TYPE)); } catch { /* donnée étrangère */ }
+          const row = drop?.baseId === id ? data.rows.find((r) => r.id === drop.rowId) : null;
+          if (row) move(row, lane.id);
+        });
+      }
+      return laneEl;
+    }).filter(Boolean));
+  }
+
+  /** Choix de la colonne de rangement d'un Kanban (Sélection ou Statut). */
+  function groupSelect(c) {
+    const choices = props().filter((p) => p.type === 'status' || p.type === 'select');
+    const sel = h('select', { class: 'input bt-group', 'aria-label': 'Ranger par' }, choices.map((p) => h('option', { value: p.id }, `Ranger par ${p.name}`)));
+    sel.value = c.groupBy;
+    sel.addEventListener('change', () => setConfig({ ...config(), groupBy: sel.value }));
+    return sel;
   }
 
   // ---- Barre d'outils : vues, filtres, tri, colonnes ----
@@ -528,8 +540,15 @@ export async function showBase(initial) {
       }, v.name, active && canWrite() && icon('chevron', 12));
     })), canWrite() && data.views.length < 10 && h('button', {
       class: 'icon-btn', 'aria-label': 'Nouvelle vue', title: 'Nouvelle vue',
-      onClick: async () => {
-        try { const v = await api.post(`/bases/${id}/views`, { name: `Vue ${data.views.length + 1}`, config: { sort: [], filters: [], hidden: [] } }); activeView = v.id; await load(true); } catch (err) { fail(err); }
+      onClick: (e) => {
+        const groupable = props().find((p) => p.type === 'status' || p.type === 'select');
+        const create = async (name, config) => {
+          try { const v = await api.post(`/bases/${id}/views`, { name, config }); activeView = v.id; await load(true); } catch (err) { fail(err); }
+        };
+        openMenu(e.currentTarget, [
+          { label: 'Nouveau tableau', icon: 'table', onClick: () => create(`Vue ${data.views.length + 1}`, { type: 'table', sort: [], filters: [], hidden: [] }) },
+          { label: groupable ? 'Nouveau Kanban' : 'Kanban : ajoutez une colonne Statut ou Sélection', icon: 'layers', disabled: !groupable, onClick: () => create('Kanban', { type: 'kanban', groupBy: groupable.id, sort: [], filters: [], hidden: [] }) },
+        ]);
       },
     }, icon('plus', 15)));
   }
@@ -592,19 +611,24 @@ export async function showBase(initial) {
       h('div', { class: 'bt-toolbar' },
         viewTabs(),
         h('div', { class: 'bt-tools' },
+          c.type === 'kanban' && groupSelect(c),
           h('button', { class: `btn btn-ghost btn-sm${filtersOn ? ' active' : ''}`, onClick: (e) => filterPopover(e.currentTarget) }, `Filtrer${filtersOn ? ` (${filtersOn})` : ''}`),
           h('button', { class: `btn btn-ghost btn-sm${c.sort.length ? ' active' : ''}`, onClick: (e) => sortPopover(e.currentTarget) }, `Trier${c.sort.length ? ` (${c.sort.length})` : ''}`),
           h('button', { class: `btn btn-ghost btn-sm${c.hidden.length ? ' active' : ''}`, onClick: (e) => columnsPopover(e.currentTarget) }, `Colonnes${c.hidden.length ? ` (${props().length - c.hidden.length}/${props().length})` : ''}`),
           h('a', { class: 'btn btn-ghost btn-sm', href: `/api/v3/bases/${id}/export`, download: '' }, icon('download', 14), 'CSV'))),
-      h('div', { class: 'bt-scroll' }, h('table', { class: 'bt-table', 'aria-label': 'Lignes de la base', 'aria-rowcount': String(rows.length + 1) }, head, tbody)),
+      c.type === 'kanban' ? boardEl(c, rows) : h('div', { class: 'bt-scroll' }, h('table', { class: 'bt-table', 'aria-label': 'Lignes de la base', 'aria-rowcount': String(rows.length + 1) }, head, tbody)),
       rows.length === 0 && h('p', { class: 'muted bt-empty' }, data.rows.length ? 'Aucune ligne ne correspond aux filtres.' : 'Aucune ligne pour le moment.'),
-      rows.length > shown && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { shown += PAGE_SIZE; render(); } }, `Afficher ${Math.min(PAGE_SIZE, rows.length - shown)} lignes de plus (${shown} sur ${rows.length})`),
+      c.type !== 'kanban' && rows.length > shown && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { shown += PAGE_SIZE; render(); } }, `Afficher ${Math.min(PAGE_SIZE, rows.length - shown)} lignes de plus (${shown} sur ${rows.length})`),
       h('div', { class: 'bt-foot' },
-        canWrite() && h('button', { class: 'btn btn-ghost btn-sm', disabled: data.rows.length >= data.limits.rows, onClick: addRow }, icon('plus', 14), 'Nouvelle ligne'),
+        canWrite() && c.type !== 'kanban' && h('button', { class: 'btn btn-ghost btn-sm', disabled: data.rows.length >= data.limits.rows, onClick: () => addRow() }, icon('plus', 14), 'Nouvelle ligne'),
         h('span', { class: 'muted' }, `${data.rows.length} ${data.rows.length > 1 ? 'lignes' : 'ligne'}${rows.length !== data.rows.length ? `, ${rows.length} affichées` : ''}`)),
     ].filter(Boolean));
-    if (pendingFocus && !editing) {
-      const target = [...body.querySelectorAll(`tr[data-row="${pendingFocus.rowId}"] .bt-cell-btn`)].find((b) => b.dataset.prop === pendingFocus.propId);
+    if (pendingFocus?.card && !editing) {
+      const card = body.querySelector(`li[data-row="${pendingFocus.rowId}"]`);
+      pendingFocus = null;
+      (card?.querySelector('.bt-card-name') ?? card?.querySelector('.bt-card-menu'))?.focus();
+    } else if (pendingFocus && !editing) {
+      const target = [...body.querySelectorAll(`tr[data-row="${pendingFocus.rowId}"] .bt-cell-btn, li[data-row="${pendingFocus.rowId}"] .bt-card-name`)].find((b) => !b.dataset.prop || b.dataset.prop === pendingFocus.propId);
       pendingFocus = null;
       target?.focus();
     }
