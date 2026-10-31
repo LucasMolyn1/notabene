@@ -6,6 +6,8 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## Non publié
 
+## [3.7.0] - 2026-10-31
+
 ### Modifié
 - Dépendance de développement ajoutée : `katex` 0.18.10 (MIT), déjà présente via Mermaid et désormais déclarée.
 

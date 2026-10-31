@@ -1,6 +1,6 @@
 {
   "name": "notabene",
-  "version": "3.6.1",
+  "version": "3.7.0",
   "description": "Wiki collaboratif auto-hébergé : OIDC, API REST, diagrammes et recherche IA.",
   "private": true,
   "type": "module",
