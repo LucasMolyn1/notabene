@@ -7,7 +7,7 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 ## Non publié
 
 ### Ajouté
-- Guide d'installation depuis une machine vierge (`docs/INSTALLATION.md`) : distributions compatibles, installation de Docker, reverse proxy.
+- Guide d'installation depuis une machine vierge (`docs/INSTALLATION.md`) : distributions compatibles, installation de Docker, reverse proxy (y compris derrière un proxy déjà en place : Traefik, Nginx Proxy Manager…).
 
 ## [3.9.0] - 2026-10-31
 
