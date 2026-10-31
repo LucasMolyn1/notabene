@@ -60,4 +60,14 @@ EOF
 echo
 echo ".env créé (permissions 600). Sauvegardez ENCRYPTION_KEY en lieu sûr."
 echo "Redirect URI à déclarer dans Authentik : ${PUBLIC_URL%/}/auth/callback"
+echo
+echo "Mise à jour depuis l'interface (facultatif) : un petit service sur cette machine permet le bouton « Mettre à jour »"
+echo "de Paramètres, À propos. Le conteneur n'a jamais accès à Docker (voir docs/MISE-A-JOUR.md)."
+read -rp "Installer ce service maintenant (droits root requis) ? [o/N] " UPD
+if [[ "$UPD" =~ ^[oO]$ ]]; then
+  sudo ./scripts/install-updater.sh --sans-demarrage || echo "Installation non terminée : relancez plus tard « sudo ./scripts/install-updater.sh »."
+else
+  echo "Plus tard : sudo ./scripts/install-updater.sh"
+fi
+echo
 echo "Démarrage : docker compose up -d --build"

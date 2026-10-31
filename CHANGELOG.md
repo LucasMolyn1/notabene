@@ -6,6 +6,12 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## Non publié
 
+### Ajouté
+- `scripts/install-updater.sh` : installe en une commande le service de mise à jour de l'hôte (bouton « Mettre à jour »). Relançable, sans modifier `docker-compose.yml` ; `scripts/setup.sh` propose de l'installer.
+
+### Corrigé
+- Service de mise à jour : le premier passage n'affiche plus l'erreur « No such file or directory » sur le fichier d'état.
+
 ## [3.7.0] - 2026-10-31
 
 ### Modifié
