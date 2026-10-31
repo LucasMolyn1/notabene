@@ -50,7 +50,8 @@ json_escape() {
 # status.json par le conteneur est remplacé, jamais suivi.
 publish_status() {
   local state version message at tmp
-  IFS='|' read -r state version message at < "$STATE_FILE" 2>/dev/null || { state=idle; version=''; message=''; at=0; }
+  # Fichier d'état absent au premier passage : on teste avant la redirection, qui afficherait sinon une erreur.
+  { [ -r "$STATE_FILE" ] && IFS='|' read -r state version message at < "$STATE_FILE"; } || { state=idle; version=''; message=''; at=0; }
   tmp=$(mktemp "$EXCHANGE_DIR/.status.XXXXXX")
   printf '{"state":"%s","version":"%s","message":"%s","at":%s,"heartbeat":%s}\n' \
     "$state" "$(json_escape "$version")" "$(json_escape "$message")" "${at:-0}" "$(date +%s)" > "$tmp"

@@ -76,6 +76,16 @@ Il publie son avancement dans `status.json` (lu par l'interface) et journalise d
 
 ### Installation (une fois par hôte)
 
+**Le plus simple** : depuis le dossier du dépôt, sur l'hôte.
+
+```bash
+sudo ./scripts/install-updater.sh
+```
+
+Le script fait les quatre étapes ci-dessous (dossier d'échange, volume dans un fichier `docker-compose.updater.yml` à part, `.env`, service et minuteur), puis relance l'application. Il peut être relancé sans risque et n'écrase jamais `/etc/notabene-updater.conf`. Options : `--sans-sauvegarde` (instance de test seulement), `--sans-demarrage`, `--activer-verification` (sinon, activer dans Paramètres, À propos). `./scripts/setup.sh` propose aussi de l'installer. L'installation manuelle ci-dessous reste valable.
+
+**À la main :**
+
 1. Créer le dossier d'échange, **possédé par root**, écrit par le groupe du conteneur (uid/gid 1000), hors du dossier de données (le conteneur ne peut ainsi pas le déplacer ni le remplacer) :
 
    ```bash

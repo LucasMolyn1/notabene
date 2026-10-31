@@ -54,7 +54,9 @@ const envImage = () => /^NOTABENE_IMAGE=(.*)$/m.exec(readFileSync(join(compose, 
 // Le script vise un hôte Linux (flock, mv -T, sed GNU) : ignoré ailleurs (macOS), exécuté dans la CI.
 describe.skipIf(process.platform !== 'linux')('service de mise à jour de l’hôte', () => {
   it('sans demande : écrit seulement un signe de vie', () => {
-    expect(run().status).toBe(0);
+    const first = run();
+    expect(first.status).toBe(0);
+    expect(first.stderr).not.toContain('No such file'); // premier passage : pas encore de fichier d'état
     expect(status()).toMatchObject({ state: 'idle' });
     expect(status().heartbeat).toBeGreaterThan(Date.now() / 1000 - 5);
     expect(envImage()).toBe(OLD);
