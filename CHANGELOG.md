@@ -7,6 +7,7 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 ## Non publié
 
 ### Ajouté
+- **Kanban et bloc base** : une vue d'une base peut être un Kanban (cartes rangées par colonne Statut ou Sélection, glisser-déposer ou menu au clavier, nouvelle carte par colonne). Les commandes `/base` et `/kanban` de l'éditeur affichent une base dans une page, en lecture seule, avec les droits de chaque lecteur ; elles n'apparaissent jamais dans une page partagée publiquement.
 - **Formules dans les bases** : colonne calculée (`prop("Prix") * prop("Quantité")`), avec opérateurs, `if`, arrondis, texte, dates (`dateDiff`, `year`, `month`). Analyseur écrit à la main, sans `eval` ; résultat jamais stocké, calculé sur ce que le lecteur peut voir. Migration v18.
 - **Bases (tableaux)** : une base est une page avec ses colonnes typées (texte, nombre, date, sélection, multi-sélection, statut, case à cocher, personne, lien vers une page), ses lignes modifiables sur place et ses vues (tri, filtres, colonnes masquées, jusqu'à 10). Menu « Nouvelle base » dans la barre latérale ; hiérarchie, corbeille, permissions, duplication, copie vers un espace et recherche comme pour une page. Export CSV. Jusqu'à 50 colonnes et 5 000 lignes. Une base n'est jamais lisible sans compte ni partageable par lien. Migration v17. Nouvelles routes `/api/v3/bases`.
 - Guide d'installation depuis une machine vierge (`docs/INSTALLATION.md`) : distributions compatibles, installation de Docker, reverse proxy (y compris derrière un proxy déjà en place : Traefik, Nginx Proxy Manager…).
