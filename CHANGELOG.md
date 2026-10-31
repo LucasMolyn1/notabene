@@ -7,9 +7,14 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 ## Non publié
 
 ### Ajouté
+- **Assistant de rédaction dans l'éditeur** : sur un texte sélectionné, améliorer, raccourcir, corriger, traduire (sept langues) ou suivre une consigne libre. La réponse s'affiche en flux dans un aperçu ; la page n'est modifiée qu'après « Remplacer » ou « Insérer après » (texte simple, jamais du HTML, et seulement si la sélection n'a pas changé). Réservé aux personnes qui ont la portée IA et le droit de modifier la page ; seul le texte sélectionné part, et l'interface indique le destinataire avant l'envoi. Nouvelle route `POST /api/v3/ai/assist` (20 appels par minute et par compte), action `ai.assist` au journal d'audit (longueur et fournisseur, jamais le texte).
+- Écran tactile : un bouton « Aa » dans la barre de l'éditeur ouvre les actions sur la sélection (couleur, fond, alignement, commentaire, assistant), qui n'existaient qu'avec la souris.
 - `scripts/install-updater.sh` : installe en une commande le service de mise à jour de l'hôte (bouton « Mettre à jour »). Relançable, sans modifier `docker-compose.yml` ; `scripts/setup.sh` propose de l'installer.
 
 ### Corrigé
+- Export Markdown : un bloc intégré, une image ou un schéma placé dans une cellule de tableau n'est plus perdu.
+- Mentions en co-édition : quand plusieurs personnes ont écrit entre deux enregistrements, la notification n'est plus attribuée à la dernière qui a écrit (« quelqu'un » à la place).
+- Coller du HTML venu d'un autre site n'y insère plus de mention (la copie d'une page Notabene la garde).
 - Service de mise à jour : le premier passage n'affiche plus l'erreur « No such file or directory » sur le fichier d'état.
 
 ## [3.7.0] - 2026-10-31

@@ -143,7 +143,7 @@ export async function renderUsers(el) {
 const AUDIT_LABELS = {
   'auth.login': 'Connexion', 'auth.logout': 'Déconnexion', 'auth.local.failed': 'Échec de connexion', 'auth.ldap.failed': 'Échec de connexion LDAP', 'auth.saml.failed': 'Réponse SAML refusée', 'auth.local.setup': 'Installation initiale', 'auth.local.password': 'Mot de passe modifié', 'auth.mfa.enable': 'MFA activée', 'auth.mfa.disable': 'MFA désactivée', 'backup.download': 'Sauvegarde téléchargée', 'import.markdown': 'Import Markdown', 'user.create': 'Compte créé', 'user.update': 'Compte modifié', 'auth.denied': 'Accès refusé', 'auth.sessions.revoke': 'Sessions fermées',
   'auth.local.forgot': 'Réinitialisation demandée', 'auth.local.reset': 'Mot de passe réinitialisé', 'auth.reauth.failed': 'Échec de ressaisie', 'settings.test': 'Test de configuration', 'settings.test.failed': 'Test de configuration échoué', 'settings.reset': 'Retour à l’environnement', 'settings.embed': 'Sites autorisés modifiés', 'settings.oidc': 'OIDC modifié', 'settings.ldap': 'LDAP modifié', 'settings.saml': 'SAML modifié', 'settings.smtp': 'SMTP modifié', 'settings.smtp.test-mail': 'E-mail de test envoyé',
-  'token.create': 'Jeton créé', 'token.revoke': 'Jeton révoqué', 'settings.ai': 'Réglages IA', 'ai.ask': 'Question IA',
+  'token.create': 'Jeton créé', 'token.revoke': 'Jeton révoqué', 'settings.ai': 'Réglages IA', 'ai.ask': 'Question IA', 'ai.assist': 'Assistant de rédaction',
   'space.create': 'Espace créé', 'space.delete': 'Espace supprimé', 'space.visibility': 'Visibilité modifiée',
   'page.destroy': 'Page supprimée définitivement', 'trash.empty': 'Corbeille vidée',
 };

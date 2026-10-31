@@ -5,6 +5,10 @@ import { trimTrailingSlashes } from '../lib/http.js';
 import { guardedFetch, safeFetch } from '../lib/net-guard.js';
 import type { AiSettings } from './settings.js';
 
+// Avis ajoutés par le fournisseur à la fin d'un flux (refus, troncature) : ce ne sont pas des morceaux de la réponse.
+export const REFUSAL_NOTICE = '\n\n_Le modèle a refusé de répondre à cette question._';
+export const TRUNCATED_NOTICE = '\n\n_Réponse tronquée (limite de longueur atteinte)._';
+
 export class LlmError extends Error {
   constructor(message: string, readonly status = 502) {
     super(message);
@@ -51,8 +55,8 @@ async function* streamAnthropic(s: AiSettings, prompt: Prompt, signal: AbortSign
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') yield event.delta.text;
     }
     const final = await stream.finalMessage();
-    if (final.stop_reason === 'refusal') yield '\n\n_Le modèle a refusé de répondre à cette question._';
-    else if (final.stop_reason === 'max_tokens') yield '\n\n_Réponse tronquée (limite de longueur atteinte)._';
+    if (final.stop_reason === 'refusal') yield REFUSAL_NOTICE;
+    else if (final.stop_reason === 'max_tokens') yield TRUNCATED_NOTICE;
   } catch (err) {
     if (signal.aborted) return;
     if (err instanceof Anthropic.AuthenticationError) throw new LlmError('Clé d’API Anthropic refusée', 502);

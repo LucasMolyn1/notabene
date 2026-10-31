@@ -97,6 +97,14 @@ export function storedDestination(db: DB) {
   return aiDestination(s.provider, s.baseUrl);
 }
 
+// Où part le texte envoyé à l'assistant : « Anthropic », ou l'hôte de l'adresse enregistrée. Affiché avant tout envoi.
+export function aiProviderLabel(db: DB): string | null {
+  const s = read(db);
+  if (!s.enabled) return null;
+  if (!s.baseUrl) return s.provider === 'anthropic' ? 'Anthropic' : 'OpenAI';
+  try { return new URL(s.baseUrl).host; } catch { return null; }
+}
+
 export function isAiReady(db: DB) {
   const s = read(db);
   return s.enabled && (s.provider === 'openai' ? !!s.baseUrl || !!s.apiKeySealed : !!s.apiKeySealed);

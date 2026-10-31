@@ -233,6 +233,36 @@ describe('co-édition en temps réel', () => {
     expect(events.some((e) => e.by?.id === editorId)).toBe(true);
   });
 
+  it('signale un enregistrement regroupant plusieurs personnes (l’auteur d’une mention ne peut pas être deviné)', async () => {
+    const editor = await login('editor');
+    const admin = await login('admin');
+    const events: { shared?: boolean }[] = [];
+    app.bus.subscribe((e) => { if (e.type === 'page.updated') events.push(e); });
+    const a = await connect(editor.cookie);
+    const b = await connect(admin.cookie);
+    await until(() => textOf(a.json()).length > 10 && textOf(b.json()).length > 10);
+    const para = (c: typeof a) => c.doc.getXmlFragment('default').toArray().find((n) => n instanceof Y.XmlElement && n.nodeName === 'paragraph') as Y.XmlElement;
+    (para(a).get(0) as Y.XmlText).insert(0, 'AAA ');
+    await until(() => textOf(b.json()).includes('AAA'));
+    (para(b).get(0) as Y.XmlText).insert(0, 'BBB ');
+    await until(() => events.length > 0, 6000);
+    expect(events[0]!.shared).toBe(true);
+    a.ws.close(); b.ws.close();
+  });
+
+  it('un enregistrement d’une seule personne n’est pas « regroupé »', async () => {
+    const editor = await login('editor');
+    const events: { shared?: boolean }[] = [];
+    app.bus.subscribe((e) => { if (e.type === 'page.updated') events.push(e); });
+    const a = await connect(editor.cookie);
+    await until(() => textOf(a.json()).length > 10);
+    const para = a.doc.getXmlFragment('default').toArray().find((n) => n instanceof Y.XmlElement && n.nodeName === 'paragraph') as Y.XmlElement;
+    (para.get(0) as Y.XmlText).insert(0, 'SEUL ');
+    await until(() => events.length > 0, 6000);
+    expect(events[0]!.shared).toBe(false);
+    a.ws.close();
+  });
+
   it('refuse sans session, pour un lecteur, depuis une autre origine et pour une page inconnue', async () => {
     const editor = await login('editor');
     const reader = await login('reader');

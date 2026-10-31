@@ -37,6 +37,8 @@ export default defineConfig({
       // Une seule IP et un seul compte pour toute la série, lancée vite : le plafond par défaut (600 requêtes par minute) est atteint.
       RATE_LIMIT_PER_MINUTE: '20000',
       LOG_LEVEL: 'warn',
+      // Faux fournisseur d'IA local (tests de l'assistant de rédaction).
+      AI_ALLOW_PRIVATE: 'true',
     },
   },
 });
