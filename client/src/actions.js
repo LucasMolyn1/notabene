@@ -1,7 +1,7 @@
 // Actions partagées entre la barre latérale, les vues et les raccourcis.
 import { h, timeAgo, fullDate, download, slugify } from './util.js';
 import { icon } from './icons.js';
-import { request } from './api.js';
+import { api, request } from './api.js';
 import { store } from './store.js';
 import { session } from './session.js';
 import { askReauth } from './provider-settings.js';
@@ -40,6 +40,19 @@ export const search = () => openPalette({ onOpen: (p) => go(`/p/${p.id}`) });
 export async function newPage(spaceId = prefs.space, parentId = null) {
   if (!session.can('write') || !store.canWriteIn(spaceId)) return null;
   const id = await attempt(() => store.createPage({ spaceId, parentId }));
+  if (!id) return null;
+  if (parentId) { prefs.expanded[parentId] = true; savePrefs(); }
+  go(`/p/${id}`);
+  return id;
+}
+
+export async function newBase(spaceId = prefs.space, parentId = null) {
+  if (!session.can('write') || !store.canWriteIn(spaceId)) return null;
+  const id = await attempt(async () => {
+    const base = await api.post('/bases', { spaceId, parentId, title: 'Nouvelle base' });
+    await store.fetchPage(base.page.id);
+    return base.page.id;
+  });
   if (!id) return null;
   if (parentId) { prefs.expanded[parentId] = true; savePrefs(); }
   go(`/p/${id}`);

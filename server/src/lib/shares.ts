@@ -60,7 +60,7 @@ export function activeShare(db: DB, token: string): { share: ShareRow; page: Sha
   if (!share) return null;
   const page = db.prepare(
     `SELECT p.id, p.space_id, p.parent_id, p.title, p.icon, p.content, p.updated_at FROM pages p JOIN spaces s ON s.id = p.space_id
-     WHERE p.id = ? AND p.deleted_at IS NULL AND s.sharing_enabled = 1`,
+     WHERE p.id = ? AND p.deleted_at IS NULL AND p.kind = 'doc' AND s.sharing_enabled = 1`,
   ).get(share.page_id) as SharedPage | undefined;
   if (!page) return null;
   // Une page restreinte (ou dont la restriction a changé) depuis la confirmation n'est plus servie : il faut reconfirmer.
@@ -76,7 +76,7 @@ export function activeShare(db: DB, token: string): { share: ShareRow; page: Sha
 export function sharedDescendants(db: DB, rootId: string): { id: string; parentId: string | null; title: string; icon: string; position: number }[] {
   // Une page qui a ses propres permissions n'entre jamais dans le partage, ni son sous-arbre : on ne descend pas dedans (avant toute
   // limite, pour qu'une troncature ne puisse pas faire réapparaître un enfant dont le parent restreint a été coupé).
-  const open = `NOT EXISTS (SELECT 1 FROM page_acl a WHERE a.page_id = p.id) AND NOT EXISTS (SELECT 1 FROM page_acl_groups g WHERE g.page_id = p.id)`;
+  const open = `p.kind = 'doc' AND NOT EXISTS (SELECT 1 FROM page_acl a WHERE a.page_id = p.id) AND NOT EXISTS (SELECT 1 FROM page_acl_groups g WHERE g.page_id = p.id)`;
   return db.prepare(
     `WITH RECURSIVE sub(id, depth) AS (
        SELECT p.id, 0 FROM pages p WHERE p.parent_id = ? AND p.deleted_at IS NULL AND ${open}

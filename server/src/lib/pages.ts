@@ -2,6 +2,7 @@
 // Toutes les requêtes sont préparées ; les contrôles d'accès se font dans les routes.
 import type { DB } from '../db.js';
 import { type DocNode, docText, emptyDoc, sanitizeDoc } from './content.js';
+import { copyBaseData } from './bases.js';
 import { HttpError, newId } from './http.js';
 
 const VERSION_WINDOW = 5 * 60_000;
@@ -25,6 +26,7 @@ export interface PageRow {
   updated_by: string | null;
   deleted_at: number | null;
   trash_root: string | null;
+  kind: 'doc' | 'base';
   updated_by_name?: string | null;
 }
 
@@ -49,6 +51,7 @@ export function toMeta(row: PageRow, favorite = false) {
     excerpt: row.text.slice(0, 200),
     deletedAt: row.deleted_at,
     trashRoot: row.trash_root,
+    kind: row.kind,
     favorite,
   };
 }
@@ -65,7 +68,7 @@ export function listPages(db: DB, spaceIds: string[], userId: string | null, { t
   // Métadonnées seulement : ni le contenu JSON ni le texte complet ne sont lus (200 caractères d'extrait suffisent).
   const rows = db.prepare(
     `SELECT p.seq, p.id, p.space_id, p.parent_id, p.position, p.title, p.icon, '' AS content, substr(p.text, 1, 200) AS text,
-            p.full_width, p.version, p.created_at, p.created_by, p.updated_at, p.updated_by, p.deleted_at, p.trash_root,
+            p.full_width, p.version, p.created_at, p.created_by, p.updated_at, p.updated_by, p.deleted_at, p.trash_root, p.kind,
             u.name AS updated_by_name FROM pages p LEFT JOIN users u ON u.id = p.updated_by
      WHERE p.space_id IN (SELECT value FROM json_each(?)) AND ${trashed ? 'p.deleted_at IS NOT NULL AND p.trash_root = p.id' : 'p.deleted_at IS NULL'}
      ORDER BY p.space_id, p.parent_id, p.position, p.created_at`,
@@ -122,6 +125,7 @@ export interface CreatePageInput {
   icon?: string;
   content?: unknown;
   afterId?: string | null;
+  kind?: 'doc' | 'base';
 }
 
 export function createPage(db: DB, input: CreatePageInput, userId: string | null) {
@@ -140,9 +144,9 @@ export function createPage(db: DB, input: CreatePageInput, userId: string | null
     const now = Date.now();
     const id = newId();
     db.prepare(
-      `INSERT INTO pages (id, space_id, parent_id, position, title, icon, content, text, created_at, created_by, updated_at, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, input.spaceId, parentId, position, input.title ?? '', input.icon ?? '', JSON.stringify(doc), docText(doc), now, userId, now, userId);
+      `INSERT INTO pages (id, space_id, parent_id, position, title, icon, content, text, created_at, created_by, updated_at, updated_by, kind)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, input.spaceId, parentId, position, input.title ?? '', input.icon ?? '', JSON.stringify(doc), docText(doc), now, userId, now, userId, input.kind ?? 'doc');
     const row = getPageRow(db, id)!;
     recordVersion(db, row, userId, true);
     return row;
@@ -168,6 +172,8 @@ export function updatePage(db: DB, id: string, input: UpdatePageInput, userId: s
         updatedBy: current.updated_by_name ?? null,
       });
     }
+    // Le texte d'une base vient de ses cellules : le contenu d'éditeur n'a pas de sens pour elle.
+    if (current.kind === 'base' && input.content !== undefined) throw new HttpError(422, 'Le contenu d’une base se modifie par ses lignes');
     const next = { ...current };
     if (input.title !== undefined) next.title = input.title;
     if (input.icon !== undefined) next.icon = input.icon;
@@ -223,7 +229,9 @@ export function duplicatePage(db: DB, id: string, userId: string | null) {
       icon: src.icon,
       content: JSON.parse(src.content),
       afterId: id,
+      kind: src.kind,
     }, userId);
+    if (src.kind === 'base') copyBaseData(db, id, copy.id, userId);
     // La copie reste aussi restreinte que la source : sinon dupliquer une page cachée la rendrait visible à tout le parent.
     db.prepare('INSERT INTO page_acl (page_id, user_id, level) SELECT ?, user_id, level FROM page_acl WHERE page_id = ?').run(copy.id, id);
     db.prepare('INSERT INTO page_acl_groups (page_id, group_id, level) SELECT ?, group_id, level FROM page_acl_groups WHERE page_id = ?').run(copy.id, id);

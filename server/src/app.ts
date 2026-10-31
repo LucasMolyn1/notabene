@@ -18,6 +18,7 @@ import { startNotifications } from './lib/notifications.js';
 import { startWebhooks } from './lib/webhooks.js';
 import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
+import baseRoutes from './routes/bases.js';
 import labelRoutes from './routes/labels.js';
 import { effectiveEmbedHosts } from './lib/embed.js';
 import pageQueryRoutes from './routes/pages-query.js';
@@ -269,6 +270,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(pageRoutes);
     await scope.register(pageQueryRoutes);
     await scope.register(labelRoutes);
+    await scope.register(baseRoutes);
     await scope.register(templateRoutes);
     await scope.register(tokenRoutes);
     await scope.register(aiRoutes);
