@@ -57,7 +57,7 @@ sudo dnf upgrade -y
 sudo dnf install -y ca-certificates curl openssl
 ```
 
-Pare-feu : n'ouvrez que SSH, HTTP et HTTPS. Notabene lui-même n'écoute qu'en local (`127.0.0.1:3000`) et ne doit pas être exposé directement.
+Pare-feu : n'ouvrez que SSH, HTTP et HTTPS (si un reverse proxy existant s'en charge sur une autre machine, ni 80 ni 443 : voir l'étape 6). Notabene lui-même n'écoute qu'en local (`127.0.0.1:3000`) et ne doit pas être exposé directement.
 
 ```bash
 sudo ufw allow OpenSSH && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw enable
@@ -198,6 +198,39 @@ sudo docker compose exec -it notabene node dist/server/cli.js create-admin admin
 La commande `create-admin` demande le mot de passe (saisi sans écho, 12 caractères au minimum). Préférez-la au code d'installation des journaux, qui est un secret temporaire.
 
 ## 6. Reverse proxy et HTTPS
+
+**Vous avez déjà un reverse proxy** (Traefik, Nginx Proxy Manager, HAProxy, Caddy, Apache) **qui porte vos autres services ? Passez cette étape** : n'installez pas un second proxy, ajoutez simplement Notabene derrière celui qui existe. Il faut alors :
+
+1. **Un nom de domaine** qui mène à ce proxy, et `PUBLIC_URL=https://ce-nom` dans le `.env` (exactement le nom saisi dans les navigateurs).
+2. **Un service** du proxy qui pointe vers `http://<adresse de la machine Notabene>:3000`, avec le certificat TLS géré par le proxy.
+3. **Le port atteignable par le proxy, et par lui seul.** Le compose de ce guide publie `127.0.0.1:3000:3000`, ce qui ne convient que si le proxy tourne sur la même machine, hors Docker. Selon votre cas :
+   - proxy sur **une autre machine** (autre VM ou LXC) : remplacez par l'adresse de la machine Notabene, par exemple `192.168.1.50:3000:3000`, et n'autorisez le port 3000 dans le pare-feu que depuis l'adresse du proxy ;
+   - proxy **dans Docker, sur la même machine** : retirez la ligne `ports`, rattachez les deux conteneurs à un réseau Docker commun (`networks`) et visez `http://notabene:3000` ; le port n'est alors publié nulle part ;
+   - proxy **sur la même machine, hors Docker** : gardez `127.0.0.1:3000:3000`.
+4. **`TRUST_PROXY`** : le nombre de proxys entre Internet et Notabene (`1` pour un seul proxy ; plus si Cloudflare ou un second proxy est devant). Voir [DEPLOIEMENT.md](DEPLOIEMENT.md).
+5. **WebSocket** autorisés jusqu'à Notabene (co-édition). Traefik et Caddy le font sans réglage ; Nginx Proxy Manager a une case « Websockets Support » à cocher ; HAProxy veut un `timeout tunnel` d'au moins une heure.
+6. **Toutes les adresses transmises**, pas seulement `/` (`/p/…`, `/s/…`, `/share/…`, `/sitemap.xml`, `/robots.txt`).
+
+Exemple Traefik (fichier dynamique), pour un proxy sur une autre machine :
+
+```yaml
+http:
+  routers:
+    notabene:
+      rule: Host(`wiki.example.com`)
+      entryPoints: [websecure]
+      tls: { certResolver: letsencrypt }
+      service: notabene
+  services:
+    notabene:
+      loadBalancer:
+        servers:
+          - url: http://192.168.1.50:3000
+```
+
+(Le nom de l'entrée et du résolveur de certificats sont ceux de votre installation. Avec un gestionnaire graphique, l'équivalent est un hôte « domaine → http, adresse, 3000, TLS » avec les WebSocket activés.) Sur la machine Notabene, le pare-feu n'a alors pas besoin d'ouvrir les ports 80 et 443.
+
+### Sans proxy existant : Caddy
 
 Notabene attend un proxy qui termine TLS, transmet **toutes** les adresses (pas seulement `/`) et laisse passer les WebSocket (co-édition). Exemple avec [Caddy](https://caddyserver.com/docs/install#debian-ubuntu-raspbian) (installation par son dépôt officiel), qui obtient et renouvelle le certificat tout seul. Le nom de domaine doit déjà pointer vers la machine et les ports 80 et 443 être ouverts :
 
