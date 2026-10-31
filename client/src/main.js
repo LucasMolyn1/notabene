@@ -19,6 +19,7 @@ import { icon } from './icons.js';
 import { showMfaSetup, showResetPassword } from './local-auth.js';
 import { refreshUnread } from './notifications.js';
 import { onCommentEvent } from './comments.js';
+import { showShare } from './share.js';
 import * as A from './actions.js';
 import { pagePath, parseRoute, spacePath, upgradeLegacyHash } from './urls.js';
 
@@ -31,6 +32,8 @@ function openSettings(sectionId) {
 function route() {
   upgradeLegacyHash(); // un ancien lien #/… arrivé pendant le démarrage ou dans l'application
   const r = parseRoute(location.pathname);
+  document.body.classList.toggle('share', r.kind === 'share');
+  if (r.kind === 'share') { showShare(r.token, r.id); return; } // lisible sans compte, sans barre latérale
   if (r.kind === 'settings') openSettings(r.section);
   else if (!store.spaces.length) { showNoSpace(); scheduleSidebar(); return; }
   else if (r.kind === 'page') showPage(r.id);
@@ -85,6 +88,16 @@ function onLinkClick(e) {
 async function boot() {
   document.body.classList.toggle('embed', app.embed);
   document.body.classList.toggle('sb-collapsed', !prefs.sidebar);
+
+  // Page partagée publiquement : lisible sans compte, donc sans session, sans espaces, sans flux temps réel ni présence.
+  if (parseRoute(location.pathname).kind === 'share') {
+    const shareRoute = () => { if (parseRoute(location.pathname).kind === 'share') route(); else location.reload(); }; // sortir du partage : démarrage normal
+    window.addEventListener('popstate', shareRoute);
+    window.addEventListener('navigate', shareRoute);
+    document.addEventListener('click', onLinkClick);
+    route();
+    return;
+  }
 
   upgradeLegacyHash();
   // Lien de réinitialisation reçu par e-mail : le jeton est dans le fragment (jamais envoyé au serveur) et retiré de l'URL.

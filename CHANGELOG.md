@@ -14,6 +14,8 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 - **Espaces personnels** : un espace par compte, créé à la demande (menu des espaces), lisible de son seul propriétaire, administrateurs compris. Réglage d'instance dans Paramètres, Espaces (désactivé par défaut). Les espaces dont le compte a été supprimé se reprennent ou se suppriment depuis le même écran. Migration v15.
 
+- **Partage public par lien** : une page (et ses sous-pages, au choix) se publie par un lien lisible sans compte, retirable à tout moment (bouton Partager, Paramètres, Pages partagées). Désactivé par défaut ; réglage d'instance et réglage par espace (désactiver retire les liens). Les pages à permissions restreintes demandent une confirmation. Contenu assaini (ni noms, ni titres de pages non partagées), sans cache ni référent, `noindex` par défaut. Migration v16.
+
 ### Attention à la mise à jour
 - Migration v14 : le groupe « Tout le monde » reçoit le droit d'édition sur chaque espace existant, donc aucun accès ne change. Pour fermer un espace, retirez ce groupe de ses membres (Paramètres, Espaces, Membres).
 

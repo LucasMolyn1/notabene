@@ -39,6 +39,8 @@ import collabRoutes from './routes/collab.js';
 import coreRoutes from './routes/core.js';
 import groupRoutes from './routes/groups.js';
 import personalSpaceRoutes from './routes/personal-spaces.js';
+import shareRoutes from './routes/shares.js';
+import { maskShareToken, shareShellHeaders } from './lib/shares.js';
 import importRoutes from './routes/import.js';
 import localAuthRoutes from './routes/local-auth.js';
 import mcpRoutes from './routes/mcp.js';
@@ -87,6 +89,8 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     logger: logger === false ? false : {
       ...(typeof logger === 'object' ? logger : {}),
       redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-csrf-token"]'],
+      // Le jeton d'un lien de partage est le seul secret du lien : il ne doit jamais figurer dans les journaux.
+      serializers: { req: (req: { method?: string; url?: string; hostname?: string; ip?: string }) => ({ method: req.method, url: maskShareToken(req.url ?? ''), hostname: req.hostname, remoteAddress: req.ip }) },
     },
     // Un nombre = nombre de proxys de confiance en partant de la connexion ; l'adresse du client est lue à droite de X-Forwarded-For.
     // (L'option numérique de Fastify n'a pas cette sémantique : on passe par une fonction.)
@@ -261,6 +265,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(spaceRoutes);
     await scope.register(groupRoutes);
     await scope.register(personalSpaceRoutes);
+    await scope.register(shareRoutes);
     await scope.register(pageRoutes);
     await scope.register(pageQueryRoutes);
     await scope.register(labelRoutes);
@@ -300,7 +305,8 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
       },
     });
   }
-  await app.register(seoRoutes, { indexHtml: hasClient ? readFileSync(resolve(dir, 'index.html'), 'utf8') : null });
+  const shellHtml = hasClient ? readFileSync(resolve(dir, 'index.html'), 'utf8') : null;
+  await app.register(seoRoutes, { indexHtml: shellHtml });
   app.setNotFoundHandler((req, reply) => {
     // Sondes HTTP (HAProxy, répartiteurs) : HEAD et OPTIONS sur la racine répondent sans corps.
     if (req.url === '/' && (req.method === 'HEAD' || req.method === 'OPTIONS')) {
@@ -308,6 +314,11 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     }
     const isApi = req.url.startsWith('/api/') || req.url.startsWith('/auth/');
     if (hasClient && req.method === 'GET' && !isApi) {
+      if (req.url.startsWith('/share/')) {
+        // Page partagée publiquement : l'application, sans cache ni référent sortant ; indexable seulement si le partage l'autorise.
+        const h = shareShellHeaders(db, req.url);
+        return reply.header('cache-control', h['cache-control']).header('referrer-policy', h['referrer-policy']).header('x-robots-tag', h['x-robots-tag']).type('text/html; charset=utf-8').send(shellHtml);
+      }
       // L'application seule : jamais de contenu ici, donc rien à indexer (les pages publiques passent par routes/seo.ts).
       return reply.header('cache-control', 'no-cache').header('x-robots-tag', 'noindex, nofollow').sendFile('index.html');
     }

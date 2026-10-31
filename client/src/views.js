@@ -19,6 +19,7 @@ import { rememberMentionNames } from './editor/mention.js';
 import { labelBar } from './labels.js';
 import { api, listAll } from './api.js';
 import { permissionsButton } from './permissions.js';
+import { shareButton } from './share-dialog.js';
 import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
@@ -114,10 +115,11 @@ function mountPage(page) {
   // Sur téléphone, ces boutons quittent la barre (trop serrée) et passent dans le menu « … » (voir pageMenu).
   const watchBtn = watchButton(id);
   const permBtn = permissionsButton(id);
+  const shareBtn = canWrite && !app.embed ? shareButton(id) : null;
   const modeBtn = canWrite && h('button', { class: 'btn btn-ghost btn-sm mode-btn', onClick: toggleMode });
   const moreBtn = h('button', { class: 'icon-btn', title: 'Plus d’options', onClick: (e) => pageMenu(e.currentTarget) }, icon('more'));
   const histBtn = h('button', { class: 'icon-btn', title: 'Historique des versions', onClick: async () => { await flush(); A.openHistory(id); } }, icon('history'));
-  for (const b of [watchBtn, permBtn, starBtn, histBtn]) b?.classList.add('tb-secondary');
+  for (const b of [watchBtn, shareBtn, permBtn, starBtn, histBtn]) b?.classList.add('tb-secondary');
 
   const iconBtn = h('button', { class: 'page-icon', title: 'Changer l’icône', onClick: (e) => !readOnly() && A.pickIcon(e.currentTarget, id) });
   const addIconBtn = h('button', { class: 'add-icon', onClick: (e) => A.pickIcon(e.currentTarget, id) }, icon('smile', 15), 'Ajouter une icône');
@@ -132,7 +134,7 @@ function mountPage(page) {
   const scroller = h('div', { class: 'scroller' }, wrap);
 
   main().replaceChildren(
-    topbar(crumbsEl, app.embed ? [] : [presenceEl, saveEl, commentsButton(id, () => editor), watchBtn, permBtn, starBtn, modeBtn, histBtn, moreBtn]),
+    topbar(crumbsEl, app.embed ? [] : [presenceEl, saveEl, commentsButton(id, () => editor), watchBtn, shareBtn, permBtn, starBtn, modeBtn, histBtn, moreBtn]),
     scroller,
   );
 
@@ -369,6 +371,7 @@ function mountPage(page) {
         watchBtn && { label: watchBtn.getAttribute('aria-pressed') === 'true' ? 'Ne plus suivre la page' : 'Suivre la page', icon: 'bell', onClick: () => watchBtn.click() },
         starBtn && { label: starBtn.getAttribute('aria-pressed') === 'true' ? 'Retirer des favoris' : 'Ajouter aux favoris', icon: 'star', onClick: () => starBtn.click() },
         { label: 'Historique des versions', icon: 'history', onClick: () => histBtn.click() },
+        shareBtn && { label: 'Partager par un lien public', icon: 'globe', onClick: () => shareBtn.click() },
         permBtn && { label: 'Permissions de la page', icon: 'lock', onClick: () => permBtn.click() },
         { sep: true },
       ] : []),

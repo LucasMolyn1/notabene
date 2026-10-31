@@ -26,7 +26,7 @@ export function idFromSegment(seg) {
   return seg;
 }
 
-/** @returns {{ kind: 'page' | 'space' | 'label' | 'settings' | 'root' | 'unknown', id?: string, section?: string }} */
+/** @returns {{ kind: 'page' | 'space' | 'label' | 'share' | 'settings' | 'root' | 'unknown', id?: string, section?: string, token?: string }} */
 export function parseRoute(pathname) {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   if (path === '/') return { kind: 'root' };
@@ -37,6 +37,11 @@ export function parseRoute(pathname) {
     let name = '';
     try { name = decodeURIComponent(m[1]); } catch { /* adresse mal encodée */ }
     return /^[\p{L}\p{N}][\p{L}\p{N}_-]{0,39}$/u.test(name) ? { kind: 'label', id: name } : { kind: 'unknown' };
+  }
+  if (path.startsWith('/share/')) {
+    const [, , token, p, id, ...rest] = path.split('/');
+    const ok = /^[A-Za-z0-9_-]{20,90}$/.test(token || '') && rest.length === 0 && (p === undefined || (p === 'p' && /^[A-Za-z0-9_-]{1,64}$/.test(id || '')));
+    return ok ? { kind: 'share', token, id } : { kind: 'unknown' };
   }
   if (path === '/settings') return { kind: 'settings' };
   if (path.startsWith('/settings/') && /^[a-z-]{1,40}$/.test(path.slice(10))) return { kind: 'settings', section: path.slice(10) };

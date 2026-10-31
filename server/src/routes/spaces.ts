@@ -15,8 +15,9 @@ const fields = {
   icon: z.string().max(16),
   description: z.string().max(1000),
   visibility: z.enum(['private', 'public']),
+  sharing: z.boolean(), // partage public par lien autorisé dans l'espace (réservé aux administrateurs)
 };
-const spaceBody = z.object({ ...fields, icon: fields.icon.default('folder'), description: fields.description.default(''), visibility: fields.visibility.default('private') });
+const spaceBody = z.object({ ...fields, sharing: fields.sharing.default(true), icon: fields.icon.default('folder'), description: fields.description.default(''), visibility: fields.visibility.default('private') });
 // Modification : seuls les champs envoyés changent (sans valeurs par défaut, sinon renommer remettrait la visibilité à « privé »).
 const patchBody = z.object(fields).partial();
 // À la création : qui y a accès au départ. Par défaut les administrateurs seuls (qui voient tout) ; « everyone » ouvre l'édition à tous.
@@ -50,10 +51,10 @@ export default async function spaceRoutes(app: FastifyInstance) {
     const now = Date.now();
     const id = newId();
     const position = (db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM spaces').get() as { p: number }).p;
-    db.prepare('INSERT INTO spaces (id, name, icon, description, visibility, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, body.name, body.icon, body.description, body.visibility, position, now, now);
+    db.prepare('INSERT INTO spaces (id, name, icon, description, visibility, sharing_enabled, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, body.name, body.icon, body.description, body.visibility, body.sharing ? 1 : 0, position, now, now);
     if (body.access === 'everyone') db.prepare('INSERT INTO space_members (space_id, group_id, role) VALUES (?, ?, ?)').run(id, EVERYONE, 'edit');
-    audit(db, req, 'space.create', id, { visibility: body.visibility, access: body.access });
+    audit(db, req, 'space.create', id, { visibility: body.visibility, access: body.access, sharing: body.sharing });
     app.bus.publish({ type: 'space.changed' });
     return reply.status(201).send({ ...toSpace(db.prepare('SELECT * FROM spaces WHERE id = ?').get(id) as SpaceRow), role: spaceRoleOf(db, req, id) });
   });
@@ -70,12 +71,22 @@ export default async function spaceRoutes(app: FastifyInstance) {
     if ((req.body as { visibility?: string }).visibility !== undefined && !isAdmin(req)) throw new HttpError(403, 'Seul un administrateur change la visibilité d’un espace');
     const current = db.prepare('SELECT * FROM spaces WHERE id = ?').get(id) as SpaceRow | undefined;
     if (!current) throw new HttpError(404, 'Espace introuvable');
-    const next = { ...current, ...(req.body as Partial<SpaceRow>), updated_at: Date.now() };
-    db.prepare('UPDATE spaces SET name = ?, icon = ?, description = ?, visibility = ?, updated_at = ? WHERE id = ?')
-      .run(next.name, next.icon, next.description, next.visibility, next.updated_at, id);
+    const { sharing, ...rest } = req.body as Partial<SpaceRow> & { sharing?: boolean };
+    // Le partage public d'un espace est une décision d'administrateur, comme sa visibilité.
+    if (sharing !== undefined && !isAdmin(req)) throw new HttpError(403, 'Seul un administrateur règle le partage public d’un espace');
+    const next = { ...current, ...rest, sharing_enabled: sharing === undefined ? current.sharing_enabled : (sharing ? 1 : 0), updated_at: Date.now() };
+    db.transaction(() => {
+      db.prepare('UPDATE spaces SET name = ?, icon = ?, description = ?, visibility = ?, sharing_enabled = ?, updated_at = ? WHERE id = ?')
+        .run(next.name, next.icon, next.description, next.visibility, next.sharing_enabled, next.updated_at, id);
+      // Fermer le partage d'un espace retire les liens publics de toutes ses pages.
+      if (next.sharing_enabled !== current.sharing_enabled) {
+        const removed = next.sharing_enabled === 0 ? db.prepare('DELETE FROM page_shares WHERE page_id IN (SELECT id FROM pages WHERE space_id = ?)').run(id).changes : 0;
+        audit(db, req, 'space.sharing', id, { enabled: next.sharing_enabled === 1, removed });
+      }
+    })();
     if (next.visibility !== current.visibility) audit(db, req, 'space.visibility', id, { visibility: next.visibility });
     app.bus.publish({ type: 'space.changed' });
-    return { ...toSpace(next), role: spaceRoleOf(db, req, id) };
+    return { ...toSpace(next as SpaceRow), role: spaceRoleOf(db, req, id) };
   });
 
   // ---- Espace personnel -------------------------------------------------------------------

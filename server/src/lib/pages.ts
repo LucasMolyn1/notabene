@@ -205,6 +205,8 @@ export function movePage(db: DB, id: string, input: { parentId: string | null; i
     if (spaceId !== page.space_id) {
       const ids = [id, ...descendantIds(db, id)];
       db.prepare('UPDATE pages SET space_id = ? WHERE id IN (SELECT value FROM json_each(?))').run(spaceId, JSON.stringify(ids));
+      // Changer d'espace change qui gouverne la page : ses liens publics (et ceux de ses sous-pages) ne la suivent pas.
+      db.prepare('DELETE FROM page_shares WHERE page_id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));
     }
     return { row: getPageRow(db, id)!, fromSpaceId: page.space_id };
   })();
