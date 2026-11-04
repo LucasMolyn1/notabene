@@ -5,6 +5,7 @@ import type { DB } from '../db.js';
 import { type DocNode, sanitizeDoc } from './content.js';
 import { htmlToBlocks } from './html-import.js';
 import { HttpError } from './http.js';
+import type { AttachmentCloner } from './attachments.js';
 import { createPage, updatePage } from './pages.js';
 
 export interface ImportFile { path: string; content: string }
@@ -218,7 +219,9 @@ export function markdownToDoc(md: string, ctx: Ctx): DocNode {
 
 // ---- Import ----------------------------------------------------------------------------------
 
-export function importMarkdown(db: DB, input: { spaceId: string; files: ImportFile[]; userId: string | null }): ImportResult {
+// `cloner` : une pièce jointe citée par un fichier importé (« /api/v3/attachments/<id> ») est copiée dans la page si la personne
+// qui importe peut la lire, sinon la citation est retirée (voir updatePage).
+export function importMarkdown(db: DB, input: { spaceId: string; files: ImportFile[]; userId: string | null; cloner?: AttachmentCloner }): ImportResult {
   if (!input.files.length) throw new HttpError(400, 'Aucun fichier à importer');
   if (input.files.length > IMPORT_LIMITS.files) throw new HttpError(413, `Trop de fichiers (maximum ${IMPORT_LIMITS.files})`);
   // Un fichier trop gros est écarté et signalé : il n'annule pas l'import des autres.
@@ -293,7 +296,7 @@ export function importMarkdown(db: DB, input: { spaceId: string; files: ImportFi
       if (stats.images > imagesBefore) notes.add(`${stats.images - imagesBefore} image(s) par chemin non importée(s)`);
       if (p.body.trim() && (doc.content ?? []).every((n) => n.type === 'paragraph' && !n.content?.length)) notes.add('page vide après conversion : contenu non reconnu');
       if (notes.size) stats.notes!.push({ path: p.path, notes: [...notes] });
-      updatePage(db, id, { content: doc, title: p.meta.title || undefined }, input.userId);
+      updatePage(db, id, { content: doc, title: p.meta.title || undefined }, input.userId, input.cloner);
     }
   })();
   return stats;

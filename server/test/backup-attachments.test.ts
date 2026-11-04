@@ -136,7 +136,7 @@ describe('sauvegarde chiffrée', () => {
     const a = attach('contenu confidentiel');
     const r = await createBackup(db, { dataDir, dir: backups, env: { ...env, BACKUP_AGE_RECIPIENT: keys.recipient }, now: at(0) });
     expect(r.file.endsWith('.db.age')).toBe(true);
-    expect(readdirSync(r.attachmentsDir).sort()).toEqual([`${a}.age`, 'manifest.json']);
+    expect(readdirSync(r.attachmentsDir).sort()).toEqual([`${a}.age`, 'manifest.json'].sort());
     expect(readFileSync(join(r.attachmentsDir, `${a}.age`)).includes(Buffer.from('confidentiel'))).toBe(false);
 
     await expect(verifyFullBackup(r.file, env)).rejects.toThrow(/BACKUP_AGE_IDENTITY_FILE/);

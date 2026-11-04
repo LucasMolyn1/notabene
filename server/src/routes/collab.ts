@@ -1,8 +1,8 @@
 // WebSocket de co-édition : GET /collab/:id (cookie de session, rôle rédacteur, origine contrôlée).
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import type { Auth } from '../auth/context.js';
 import { requireScope } from '../auth/context.js';
-import { clonerFor, loadWritablePage } from '../lib/access.js';
+import { collabClonerFor, loadWritablePage } from '../lib/access.js';
 import { canWritePage } from '../lib/page-acl.js';
 import { getPageRow } from '../lib/pages.js';
 import { CollabHub } from '../lib/collab.js';
@@ -23,13 +23,8 @@ export default async function collabRoutes(app: FastifyInstance) {
     const auth: Auth = { user: { id: conn.userId, name: row.name, email: row.email, role: row.role }, via: 'session', scopes: new Set(['read', 'write']) };
     return canWritePage(db, auth, pageId);
   };
-  // Pièces jointes citées depuis une autre page : copiées avec les droits de la personne qui a fait la dernière modification.
-  const clonerForUser = (userId: string | null) => {
-    const u = userId ? db.prepare('SELECT id, name, email, role, disabled FROM users WHERE id = ?').get(userId) as { id: string; name: string; email: string | null; role: Auth['user']['role']; disabled: number } | undefined : undefined;
-    const auth: Auth | null = u && !u.disabled ? { user: { id: u.id, name: u.name, email: u.email, role: u.role }, via: 'session', scopes: new Set(['read', 'write']) } : null;
-    return clonerFor(db, config, { auth } as FastifyRequest);
-  };
-  const hub = new CollabHub(db, app.bus, authorize, clonerForUser);
+  // Pièces jointes citées depuis une autre page : copiées seulement si toutes les personnes qui ont modifié peuvent les lire.
+  const hub = new CollabHub(db, app.bus, authorize, (editors, author) => collabClonerFor(db, config, editors, author));
   app.decorate('collab', hub);
   app.addHook('onClose', async () => hub.shutdown());
 

@@ -196,12 +196,16 @@ export class AttachmentCloner {
   private readonly created: string[] = [];
   copied = 0;
   private bytes = 0;
+  /** Citations traitées : identifiant d'origine vers celui écrit (`''` : inchangé ; `null` : retirée ou laissée). */
+  readonly resolved = new Map<string, string | null>();
+  // `soft` (co-édition) : un plafond dépassé ne fait jamais échouer l'enregistrement, la citation est retirée à la place.
   constructor(
     private readonly db: DB,
     private readonly dir: string,
     private readonly userId: string | null,
     private readonly canRead: (row: AttachmentRef) => boolean,
     private readonly limits: CloneLimits,
+    private readonly opts: { soft?: boolean } = {},
   ) {}
 
   /** Document réécrit avec les identifiants des copies, rattachées à `owner`. À appeler dans la transaction qui crée ou modifie `owner`. */
@@ -225,6 +229,7 @@ export class AttachmentCloner {
         else if (row && this.canRead(row)) next = this.copy(row, ownerPage, ownerTemplate);
       }
       map.set(id, next);
+      this.resolved.set(id, next);
       return next;
     };
     const walk = (n: Node): Node | null => {
@@ -246,12 +251,13 @@ export class AttachmentCloner {
   }
 
   private copy(row: AttachmentRef, pageId: string | null, templateId: string | null): string | null {
-    this.bytes += row.size;
-    if (this.bytes > this.limits.operationBytes) throw new HttpError(413, `Trop de pièces jointes à copier en une fois (${Math.round(this.limits.operationBytes / 1024 / 1024)} Mo au plus)`);
-    if (usedBytes(this.db) + reservations(this.db).total + row.size > this.limits.totalBytes) throw new HttpError(413, 'Espace de stockage des pièces jointes plein');
+    const refuse = (message: string) => { if (this.opts.soft) return null; throw new HttpError(413, message); };
+    if (this.bytes + row.size > this.limits.operationBytes) return refuse(`Trop de pièces jointes à copier en une fois (${Math.round(this.limits.operationBytes / 1024 / 1024)} Mo au plus)`);
+    if (usedBytes(this.db) + reservations(this.db).total + row.size > this.limits.totalBytes) return refuse('Espace de stockage des pièces jointes plein');
     if (this.userId && userBytes(this.db, this.userId) + (reservations(this.db).byUser.get(this.userId)?.bytes ?? 0) + row.size > this.limits.userBytes) {
-      throw new HttpError(413, 'Quota personnel de pièces jointes atteint');
+      return refuse('Quota personnel de pièces jointes atteint');
     }
+    this.bytes += row.size;
     const next = newAttachmentId();
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     const to = attachmentPath(this.dir, next);
@@ -271,6 +277,7 @@ export class AttachmentCloner {
 
   /** Transaction annulée : les fichiers déjà copiés sont effacés (leurs lignes ont disparu avec elle). */
   rollback(): void {
+    this.resolved.clear();
     for (const f of this.created.splice(0)) { try { unlinkSync(f); } catch { /* déjà absent */ } }
   }
 }

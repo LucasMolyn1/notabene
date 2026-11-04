@@ -52,13 +52,34 @@ class Room {
   }
 }
 
+const REF_NODES = new Set(['attachment', 'video', 'audio']);
+const IMAGE_SRC = /^\/api\/v3\/attachments\/([A-Za-z0-9_-]{22})$/;
+
+/** Remplace dans l'état Yjs les citations de pièces jointes résolues (`''` : inchangée, `null` : bloc retiré, sinon la copie). */
+export function rewriteAttachmentRefs(parent: Y.XmlFragment | Y.XmlElement, resolved: Map<string, string | null>) {
+  const children = parent.toArray();
+  for (let i = children.length - 1; i >= 0; i--) {
+    const child = children[i];
+    if (!(child instanceof Y.XmlElement)) continue;
+    const isImage = child.nodeName === 'image';
+    const ref = REF_NODES.has(child.nodeName) ? child.getAttribute('id') : isImage ? IMAGE_SRC.exec(String(child.getAttribute('src') ?? ''))?.[1] : undefined;
+    if (typeof ref === 'string' && resolved.has(ref)) {
+      const next = resolved.get(ref);
+      if (next === null) { parent.delete(i, 1); continue; }
+      if (next) child.setAttribute(isImage ? 'src' : 'id', isImage ? `/api/v3/attachments/${next}` : next);
+    }
+    rewriteAttachmentRefs(child, resolved);
+  }
+}
+
 export class CollabHub {
   readonly #rooms = new Map<string, Room>();
   readonly #unsubscribe: () => void;
   readonly #unsubscribeMoves: () => void;
 
-  // `clonerFor` : copieur des pièces jointes citées, avec les droits de la dernière personne qui a modifié (voir updatePage).
-  constructor(private readonly db: DB, private readonly bus: EventBus, private readonly authorize: Authorize = () => true, private readonly clonerFor?: (userId: string | null) => AttachmentCloner) {
+  // `clonerFor` : copieur des pièces jointes citées par une autre page, avec les droits de toutes les personnes qui ont modifié
+  // depuis le dernier enregistrement (voir access.ts, collabClonerFor).
+  constructor(private readonly db: DB, private readonly bus: EventBus, private readonly authorize: Authorize = () => true, private readonly clonerFor?: (editors: string[], author: string | null) => AttachmentCloner) {
     // Une modification de contenu venue d'ailleurs (API, restauration d'une version…) invalide la salle.
     this.#unsubscribe = bus.subscribe((e) => {
       if (!e.pageId) return;
@@ -156,10 +177,12 @@ export class CollabHub {
       if (!page || page.deleted_at) { this.#close(room, CLOSE.GONE, false); return; }
       const clean = sanitizeDoc(yFragmentToJson(room.doc.getXmlFragment(FIELD)));
       if (JSON.stringify(clean) !== page.content) {
-        const cloner = this.clonerFor?.(room.lastUser);
+        const cloner = this.clonerFor?.([...room.editors], room.lastUser);
         let row;
         try { row = updatePage(this.db, room.pageId, { content: clean }, room.lastUser, cloner); } catch (err) { cloner?.rollback(); throw err; }
         room.contentHash = sha(row.content);
+        // Le document de co-édition reçoit le même nettoyage : aucun identifiant de fichier inaccessible n'y reste.
+        if (cloner?.resolved.size) room.doc.transact(() => rewriteAttachmentRefs(room.doc.getXmlFragment(FIELD), cloner.resolved), 'server');
         const author = room.lastUser ? this.db.prepare('SELECT id, name FROM users WHERE id = ?').get(room.lastUser) as { id: string; name: string } | undefined : undefined;
         this.bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: row.id, version: row.version, by: author, shared: room.editors.size > 1 });
       }

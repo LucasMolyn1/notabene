@@ -73,8 +73,10 @@ export default async function pageQueryRoutes(app: FastifyInstance) {
     return { items };
   });
 
+  // Débit limité : un enregistrement peut copier des pièces jointes citées depuis une autre page.
   app.patch('/pages/:id', {
     preHandler: async (req) => { if (!req.auth) throw new HttpError(401, 'Authentification requise'); },
+    config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
     schema: { tags, summary: 'Modifier une page : If-Match (ETag) obligatoire pour changer le contenu', params: idParams, body: patchBody },
   }, async (req, reply) => {
     const { id } = req.params as { id: string };

@@ -1,7 +1,7 @@
 // Visibilité des espaces : un espace se voit par adhésion (personne, groupe ou `everyone`, voir space-access.ts), un espace
 // public se voit sans adhésion ; un administrateur voit tout ; un visiteur anonyme ne voit que les espaces publics.
 import type { FastifyRequest } from 'fastify';
-import { can } from '../auth/context.js';
+import { type Auth, can, type Scope } from '../auth/context.js';
 import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { AttachmentCloner, attachmentsDir, type AttachmentRef } from './attachments.js';
@@ -87,8 +87,26 @@ export function canReadAttachment(db: DB, req: FastifyRequest, row: Pick<Attachm
   return !!t && readableSpaceIds(db, req).includes(t.space_id);
 }
 
+const cloneLimits = (config: Config) => ({
+  totalBytes: config.ATTACHMENTS_TOTAL_MB * 1024 * 1024, userBytes: config.ATTACHMENT_USER_MB * 1024 * 1024, operationBytes: config.ATTACHMENT_COPY_MAX_MB * 1024 * 1024,
+});
+
 /** Copieur des pièces jointes citées, pour une copie faite par l'appelant (droits de lecture et quotas de l'appelant). */
 export const clonerFor = (db: DB, config: Config, req: FastifyRequest) => new AttachmentCloner(
-  db, attachmentsDir(config.DATA_DIR), req.auth?.user.id ?? null, (row) => canReadAttachment(db, req, row),
-  { totalBytes: config.ATTACHMENTS_TOTAL_MB * 1024 * 1024, userBytes: config.ATTACHMENT_USER_MB * 1024 * 1024, operationBytes: config.ATTACHMENT_COPY_MAX_MB * 1024 * 1024 },
+  db, attachmentsDir(config.DATA_DIR), req.auth?.user.id ?? null, (row) => canReadAttachment(db, req, row), cloneLimits(config),
 );
+
+/**
+ * Copieur de la co-édition : une citation n'est copiée que si TOUTES les personnes qui ont modifié depuis le dernier enregistrement
+ * peuvent la lire (sinon l'une aurait pu coller l'identifiant d'un fichier qu'elle ne voit pas). Jamais d'échec pour un plafond :
+ * la citation est retirée. Les quotas sont ceux de `author` (dernière personne à avoir modifié).
+ */
+export function collabClonerFor(db: DB, config: Config, editorIds: string[], author: string | null): AttachmentCloner {
+  const userRow = db.prepare('SELECT id, name, email, role, disabled FROM users WHERE id = ?');
+  const auths = editorIds.map((id) => {
+    const u = userRow.get(id) as { id: string; name: string; email: string | null; role: Auth['user']['role']; disabled: number } | undefined;
+    return u && !u.disabled ? { user: { id: u.id, name: u.name, email: u.email, role: u.role }, via: 'session' as const, scopes: new Set<Scope>(['read', 'write']) } : null;
+  });
+  const canRead = (row: AttachmentRef) => auths.length > 0 && auths.every((auth) => !!auth && canReadAttachment(db, { auth } as FastifyRequest, row));
+  return new AttachmentCloner(db, attachmentsDir(config.DATA_DIR), author, canRead, cloneLimits(config), { soft: true });
+}

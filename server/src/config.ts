@@ -161,7 +161,7 @@ const schema = z
     ATTACHMENT_USER_MB: z.coerce.number().int().min(1).max(10_485_760).default(1024),
     ATTACHMENT_UPLOAD_IDLE_SECONDS: z.coerce.number().int().min(1).max(600).default(30),
     // Volume de pièces jointes copiées par une seule opération (copie, duplication, modèle), en Mo : la copie bloque le serveur.
-    ATTACHMENT_COPY_MAX_MB: z.coerce.number().int().min(1).max(10_240).default(100),
+    ATTACHMENT_COPY_MAX_MB: z.coerce.number().int().min(1).max(1024).default(100),
   })
   .superRefine((c, ctx) => {
     if (c.DEV_LOGIN && c.NODE_ENV === 'production') {
