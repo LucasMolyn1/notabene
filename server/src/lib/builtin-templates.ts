@@ -1,4 +1,4 @@
-// Modèles fournis avec Notabene : du code, pas des données. Ils ne dépendent d'aucun espace et ne sont pas modifiables.
+// Modèles fournis avec BeNote : du code, pas des données. Ils ne dépendent d'aucun espace et ne sont pas modifiables.
 import type { DocNode } from './content.js';
 
 const text = (t: string): DocNode => ({ type: 'text', text: t });

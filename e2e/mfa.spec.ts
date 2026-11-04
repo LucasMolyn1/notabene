@@ -32,7 +32,7 @@ test('active la double authentification puis se reconnecte avec le code', async 
   // Le bon code (pas de suivant : le pas courant a servi à l'activation, le rejeu est refusé).
   await p2.getByLabel('Code de vérification').fill(totp(secret, 1));
   await p2.getByRole('button', { name: 'Se connecter' }).click();
-  await expect(p2.getByText('Bienvenue sur Notabene').first()).toBeVisible();
+  await expect(p2.getByText('Bienvenue sur BeNote').first()).toBeVisible();
   await second.close();
   await admin.close();
 });

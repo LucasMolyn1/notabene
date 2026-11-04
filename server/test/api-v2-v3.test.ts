@@ -69,7 +69,7 @@ describe('API v2', () => {
 
   it('protège contre les écrasements avec ETag / If-Match', async () => {
     const ed = await login('ed1@example.com');
-    const id = (db.prepare("SELECT id FROM pages WHERE title = 'Bienvenue sur Notabene'").get() as { id: string }).id;
+    const id = (db.prepare("SELECT id FROM pages WHERE title = 'Bienvenue sur BeNote'").get() as { id: string }).id;
     const get = await call(ed, 'GET', `/api/v3/pages/${id}`);
     const tag = get.headers.etag as string;
     expect(tag).toMatch(/^"\d+"$/);
@@ -90,7 +90,7 @@ describe('API v2', () => {
   });
 
   it('pagine la recherche', async () => {
-    const res = (await call(null, 'GET', '/api/v3/search?q=notabene&limit=1')).json();
+    const res = (await call(null, 'GET', '/api/v3/search?q=benote&limit=1')).json();
     expect(res.items).toHaveLength(1);
     expect(res.nextCursor).toBeTruthy();
   });
@@ -106,7 +106,7 @@ describe('API v3 : administration', () => {
 });
 
 describe('API v3 : commentaires', () => {
-  const pageId = () => (db.prepare("SELECT id FROM pages WHERE title = 'Bienvenue sur Notabene'").get() as { id: string }).id;
+  const pageId = () => (db.prepare("SELECT id FROM pages WHERE title = 'Bienvenue sur BeNote'").get() as { id: string }).id;
 
   it('crée, répond, résout et supprime', async () => {
     const ed = await login('ed1@example.com');

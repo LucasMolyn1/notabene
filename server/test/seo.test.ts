@@ -16,8 +16,8 @@ const INDEX = `<!doctype html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <title>Notabene</title>
-  <meta name="description" content="Notabene : wiki collaboratif auto-hébergé, inspiré de Docmost.">
+  <title>BeNote</title>
+  <meta name="description" content="BeNote : wiki collaboratif auto-hébergé, inspiré de Docmost.">
 </head>
 <body>
   <div id="app"><main id="main" class="main" tabindex="-1"></main></div>
@@ -80,7 +80,7 @@ describe('rendu HTML des pages publiques', () => {
 describe('injection dans la page d’application', () => {
   it('un titre qui ressemble à un motif de remplacement ($&, $1) est recopié tel quel', () => {
     const out = injectSeo(INDEX, { title: 'Prix $& $1 $$ <b>', description: '', url: 'https://wiki.example.com/p/x', modifiedAt: 0, body: '' });
-    expect(out).toContain('<title>Prix $&amp; $1 $$ &lt;b&gt; · Notabene</title>');
+    expect(out).toContain('<title>Prix $&amp; $1 $$ &lt;b&gt; · BeNote</title>');
     expect(out).toContain('<h1>Prix $&amp; $1 $$ &lt;b&gt;</h1>');
     expect(out).not.toContain('<meta name="description"'); // sans description, l'ancienne (générique) est retirée
   });
@@ -121,7 +121,7 @@ describe('référencement des pages publiques', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/html');
     expect(res.headers['x-robots-tag']).toBeUndefined();
-    expect(res.body).toContain('<title>Bienvenue à la maison · Notabene</title>');
+    expect(res.body).toContain('<title>Bienvenue à la maison · BeNote</title>');
     expect(res.body).toContain(`<link rel="canonical" href="https://wiki.example.com/p/${seg}">`);
     expect(res.body).toContain('<meta name="robots" content="index, follow">');
     expect(res.body).toContain('<meta name="description" content="Un texte &lt;b&gt;public&lt;/b&gt; &amp; lisible.">');

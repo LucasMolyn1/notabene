@@ -1,6 +1,6 @@
 # Sauvegarde et restauration
 
-Toutes les données de Notabene (pages, versions, comptes, réglages, journal d'audit) sont dans un seul fichier SQLite : `notabene.db`, dans le volume `/data` du conteneur. Les images sont stockées dans les pages. La clé `ENCRYPTION_KEY` (dans le `.env`) n'est **pas** dans la base : sans elle, les secrets chiffrés (clé du fournisseur d'IA, secrets des webhooks, MFA) sont illisibles après restauration. Sauvegardez-la séparément et en lieu sûr.
+Toutes les données de BeNote (pages, versions, comptes, réglages, journal d'audit) sont dans un seul fichier SQLite : `notabene.db`, dans le volume `/data` du conteneur. Les images sont stockées dans les pages. La clé `ENCRYPTION_KEY` (dans le `.env`) n'est **pas** dans la base : sans elle, les secrets chiffrés (clé du fournisseur d'IA, secrets des webhooks, MFA) sont illisibles après restauration. Sauvegardez-la séparément et en lieu sûr.
 
 ## Sauvegarde
 

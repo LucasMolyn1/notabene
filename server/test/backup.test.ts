@@ -36,7 +36,7 @@ describe('sauvegarde et restauration', () => {
     restored.close();
   });
 
-  it('refuse un fichier qui n’est pas une base Notabene saine', () => {
+  it('refuse un fichier qui n’est pas une base BeNote saine', () => {
     const bad = resolve(dir, 'bad.db');
     writeFileSync(bad, 'pas une base');
     expect(() => verifyBackup(bad)).toThrow();
@@ -88,7 +88,7 @@ describe('route de téléchargement', () => {
       expect(enc).toBe(`${plain}.age`);
       expect(existsSync(plain)).toBe(false); // jamais de clair à côté
       expect(readFileSync(enc).subarray(0, 15).toString('latin1')).not.toContain('SQLite format');
-      expect(readFileSync(enc).includes(Buffer.from('Bienvenue sur Notabene'))).toBe(false);
+      expect(readFileSync(enc).includes(Buffer.from('Bienvenue sur BeNote'))).toBe(false);
 
       const keyFile = resolve(dir, 'identity.txt');
       writeFileSync(keyFile, keys.identity);

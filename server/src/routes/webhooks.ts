@@ -74,7 +74,7 @@ export default async function webhookRoutes(app: FastifyInstance) {
 
   app.post('/admin/webhooks/:id/test', { preHandler: guard('admin'), schema: { tags, summary: 'Envoyer un évènement de test', params: idParams } }, async (req) => {
     const { id } = req.params as { id: string };
-    const status = await deliver(db, box, allow, find(id), 'ping', { message: 'Notabene' });
+    const status = await deliver(db, box, allow, find(id), 'ping', { message: 'BeNote' });
     return { ok: status >= 200 && status < 300, status };
   });
 }

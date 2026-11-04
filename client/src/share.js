@@ -26,7 +26,7 @@ export async function showShare(token, pageId) {
   try {
     data = await api.get(`/public/shares/${token}${pageId ? `/pages/${pageId}` : ''}`);
   } catch {
-    document.title = 'Lien introuvable · Notabene';
+    document.title = 'Lien introuvable · BeNote';
     main.replaceChildren(h('div', { class: 'empty big' },
       h('div', { class: 'empty-emoji' }, icon('ban', 32)),
       h('h2', null, 'Lien introuvable ou expiré'),
@@ -35,7 +35,7 @@ export async function showShare(token, pageId) {
   }
   if (!data.indexing) metas.push(h('meta', { name: 'robots', content: 'noindex, nofollow' }));
   document.head.append(...metas);
-  document.title = `${data.page.title || 'Sans titre'} · Notabene`;
+  document.title = `${data.page.title || 'Sans titre'} · BeNote`;
 
   const host = h('div', { class: 'prose-host' });
   const editor = createEditor({ element: host, content: withShareLinks(data.page.content, token, data.titles), editable: false });
@@ -50,7 +50,7 @@ export async function showShare(token, pageId) {
     : null;
 
   main.replaceChildren(h('div', { class: 'share-page' },
-    h('header', { class: 'share-head' }, h('span', { class: 'muted' }, 'Page partagée avec vous'), h('span', { class: 'muted' }, 'Notabene')),
+    h('header', { class: 'share-head' }, h('span', { class: 'muted' }, 'Page partagée avec vous'), h('span', { class: 'muted' }, 'BeNote')),
     h('div', { class: 'share-layout' }, nav, h('article', { class: 'share-body' },
       h('h1', { class: 'share-title' }, pageIcon(data.page.icon, 28), ` ${data.page.title || 'Sans titre'}`), host))));
   setView({ kind: 'share', destroy: () => { editor.destroy(); for (const m of metas) m.remove(); document.body.classList.remove('share'); } });

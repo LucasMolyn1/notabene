@@ -214,16 +214,16 @@ export async function renderAbout(el) {
     if (!fresh) { button.disabled = false; button.textContent = 'Vérifier maintenant'; return; }
     session.update = fresh;
     notifyNewsChange();
-    toast(fresh.error ? 'Vérification impossible pour le moment' : fresh.updateAvailable ? `La version ${fresh.latest.version} est disponible` : 'Notabene est à jour');
+    toast(fresh.error ? 'Vérification impossible pour le moment' : fresh.updateAvailable ? `La version ${fresh.latest.version} est disponible` : 'BeNote est à jour');
     renderAbout(el);
   };
   const checkButton = () => h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: (e) => checkNow(e.currentTarget) }, 'Vérifier maintenant');
-  // Mise à jour depuis l'interface : Notabene dépose une demande, le service de l'hôte décide et exécute (docs/MISE-A-JOUR.md).
+  // Mise à jour depuis l'interface : BeNote dépose une demande, le service de l'hôte décide et exécute (docs/MISE-A-JOUR.md).
   const applyUpdate = async () => {
     const target = update.latest.version;
     const ok = await confirmModal({
       title: `Mettre à jour vers la version ${target} ?`,
-      message: 'Le service de l’hôte va sauvegarder la base, télécharger la nouvelle image et redémarrer Notabene : l’application sera indisponible une à deux minutes. Si la nouvelle version ne démarre pas, l’ancienne est remise en place. Avez-vous lu les nouveautés, surtout « Attention à la mise à jour » ?',
+      message: 'Le service de l’hôte va sauvegarder la base, télécharger la nouvelle image et redémarrer BeNote : l’application sera indisponible une à deux minutes. Si la nouvelle version ne démarre pas, l’ancienne est remise en place. Avez-vous lu les nouveautés, surtout « Attention à la mise à jour » ?',
       confirm: 'Mettre à jour',
     });
     if (!ok) return;
@@ -240,11 +240,11 @@ export async function renderAbout(el) {
       if (Date.now() - started > 15 * 60_000) { progress.textContent = 'Pas de réponse après 15 minutes : consultez le journal du service sur l’hôte (journalctl -u notabene-updater).'; return; }
       try {
         const s = await api.get('/admin/update-check');
-        if (s.current === target) { toast(`Notabene est à jour (${target})`); location.reload(); return; }
+        if (s.current === target) { toast(`BeNote est à jour (${target})`); location.reload(); return; }
         const u = s.updater;
         if (u?.state === 'failed') { progress.textContent = `Échec : ${u.message || 'voir le journal du service sur l’hôte'}`; return; }
         progress.textContent = u?.state === 'running' ? `${u.message || 'Mise à jour en cours…'}` : 'En attente du service de l’hôte…';
-      } catch { progress.textContent = 'Redémarrage de Notabene en cours… la page se rechargera toute seule.'; }
+      } catch { progress.textContent = 'Redémarrage de BeNote en cours… la page se rechargera toute seule.'; }
       setTimeout(tick, 5000);
     };
     setTimeout(tick, 5000);
@@ -259,14 +259,14 @@ export async function renderAbout(el) {
       u.state === 'failed' && u.message ? h('div', { class: 'notice warning' }, `Dernière tentative : ${u.message}`) : null,
       h('div', null, h('button', { class: 'btn btn-primary', type: 'button', disabled: u.state === 'running', onClick: applyUpdate }, icon('sparkle', 14), `Mettre à jour vers la ${update.latest.version}`)),
       progress,
-      h('p', { class: 'hint' }, 'Le service de l’hôte vérifie que cette version est bien la dernière publiée, sauvegarde la base, puis redémarre Notabene. Notabene lui-même n’a aucun accès à Docker.'));
+      h('p', { class: 'hint' }, 'Le service de l’hôte vérifie que cette version est bien la dernière publiée, sauvegarde la base, puis redémarre BeNote. BeNote lui-même n’a aucun accès à Docker.'));
   };
 
   const explanation = h('div', { class: 'stack' },
-    h('p', null, h('strong', null, 'Ce n’est pas une mise à jour automatique. '), 'Notabene vous prévient seulement qu’une nouvelle version existe ; vous décidez si et quand l’installer.'),
+    h('p', null, h('strong', null, 'Ce n’est pas une mise à jour automatique. '), 'BeNote vous prévient seulement qu’une nouvelle version existe ; vous décidez si et quand l’installer.'),
     h('p', null, 'Si vous l’activez, le serveur de cette instance demande à GitHub (api.github.com) quelle est la dernière version publiée, au plus toutes les 12 heures et seulement quand un administrateur ouvre l’application.'),
     h('ul', { class: 'plain-list' },
-      h('li', null, h('strong', null, 'GitHub voit : '), 'l’adresse IP publique de votre serveur, l’heure de la demande et le numéro de version de Notabene que vous utilisez.'),
+      h('li', null, h('strong', null, 'GitHub voit : '), 'l’adresse IP publique de votre serveur, l’heure de la demande et le numéro de version de BeNote que vous utilisez.'),
       h('li', null, h('strong', null, 'GitHub ne reçoit pas : '), 'vos pages, vos utilisateurs, le nom ou l’adresse de votre instance, ni aucun identifiant.')),
     h('p', { class: 'hint' }, 'Désactivée, l’instance n’appelle personne. Dans ce cas, vous pouvez vous abonner aux releases du dépôt sur GitHub pour être prévenu par e-mail.'));
 
@@ -304,7 +304,7 @@ export async function renderAbout(el) {
     r.sections.map((s) => h('div', null, h('h4', null, s.title), h('ul', { class: 'plain-list' }, s.items.map((it) => h('li', null, it))))));
 
   el.replaceChildren(
-    card('Notabene', null, kv([['Version', h('code', null, about.version)], ['Commit de l’image', about.commit ? h('code', null, about.commit) : null]])),
+    card('BeNote', null, kv([['Version', h('code', null, about.version)], ['Commit de l’image', about.commit ? h('code', null, about.commit) : null]])),
     updateCard,
     h('h3', { class: 'set-subtitle' }, 'Nouveautés'),
     ...(upcoming ? [release(upcoming)] : []),

@@ -1,6 +1,6 @@
 # /etc/notabene-updater.conf (root:root, 0600)
 
-# Dossier du docker-compose.yml de Notabene (celui qui contient aussi le .env avec NOTABENE_IMAGE).
+# Dossier du docker-compose.yml de BeNote (celui qui contient aussi le .env avec NOTABENE_IMAGE).
 COMPOSE_DIR=/opt/notabene
 
 # Dossier d'échange avec le conteneur : créé et possédé par root, accessible en écriture au groupe 1000

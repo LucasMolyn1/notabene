@@ -1,5 +1,5 @@
 // Vérification de mise à jour, désactivée par défaut : activable par UPDATE_CHECK=true ou depuis Paramètres, À propos.
-// Elle interroge l'API publique de GitHub (dernière release) : l'adresse IP du serveur et la version de Notabene sont alors
+// Elle interroge l'API publique de GitHub (dernière release) : l'adresse IP du serveur et la version de BeNote sont alors
 // visibles de GitHub. Aucune donnée de l'instance n'est envoyée. Déclenchée seulement quand un administrateur consulte l'écran
 // (pas de tâche de fond), résultat gardé en mémoire 12 heures, requête protégée par la garde réseau (net-guard).
 import { z } from 'zod';

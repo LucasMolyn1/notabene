@@ -168,7 +168,7 @@ export const Mermaid = textDiagramNode({ name: 'mermaid', label: 'Mermaid', defa
 // Moteur PlantUML (JS) et Graphviz (WASM) servis par notre serveur, chargés à la première utilisation.
 // Le SVG produit est affiché dans une <img> (data URL) : aucun script ni lien ne peut s'exécuter.
 
-export const DEFAULT_PLANTUML = '@startuml\nactor Utilisateur\nUtilisateur -> Notabene : Requête\nNotabene --> Utilisateur : Réponse\n@enduml';
+export const DEFAULT_PLANTUML = '@startuml\nactor Utilisateur\nUtilisateur -> BeNote : Requête\nBeNote --> Utilisateur : Réponse\n@enduml';
 
 let plantumlEngine = null;
 

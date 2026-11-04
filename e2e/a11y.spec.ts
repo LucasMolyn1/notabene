@@ -29,14 +29,14 @@ for (const scheme of ['light', 'dark'] as const) {
     test('wiki : page, palette, menu de page', async ({ page }) => {
       await loginUi(page, ADMIN.email, ADMIN.password);
       const found: string[] = [];
-      await page.getByRole('treeitem', { name: 'Bienvenue sur Notabene' }).click();
+      await page.getByRole('treeitem', { name: 'Bienvenue sur BeNote' }).click();
       await page.locator('.prose').first().waitFor();
       found.push(...await violations(page, 'page'));
       await page.keyboard.press('Control+k');
       await page.getByRole('combobox', { name: 'Rechercher' }).waitFor();
       found.push(...await violations(page, 'palette'));
       await page.keyboard.press('Escape');
-      await page.getByRole('treeitem', { name: 'Bienvenue sur Notabene' }).focus();
+      await page.getByRole('treeitem', { name: 'Bienvenue sur BeNote' }).focus();
       await page.keyboard.press('Shift+F10');
       await page.getByRole('menuitem').first().waitFor();
       found.push(...await violations(page, 'menu de page'));

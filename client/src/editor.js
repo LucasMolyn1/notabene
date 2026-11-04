@@ -95,7 +95,7 @@ export function createEditor({ element, content, editable = true, onChange, cont
     editorProps: {
       attributes: { class: 'prose', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Contenu de la page' },
       handleKeyDown: (_view, event) => slash?.onKeyDown(event) || mention?.onKeyDown(event) || false,
-      // Une mention collée depuis un autre site ne doit pas notifier : seule la copie d'une page Notabene (marqueur de
+      // Une mention collée depuis un autre site ne doit pas notifier : seule la copie d'une page BeNote (marqueur de
       // ProseMirror) garde ses mentions. Le serveur revérifie de toute façon l'accès de la personne avant d'envoyer.
       transformPastedHTML: (html) => {
         if (!/data-mention-id/i.test(html) || /data-pm-slice/i.test(html)) return html;

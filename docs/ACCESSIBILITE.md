@@ -41,6 +41,6 @@ L'interface s'adapte aux écrans étroits (menu latéral en tiroir, barre du hau
 - aucune action qui n'apparaisse qu'au survol ; raccourcis clavier masqués ;
 - une barre de mise en forme se pose au-dessus du clavier virtuel dans l'éditeur (gras, italique, titres, listes, citation, code, annuler, et « + » pour insérer un bloc) ; la bulle de sélection de bureau est remplacée ;
 - zones sûres (encoche, barre de geste) prises en compte ;
-- Notabene peut s'installer comme une application (manifeste) : « Ajouter à l'écran d'accueil » sur téléphone, « Installer » dans Chrome / Edge, « Ajouter au Dock » dans Safari.
+- BeNote peut s'installer comme une application (manifeste) : « Ajouter à l'écran d'accueil » sur téléphone, « Installer » dans Chrome / Edge, « Ajouter au Dock » dans Safari.
 
 Limites connues : le glisser-déposer de l'arborescence ne fonctionne pas au doigt (déplacer une page : la glisser dans un navigateur de bureau) ; les tests sont automatisés en émulation (Chromium, 390 px), pas sur un vrai iPhone ou Android.

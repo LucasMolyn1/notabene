@@ -6,6 +6,9 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## Non publié
 
+### Modifié
+- **Marque BeNote** : le nom affiché devient BeNote (interface, titres, e-mails, documentation, API OpenAPI, exports). Les identifiants techniques restent `notabene` : dépôt, images, variables `NOTABENE_*`, noms de fichiers et agents utilisateurs HTTP. L'émetteur affiché par les applications d'authentification passe à BeNote pour les nouvelles inscriptions TOTP ; les comptes existants restent valides.
+
 ## [3.10.0] - 2026-11-01
 
 ### Ajouté

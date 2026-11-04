@@ -256,7 +256,7 @@ export function renderSidebar() {
   const space = store.space(prefs.space) || store.spaces[0];
   const dark = currentTheme() === 'dark';
   const brand = h('div', { class: 'sb-brand' },
-    h('a', { class: 'brand', href: '/' }, h('span', { class: 'brand-logo' }), 'Notabene'),
+    h('a', { class: 'brand', href: '/' }, h('span', { class: 'brand-logo' }), 'BeNote'),
     h('button', { class: 'icon-btn', title: dark ? 'Thème clair' : 'Thème sombre', onClick: () => { A.toggleTheme(); renderSidebar(); } }, icon(dark ? 'sun' : 'moon')),
     h('button', { class: 'icon-btn', title: `Masquer la barre latérale (${modKey}\\)`, onClick: A.toggleSidebar }, icon('panel')));
 

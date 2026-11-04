@@ -53,7 +53,7 @@ export async function renderEmbed(el) {
     if (!/^[A-Za-z0-9_-]+$/.test(id)) return;
     const url = A.pageUrl(id, { embed: true });
     const h$ = Number(height.value) || 640;
-    code.value = `<iframe src="${url}" width="100%" height="${h$}" style="border:0;border-radius:12px" loading="lazy" title="Notabene"></iframe>`;
+    code.value = `<iframe src="${url}" width="100%" height="${h$}" style="border:0;border-radius:12px" loading="lazy" title="BeNote"></iframe>`;
     open.href = url;
   };
   select.addEventListener('change', paint);
@@ -75,7 +75,7 @@ export async function renderEmbed(el) {
         }, s.visibility === 'public' ? 'Rendre privé' : 'Rendre public'))))),
     cfgData
       ? embedOriginsCard(cfgData, { card, refresh: () => renderEmbed(el) })
-      : card('2. Sites autorisés', 'Origines autorisées à afficher Notabene en iframe.', h('p', { class: 'hint' }, 'Visible et modifiable par les administrateurs.')),
+      : card('2. Sites autorisés', 'Origines autorisées à afficher BeNote en iframe.', h('p', { class: 'hint' }, 'Visible et modifiable par les administrateurs.')),
     card('3. Code d’intégration', 'Affiche la page en lecture seule, sans barre latérale.',
       pages.length
         ? h('div', { class: 'stack' },

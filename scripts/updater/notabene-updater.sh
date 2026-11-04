@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Service de mise à jour de Notabene, côté hôte. À lancer par un minuteur systemd (voir docs/MISE-A-JOUR.md).
+# Service de mise à jour de BeNote, côté hôte. À lancer par un minuteur systemd (voir docs/MISE-A-JOUR.md).
 #
-# Rôle : quand un administrateur clique sur « Mettre à jour » dans l'interface, Notabene dépose une DEMANDE dans le
-# dossier d'échange. Ce script, qui tourne sur l'hôte avec le droit d'utiliser Docker, décide et exécute. Notabene
+# Rôle : quand un administrateur clique sur « Mettre à jour » dans l'interface, BeNote dépose une DEMANDE dans le
+# dossier d'échange. Ce script, qui tourne sur l'hôte avec le droit d'utiliser Docker, décide et exécute. BeNote
 # n'a jamais accès à Docker : son conteneur reste en lecture seule et sans privilèges.
 #
 # Le fichier de demande vient d'un conteneur potentiellement compromis : il est traité comme NON FIABLE.
@@ -131,7 +131,7 @@ ENV_FILE="$COMPOSE_DIR/.env"
 old_line=$(grep -m1 '^NOTABENE_IMAGE=' "$ENV_FILE" || true)
 [ -n "$old_line" ] || fail 'NOTABENE_IMAGE absent du .env : mise à jour annulée.'
 printf '%s\n' "$old_line" > "$STATE_DIR/previous-image"
-set_state running "$VERSION" 'Redémarrage de Notabene…'
+set_state running "$VERSION" 'Redémarrage de BeNote…'
 sed -i "s#^NOTABENE_IMAGE=.*#NOTABENE_IMAGE=$IMAGE_REPO:$VERSION@$digest#" "$ENV_FILE"
 compose up -d >/dev/null 2>&1 || true
 

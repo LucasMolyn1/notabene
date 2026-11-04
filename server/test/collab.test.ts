@@ -52,7 +52,7 @@ beforeEach(async () => {
   seedDemo(db);
   app = await buildApp({ config: loadConfig(env), db, clientDir: '/nonexistent' });
   await app.ready();
-  pageId = (db.prepare("SELECT id FROM pages WHERE title = 'Bienvenue sur Notabene'").get() as { id: string }).id;
+  pageId = (db.prepare("SELECT id FROM pages WHERE title = 'Bienvenue sur BeNote'").get() as { id: string }).id;
 });
 afterEach(async () => { await app.close(); db.close(); });
 
@@ -112,15 +112,15 @@ describe('co-édition en temps réel', () => {
     const { cookie } = await login('editor');
     const a = await connect(cookie);
     const b = await connect(cookie);
-    await until(() => textOf(a.json()).includes('Notabene est un') && textOf(b.json()).includes('Notabene est un'));
+    await until(() => textOf(a.json()).includes('BeNote est un') && textOf(b.json()).includes('BeNote est un'));
     expect(a.state.epoch).toBeTruthy();
     expect(a.state.epoch).toBe(b.state.epoch);
 
     const para = a.doc.getXmlFragment('default').toArray().find((n) => n instanceof Y.XmlElement && n.nodeName === 'paragraph') as Y.XmlElement;
     (para.get(0) as Y.XmlText).insert(0, 'COLLAB ');
-    await until(() => textOf(b.json()).includes('COLLAB Notabene'));
+    await until(() => textOf(b.json()).includes('COLLAB BeNote'));
     a.ws.close(); b.ws.close();
-    await until(() => (db.prepare('SELECT content FROM pages WHERE id = ?').get(pageId) as { content: string }).content.includes('COLLAB Notabene'));
+    await until(() => (db.prepare('SELECT content FROM pages WHERE id = ?').get(pageId) as { content: string }).content.includes('COLLAB BeNote'));
     expect(db.prepare('SELECT COUNT(*) AS n FROM page_ydocs WHERE page_id = ?').get(pageId)).toEqual({ n: 1 });
   });
 

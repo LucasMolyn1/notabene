@@ -59,7 +59,7 @@ const SPECS: Record<SectionName, SectionSpec> = {
         for (const raw of all) {
           const host = normalizeEmbedHost(raw);
           if (!host) ctx.addIssue({ code: 'custom', message: `hôte invalide : ${raw} (nom de domaine, sans https://, chemin, port ni joker)` });
-          else if (sameSiteAsSelf(host, selfHost(env.PUBLIC_URL))) ctx.addIssue({ code: 'custom', message: `${host} est du même site que Notabene (${selfHost(env.PUBLIC_URL)}) : il ne peut pas être intégré` });
+          else if (sameSiteAsSelf(host, selfHost(env.PUBLIC_URL))) ctx.addIssue({ code: 'custom', message: `${host} est du même site que BeNote (${selfHost(env.PUBLIC_URL)}) : il ne peut pas être intégré` });
         }
       }).transform((all) => [...new Set(all.map((h) => normalizeEmbedHost(h)!))]).default([]),
     }),

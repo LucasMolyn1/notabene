@@ -53,7 +53,7 @@ export async function showBase(initial) {
   const announce = (text) => { live.textContent = ''; setTimeout(() => { live.textContent = text; }, 50); };
   const root = h('div', { class: 'scroller' }, h('div', { class: 'page-wrap bt-wrap' }, body, live));
   main().replaceChildren(topbar(crumbsEl, []), root);
-  document.title = `${initial.title || 'Base'} · Notabene`;
+  document.title = `${initial.title || 'Base'} · BeNote`;
 
   const canWrite = () => !!data?.canWrite;
   const props = () => data.properties;
@@ -585,7 +585,7 @@ export async function showBase(initial) {
 
     const titleEl = h('input', { class: 'bt-title', 'aria-label': 'Titre de la base', placeholder: 'Sans titre', maxlength: '300', disabled: !canWrite() });
     titleEl.value = store.page(id)?.title ?? page.title;
-    titleEl.addEventListener('change', () => A.attempt(() => store.updatePage(id, { title: titleEl.value })).then(() => { document.title = `${titleEl.value || 'Base'} · Notabene`; }));
+    titleEl.addEventListener('change', () => A.attempt(() => store.updatePage(id, { title: titleEl.value })).then(() => { document.title = `${titleEl.value || 'Base'} · BeNote`; }));
     const iconBtn = h('button', { class: 'page-icon', title: 'Changer l’icône', disabled: !canWrite(), onClick: (e) => A.pickIcon(e.currentTarget, id) }, pageIcon(store.page(id)?.icon || 'table', 26));
 
     const filtersOn = c.filters.length;

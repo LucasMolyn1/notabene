@@ -16,7 +16,7 @@ test('une page restreinte est invisible pour un autre utilisateur', async ({ bro
   const curious = await sessionContext(browser, 'curious.person@e2e.test', PASSWORD);
   const page = await curious.newPage();
   await page.goto('/');
-  await expect(page.getByText('Bienvenue sur Notabene').first()).toBeVisible();
+  await expect(page.getByText('Bienvenue sur BeNote').first()).toBeVisible();
   await page.goto(`/#/p/${target.id}`);
   await expect(page.getByText('Page introuvable')).toBeVisible();
   await page.goto(`/#/p/${child.id}`);

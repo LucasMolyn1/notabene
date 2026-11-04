@@ -342,7 +342,7 @@ function mountPage(page) {
       modeBtn.replaceChildren(icon(prefs.readOnly ? 'pencil' : 'eye', 15), prefs.readOnly ? 'Éditer' : 'Lecture');
       modeBtn.title = prefs.readOnly ? 'Passer en mode édition' : 'Passer en mode lecture';
     }
-    document.title = `${p.title || 'Sans titre'} · Notabene`;
+    document.title = `${p.title || 'Sans titre'} · BeNote`;
     tidyAddress(pagePath(p)); // le titre a pu changer (renommage) : l'adresse le suit
   }
 
@@ -453,7 +453,7 @@ export function showSpace(spaceId) {
   prefs.space = spaceId;
   savePrefs();
   presence.setPage(null);
-  document.title = `${space.name} · Notabene`;
+  document.title = `${space.name} · BeNote`;
   tidyAddress(spacePath(space));
   const canWrite = session.can('write') && store.canWriteIn(spaceId);
 
@@ -509,7 +509,7 @@ export async function showLabel(name) {
   teardown();
   const seq = ++navSeq;
   presence.setPage(null);
-  document.title = `${name} · Notabene`;
+  document.title = `${name} · BeNote`;
   loading();
   let pages;
   try {
@@ -550,12 +550,12 @@ const AUTH_ERRORS = {
 
 export function showLogin() {
   teardown();
-  document.title = 'Connexion · Notabene';
+  document.title = 'Connexion · BeNote';
   const error = new URLSearchParams(location.search).get('auth_error');
   const { oidc, devLogin, local, setupRequired, ldap, saml } = session.config.auth;
   main().replaceChildren(h('div', { class: 'login' }, h('div', { class: 'login-card' },
     h('div', { class: 'boot-logo' }),
-    h('h1', null, 'Notabene'),
+    h('h1', null, 'BeNote'),
     h('p', { class: 'muted' }, 'Le wiki de votre équipe. Connectez-vous pour continuer.'),
     error && h('div', { class: 'notice warning' }, AUTH_ERRORS[error] || 'Connexion impossible.'),
     // Le fournisseur d'identité d'abord (un clic), puis les formulaires à mot de passe ; l'installation initiale passe avant tout.
@@ -577,7 +577,7 @@ export function showLogin() {
 
 export function showMissing(id, status = 404) {
   teardown();
-  document.title = 'Page introuvable · Notabene';
+  document.title = 'Page introuvable · BeNote';
   const anonymous = !session.user;
   main().replaceChildren(
     topbar(h('nav', { class: 'crumbs' })),

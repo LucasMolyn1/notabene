@@ -1,5 +1,5 @@
 [Unit]
-Description=Mise à jour de Notabene demandée depuis l'interface
+Description=Mise à jour de BeNote demandée depuis l'interface
 After=docker.service network-online.target
 Wants=network-online.target
 

@@ -5,8 +5,8 @@ import { loginUi } from './helpers';
 
 test('connexion locale puis chargement du wiki', async ({ page }) => {
   await loginUi(page, ADMIN.email, ADMIN.password);
-  await expect(page.getByText('Bienvenue sur Notabene').first()).toBeVisible();
-  await expect(page).toHaveTitle(/Notabene/);
+  await expect(page.getByText('Bienvenue sur BeNote').first()).toBeVisible();
+  await expect(page).toHaveTitle(/BeNote/);
 });
 
 test('refuse un mauvais mot de passe', async ({ page }) => {
@@ -22,7 +22,7 @@ test('les anciennes versions d’API n’existent plus', async ({ request }) => 
 
 test('la recherche s’ouvre au clavier, prend le focus et se ferme avec Échap', async ({ page }) => {
   await loginUi(page, ADMIN.email, ADMIN.password);
-  await page.getByRole('treeitem', { name: 'Bienvenue sur Notabene' }).waitFor(); // les raccourcis sont posés quand l'application a fini de démarrer
+  await page.getByRole('treeitem', { name: 'Bienvenue sur BeNote' }).waitFor(); // les raccourcis sont posés quand l'application a fini de démarrer
   await page.keyboard.press('Control+k');
   const input = page.getByRole('combobox', { name: 'Rechercher' });
   await expect(input).toBeFocused();
@@ -35,7 +35,7 @@ test('la recherche s’ouvre au clavier, prend le focus et se ferme avec Échap'
 test('l’arborescence se parcourt au clavier (flèches, menu, Échap)', async ({ page }) => {
   await loginUi(page, ADMIN.email, ADMIN.password);
   const tree = page.getByRole('tree', { name: 'Pages' });
-  const root = tree.getByRole('treeitem', { name: 'Bienvenue sur Notabene' });
+  const root = tree.getByRole('treeitem', { name: 'Bienvenue sur BeNote' });
   await root.focus();
   await page.keyboard.press('ArrowRight');
   await expect(root).toHaveAttribute('aria-expanded', 'true');
@@ -203,8 +203,8 @@ test('« Vérifier maintenant » relance la vérification et annonce une nouvell
 
 test('les pages ont une adresse lisible, qui suit le titre ; les anciennes adresses # et le retour arrière fonctionnent', async ({ page }) => {
   await loginUi(page, ADMIN.email, ADMIN.password);
-  await page.getByRole('treeitem', { name: 'Bienvenue sur Notabene' }).click();
-  await expect(page).toHaveURL(/\/p\/bienvenue-sur-notabene-[\w-]{12}$/);
+  await page.getByRole('treeitem', { name: 'Bienvenue sur BeNote' }).click();
+  await expect(page).toHaveURL(/\/p\/bienvenue-sur-benote-[\w-]{12}$/);
   const address = new URL(page.url()).pathname;
   const id = address.slice(-12);
 
@@ -215,7 +215,7 @@ test('les pages ont une adresse lisible, qui suit le titre ; les anciennes adres
 
   await page.goto(`/#/p/${id}`); // ancien format
   await expect(page).toHaveURL(new RegExp(`${address}$`));
-  await expect(page.getByText('Bienvenue sur Notabene').first()).toBeVisible();
+  await expect(page.getByText('Bienvenue sur BeNote').first()).toBeVisible();
   await page.goto(`/p/ancien-titre-${id}`); // titre périmé
   await expect(page).toHaveURL(new RegExp(`${address}$`));
 

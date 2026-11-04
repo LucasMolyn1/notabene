@@ -75,7 +75,7 @@ export async function readableBackup(file: string, env: NodeJS.ProcessEnv = proc
   return { path, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-// Vérifie qu'un fichier est une base Notabene saine avant de l'utiliser.
+// Vérifie qu'un fichier est une base BeNote saine avant de l'utiliser.
 export function verifyBackup(file: string): { users: number; pages: number; version: number } {
   const db = new Database(file, { readonly: true, fileMustExist: true });
   try {

@@ -121,7 +121,7 @@ const paste = (page: Page, html: string) => page.evaluate((h) => {
   document.querySelector('.prose')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
 }, html);
 
-test('coller du HTML d’un autre site n’y garde aucune mention ; une copie de Notabene la garde', async ({ page, browser }) => {
+test('coller du HTML d’un autre site n’y garde aucune mention ; une copie de BeNote la garde', async ({ page, browser }) => {
   const id = await newPage(browser, 'Collage e2e', 'Début.');
   await loginUi(page, ADMIN.email, ADMIN.password);
   await page.goto(`/p/${id}`);
