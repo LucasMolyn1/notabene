@@ -6,7 +6,7 @@ Guide pour faire tourner BeNote avec l'image publiée, derrière un reverse prox
 
 Les images sont publiées sur GitHub Container Registry : `ghcr.io/lucasmolyn1/notabene`. Une image est créée à chaque tag `vX.Y.Z` (amd64 et arm64) avec une attestation de provenance (SLSA) et un SBOM.
 
-- **Épinglez le tag ET le digest** : `ghcr.io/lucasmolyn1/notabene:3.0.0@sha256:…`. Un tag peut être déplacé, un digest non. N'utilisez pas `latest` en production.
+- **Épinglez le tag exact** : `ghcr.io/lucasmolyn1/notabene:3.0.0`. N'utilisez pas `latest` en production. Option durcie : ajouter le digest (`…:3.0.0@sha256:…`), car un tag peut en théorie être déplacé ; la vérification de provenance ci-dessous couvre le même risque.
 - **Une image antérieure à la 3.0.0 ne convient pas à ce guide** : la 2.0.0 n'a ni comptes locaux, ni `create-admin`, ni sauvegardes chiffrées, ni import Markdown.
 - Digest d'un tag : `docker buildx imagetools inspect ghcr.io/lucasmolyn1/notabene:3.0.0`.
 - Vérifier la provenance : `gh attestation verify oci://ghcr.io/lucasmolyn1/notabene:3.0.0 --owner LucasMolyn1`.
@@ -18,7 +18,7 @@ Les images sont publiées sur GitHub Container Registry : `ghcr.io/lucasmolyn1/n
 name: notabene
 services:
   notabene:
-    image: ghcr.io/lucasmolyn1/notabene:3.0.0@sha256:<digest>
+    image: ghcr.io/lucasmolyn1/notabene:3.0.0
     restart: unless-stopped
     env_file: .env
     environment: { DATA_DIR: /data, HOST: 0.0.0.0, PORT: 3000 }
@@ -107,7 +107,7 @@ Pour un répartiteur (HAProxy, etc.), utilisez `GET /healthz` (`{"ok":true}`, 50
 
 1. Lire le [CHANGELOG](../CHANGELOG.md) (section « Attention à la mise à jour »).
 2. Prendre une sauvegarde et, si possible, un instantané de la machine.
-3. Remplacer le tag et le digest dans le compose, puis `docker compose pull && docker compose up -d`.
+3. Remplacer le tag dans le compose (et le digest si vous l'épinglez), puis `docker compose pull && docker compose up -d`.
 4. Vérifier : `/healthz`, la version dans Paramètres, Instance, une connexion et l'ouverture d'une page.
 
 Les migrations de base s'appliquent au démarrage et **ne reviennent pas en arrière** : un serveur plus ancien refuse de démarrer sur une base plus récente. Le retour arrière se fait en restaurant la sauvegarde (ou l'instantané) **et** en remettant l'ancienne image.

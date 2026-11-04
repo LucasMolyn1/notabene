@@ -11,6 +11,7 @@ EXCHANGE_DIR=/srv/appdata/notabene-updater
 #IMAGE_REPO=ghcr.io/lucasmolyn1/notabene
 #GITHUB_REPO=LucasMolyn1/notabene
 #SERVICE=notabene
+# Par défaut, l'état de santé du conteneur Docker est utilisé. Pour sonder une adresse précise à la place :
 #HEALTH_URL=http://127.0.0.1:3000/healthz
 #HEALTH_TIMEOUT=120
 

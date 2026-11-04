@@ -47,7 +47,7 @@ describe('installation du service de mise à jour', () => {
     expect(statSync(join(root, 'exchange')).mode & 0o777).toBe(0o770);
     expect(statSync(join(root, 'etc', 'notabene-updater.conf')).mode & 0o777).toBe(0o600);
     expect(read('etc', 'notabene-updater.conf')).toContain(`COMPOSE_DIR=${repo}`);
-    expect(read('etc', 'notabene-updater.conf')).toContain('REQUIRE_BACKUP=true');
+    expect(read('etc', 'notabene-updater.conf')).toContain('REQUIRE_BACKUP=false');
     expect(existsSync(join(root, 'sbin', 'notabene-updater.sh'))).toBe(true);
     expect(read('systemctl.log')).toContain('enable --now notabene-updater.timer');
     expect(read('docker.log')).toContain('compose up -d');
@@ -79,9 +79,9 @@ describe('installation du service de mise à jour', () => {
     expect(env).toContain('UPDATE_CHECK=true');
   });
 
-  it('--sans-sauvegarde est réservé à la demande explicite', () => {
-    run('--sans-sauvegarde');
-    expect(read('etc', 'notabene-updater.conf')).toContain('REQUIRE_BACKUP=false');
+  it('--exiger-sauvegarde refuse les mises à jour sans sauvegarde', () => {
+    run('--exiger-sauvegarde');
+    expect(read('etc', 'notabene-updater.conf')).toContain('REQUIRE_BACKUP=true');
   });
 
   it('ne double pas un volume /updater déjà ajouté à la main', () => {
