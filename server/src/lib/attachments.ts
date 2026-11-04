@@ -168,21 +168,34 @@ export function parseRange(header: string | undefined, size: number): { start: n
   return { start, end: b === '' ? size - 1 : Math.min(Number(b), size - 1) };
 }
 
+// ---- Envois en cours ----------------------------------------------------------------------
+// Octets reçus mais pas encore enregistrés, par base (une instance) : comptés dans le plafond par les envois et par les copies.
+export interface Reservations { total: number; byUser: Map<string, { count: number; bytes: number }> }
+const reservationsByDb = new WeakMap<DB, Reservations>();
+export function reservations(db: DB): Reservations {
+  let r = reservationsByDb.get(db);
+  if (!r) { r = { total: 0, byUser: new Map() }; reservationsByDb.set(db, r); }
+  return r;
+}
+
 // ---- Copie des fichiers cités par un document ----------------------------------------------
 // Copier une page, la dupliquer, en faire un modèle ou créer une page depuis un modèle : chaque pièce jointe citée (bloc fichier,
-// vidéo, audio, ou image « /api/v3/attachments/<id> ») devient une nouvelle ligne et un nouveau fichier, rattachés à la copie. La copie
-// ne dépend donc plus de l'original (suppression, restriction ajoutée ensuite). On ne copie que ce que la personne peut lire ; le reste
-// est laissé tel quel et restera introuvable pour qui ne lit pas l'original.
+// vidéo, audio, ou image « /api/v3/attachments/<id> ») qui n'appartient pas déjà à la destination devient une nouvelle ligne et un
+// nouveau fichier, rattachés à la destination, qui ne dépend donc plus de l'original. On ne copie que ce que la personne peut lire.
+// À l'enregistrement d'une page (`dropUnreadable`), une citation illisible ou introuvable est retirée du contenu ; lors d'une copie,
+// elle est laissée telle quelle (elle restera introuvable pour qui ne lit pas l'original).
+// La copie est synchrone (dans la transaction qui crée la destination) : son volume est plafonné par opération.
 export interface AttachmentRef { id: string; page_id: string | null; template_id: string | null; uploader_id: string | null; name: string; mime: string; size: number; sha256: string }
 interface Node { type: string; attrs?: Record<string, unknown>; content?: Node[] }
 const IMAGE_SRC = /^\/api\/v3\/attachments\/([A-Za-z0-9_-]{22})$/;
 const REF_NODES = new Set(['attachment', 'video', 'audio']);
 
-export interface CloneLimits { totalBytes: number; userBytes: number }
+export interface CloneLimits { totalBytes: number; userBytes: number; operationBytes: number }
 
 export class AttachmentCloner {
   private readonly created: string[] = [];
   copied = 0;
+  private bytes = 0;
   constructor(
     private readonly db: DB,
     private readonly dir: string,
@@ -191,53 +204,69 @@ export class AttachmentCloner {
     private readonly limits: CloneLimits,
   ) {}
 
-  /** Document réécrit avec les identifiants des copies, rattachées à `owner`. À appeler dans la transaction qui crée `owner`. */
-  clone<T extends Node>(doc: T, owner: { pageId: string } | { templateId: string }): T {
+  /** Document réécrit avec les identifiants des copies, rattachées à `owner`. À appeler dans la transaction qui crée ou modifie `owner`. */
+  clone<T extends Node>(doc: T, owner: { pageId: string } | { templateId: string }, opts: { dropUnreadable?: boolean } = {}): T {
     const map = new Map<string, string | null>();
+    const ownerPage = 'pageId' in owner ? owner.pageId : null;
+    const ownerTemplate = 'templateId' in owner ? owner.templateId : null;
     const get = this.db.prepare('SELECT id, page_id, template_id, uploader_id, name, mime, size, sha256 FROM attachments WHERE id = ?');
-    const insert = this.db.prepare('INSERT INTO attachments (id, page_id, template_id, uploader_id, name, mime, size, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    const copyOf = (id: string): string | null => {
+    const earlier = this.db.prepare('SELECT id FROM attachments WHERE page_id = ? AND copied_from = ? LIMIT 1');
+    const KEEP = '';
+    // Identifiant à écrire : le même (déjà à la destination), celui d'une copie, ou null (citation à retirer ou à laisser).
+    const resolve = (id: string): string | null => {
       if (map.has(id)) return map.get(id)!;
       const row = get.get(id) as AttachmentRef | undefined;
       let next: string | null = null;
-      if (row && this.canRead(row)) {
-        if (usedBytes(this.db) + row.size > this.limits.totalBytes) throw new HttpError(413, 'Espace de stockage des pièces jointes plein');
-        if (this.userId && userBytes(this.db, this.userId) + row.size > this.limits.userBytes) throw new HttpError(413, 'Quota personnel de pièces jointes atteint');
-        next = newAttachmentId();
-        mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-        const to = attachmentPath(this.dir, next);
-        try {
-          // Clonage léger quand le système de fichiers le permet ; jamais d'écrasement.
-          copyFileSync(attachmentPath(this.dir, row.id), to, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
-        } catch {
-          next = null; // fichier absent du disque : la référence reste celle d'origine
-        }
-        if (next) {
-          this.created.push(to);
-          chmodSync(to, 0o600);
-          insert.run(next, 'pageId' in owner ? owner.pageId : null, 'templateId' in owner ? owner.templateId : null, this.userId, row.name, row.mime, row.size, row.sha256, Date.now());
-          this.copied++;
-        }
+      if (row && ((ownerPage && row.page_id === ownerPage) || (ownerTemplate && row.template_id === ownerTemplate))) next = KEEP;
+      else {
+        // Copie déjà faite pour cette page lors d'un enregistrement précédent (la source a pu disparaître depuis).
+        const prior = ownerPage ? earlier.get(ownerPage, id) as { id: string } | undefined : undefined;
+        if (prior) next = prior.id;
+        else if (row && this.canRead(row)) next = this.copy(row, ownerPage, ownerTemplate);
       }
       map.set(id, next);
       return next;
     };
-    const walk = (n: Node): Node => {
+    const walk = (n: Node): Node | null => {
       const out: Node = { ...n };
       if (n.attrs) {
-        if (REF_NODES.has(n.type) && typeof n.attrs.id === 'string' && ATTACHMENT_ID.test(n.attrs.id)) {
-          const next = copyOf(n.attrs.id);
-          if (next) out.attrs = { ...n.attrs, id: next };
-        } else if (n.type === 'image' && typeof n.attrs.src === 'string') {
-          const m = IMAGE_SRC.exec(n.attrs.src);
-          const next = m ? copyOf(m[1]!) : null;
-          if (next) out.attrs = { ...n.attrs, src: `/api/v3/attachments/${next}` };
+        let ref: string | null = null;
+        if (REF_NODES.has(n.type) && typeof n.attrs.id === 'string' && ATTACHMENT_ID.test(n.attrs.id)) ref = n.attrs.id;
+        else if (n.type === 'image' && typeof n.attrs.src === 'string') ref = IMAGE_SRC.exec(n.attrs.src)?.[1] ?? null;
+        if (ref) {
+          const next = resolve(ref);
+          if (next === null) { if (opts.dropUnreadable) return null; }
+          else if (next !== KEEP) out.attrs = n.type === 'image' ? { ...n.attrs, src: `/api/v3/attachments/${next}` } : { ...n.attrs, id: next };
         }
       }
-      if (n.content) out.content = n.content.map(walk);
+      if (n.content) out.content = n.content.map(walk).filter((c): c is Node => c !== null);
       return out;
     };
-    return walk(doc) as T;
+    return (walk(doc) ?? doc) as T;
+  }
+
+  private copy(row: AttachmentRef, pageId: string | null, templateId: string | null): string | null {
+    this.bytes += row.size;
+    if (this.bytes > this.limits.operationBytes) throw new HttpError(413, `Trop de pièces jointes à copier en une fois (${Math.round(this.limits.operationBytes / 1024 / 1024)} Mo au plus)`);
+    if (usedBytes(this.db) + reservations(this.db).total + row.size > this.limits.totalBytes) throw new HttpError(413, 'Espace de stockage des pièces jointes plein');
+    if (this.userId && userBytes(this.db, this.userId) + (reservations(this.db).byUser.get(this.userId)?.bytes ?? 0) + row.size > this.limits.userBytes) {
+      throw new HttpError(413, 'Quota personnel de pièces jointes atteint');
+    }
+    const next = newAttachmentId();
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    const to = attachmentPath(this.dir, next);
+    try {
+      // Clonage léger quand le système de fichiers le permet ; jamais d'écrasement.
+      copyFileSync(attachmentPath(this.dir, row.id), to, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
+    } catch {
+      return null; // fichier absent du disque : rien à copier
+    }
+    this.created.push(to);
+    chmodSync(to, 0o600);
+    this.db.prepare('INSERT INTO attachments (id, page_id, template_id, uploader_id, name, mime, size, sha256, created_at, copied_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(next, pageId, templateId, this.userId, row.name, row.mime, row.size, row.sha256, Date.now(), row.id);
+    this.copied++;
+    return next;
   }
 
   /** Transaction annulée : les fichiers déjà copiés sont effacés (leurs lignes ont disparu avec elle). */
@@ -251,7 +280,8 @@ export const UNREFERENCED_GRACE_MS = 7 * 86_400_000;
 
 /**
  * Une pièce jointe de page qu'aucune version de la page (contenu actuel, historique, état de co-édition) ne cite plus est
- * marquée ; si elle ne l'est toujours pas après le délai de grâce, elle est supprimée (le fichier suit par attachment_gc).
+ * marquée ; si elle ne l'est toujours pas après le délai de grâce, et qu'aucune autre page ni aucun modèle ne la cite, elle est
+ * supprimée (le fichier suit par attachment_gc).
  * Citée de nouveau entre-temps (annulation, restauration d'une version), elle perd sa marque. Renvoie le nombre supprimé.
  */
 export function sweepUnreferenced(db: DB, now = Date.now(), graceMs = UNREFERENCED_GRACE_MS): number {
@@ -262,6 +292,13 @@ export function sweepUnreferenced(db: DB, now = Date.now(), graceMs = UNREFERENC
   const ydoc = db.prepare('SELECT state FROM page_ydocs WHERE page_id = ?');
   const mark = db.prepare('UPDATE attachments SET unreferenced_since = ? WHERE id = ?');
   const remove = db.prepare('DELETE FROM attachments WHERE id = ?');
+  // Dernier contrôle avant suppression : citée par n'importe quelle page (contenu, historique, co-édition) ou par un modèle, elle reste.
+  const citedAnywhere = db.prepare(
+    `SELECT 1 WHERE EXISTS (SELECT 1 FROM pages WHERE instr(content, @id) > 0)
+       OR EXISTS (SELECT 1 FROM page_versions WHERE instr(content, @id) > 0)
+       OR EXISTS (SELECT 1 FROM page_templates WHERE instr(content, @id) > 0)
+       OR EXISTS (SELECT 1 FROM page_ydocs WHERE instr(state, @raw) > 0)`,
+  );
   let removed = 0;
   for (const { id: pageId } of pages) {
     const rows = ofPage.all(pageId) as { id: string; unreferenced_since: number | null }[];
@@ -275,7 +312,10 @@ export function sweepUnreferenced(db: DB, now = Date.now(), graceMs = UNREFERENC
       for (const r of rows) {
         if (!pending.has(r.id)) { if (r.unreferenced_since !== null) mark.run(null, r.id); }
         else if (r.unreferenced_since === null) mark.run(now, r.id);
-        else if (now - r.unreferenced_since >= graceMs) { remove.run(r.id); removed++; }
+        else if (now - r.unreferenced_since >= graceMs) {
+          if (citedAnywhere.get({ id: r.id, raw: Buffer.from(r.id) })) mark.run(null, r.id);
+          else { remove.run(r.id); removed++; }
+        }
       }
     })();
   }

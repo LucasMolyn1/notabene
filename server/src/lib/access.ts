@@ -90,5 +90,5 @@ export function canReadAttachment(db: DB, req: FastifyRequest, row: Pick<Attachm
 /** Copieur des pièces jointes citées, pour une copie faite par l'appelant (droits de lecture et quotas de l'appelant). */
 export const clonerFor = (db: DB, config: Config, req: FastifyRequest) => new AttachmentCloner(
   db, attachmentsDir(config.DATA_DIR), req.auth?.user.id ?? null, (row) => canReadAttachment(db, req, row),
-  { totalBytes: config.ATTACHMENTS_TOTAL_MB * 1024 * 1024, userBytes: config.ATTACHMENT_USER_MB * 1024 * 1024 },
+  { totalBytes: config.ATTACHMENTS_TOTAL_MB * 1024 * 1024, userBytes: config.ATTACHMENT_USER_MB * 1024 * 1024, operationBytes: config.ATTACHMENT_COPY_MAX_MB * 1024 * 1024 },
 );

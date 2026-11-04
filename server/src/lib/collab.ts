@@ -9,6 +9,7 @@ import * as encoding from 'lib0/encoding';
 import * as Y from 'yjs';
 import type { WebSocket } from 'ws';
 import type { DB } from '../db.js';
+import type { AttachmentCloner } from './attachments.js';
 import { sanitizeDoc } from './content.js';
 import type { EventBus } from './events.js';
 import { randomToken } from './crypto.js';
@@ -56,7 +57,8 @@ export class CollabHub {
   readonly #unsubscribe: () => void;
   readonly #unsubscribeMoves: () => void;
 
-  constructor(private readonly db: DB, private readonly bus: EventBus, private readonly authorize: Authorize = () => true) {
+  // `clonerFor` : copieur des pièces jointes citées, avec les droits de la dernière personne qui a modifié (voir updatePage).
+  constructor(private readonly db: DB, private readonly bus: EventBus, private readonly authorize: Authorize = () => true, private readonly clonerFor?: (userId: string | null) => AttachmentCloner) {
     // Une modification de contenu venue d'ailleurs (API, restauration d'une version…) invalide la salle.
     this.#unsubscribe = bus.subscribe((e) => {
       if (!e.pageId) return;
@@ -154,7 +156,9 @@ export class CollabHub {
       if (!page || page.deleted_at) { this.#close(room, CLOSE.GONE, false); return; }
       const clean = sanitizeDoc(yFragmentToJson(room.doc.getXmlFragment(FIELD)));
       if (JSON.stringify(clean) !== page.content) {
-        const row = updatePage(this.db, room.pageId, { content: clean }, room.lastUser);
+        const cloner = this.clonerFor?.(room.lastUser);
+        let row;
+        try { row = updatePage(this.db, room.pageId, { content: clean }, room.lastUser, cloner); } catch (err) { cloner?.rollback(); throw err; }
         room.contentHash = sha(row.content);
         const author = room.lastUser ? this.db.prepare('SELECT id, name FROM users WHERE id = ?').get(room.lastUser) as { id: string; name: string } | undefined : undefined;
         this.bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: row.id, version: row.version, by: author, shared: room.editors.size > 1 });

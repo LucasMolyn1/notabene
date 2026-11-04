@@ -505,6 +505,13 @@ export const MIGRATIONS: string[] = [
     INSERT OR IGNORE INTO attachment_gc (id) VALUES (old.id);
   END;
   `,
+  // v21 : origine d'une copie de pièce jointe. Une page qui cite le fichier d'une autre page en reçoit une copie à l'enregistrement ;
+  // `copied_from` permet de réutiliser cette copie aux enregistrements suivants au lieu d'en refaire une à chaque fois.
+  // Retour arrière : la colonne peut rester (ignorée), ou la table être refaite sans elle.
+  `
+  ALTER TABLE attachments ADD COLUMN copied_from TEXT;
+  CREATE INDEX attachments_copied ON attachments(page_id, copied_from) WHERE copied_from IS NOT NULL;
+  `,
 ];
 
 export function openDb(file: string): DB {

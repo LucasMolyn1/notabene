@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { type DB, openDb } from '../src/db.js';
-import { drainAttachmentGc, sweepUnreferenced, UNREFERENCED_GRACE_MS } from '../src/lib/attachments.js';
+import { drainAttachmentGc, reservations, sweepUnreferenced, UNREFERENCED_GRACE_MS } from '../src/lib/attachments.js';
 import { type DocNode, sanitizeDoc } from '../src/lib/content.js';
 import { toMarkdown } from '../src/lib/markdown.js';
 import { hashPassword } from '../src/lib/password.js';
@@ -251,5 +251,73 @@ describe('pièces jointes qui ne sont plus citées', () => {
     expect(up.prepare('SELECT id FROM attachment_gc').all()).toEqual([{ id: ID }]);
     up.close();
     expect(new Database(file).pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(20);
+  });
+});
+
+describe('citations d’une autre page et plafonds de copie', () => {
+  const block = (id: string) => ({ type: 'attachment', attrs: { id, name: 'x' } });
+  const addPage = (id: string) => db.prepare("INSERT INTO pages (id, space_id, title, content, text, created_at, updated_at) VALUES (?, 'sp', ?, '{\"type\":\"doc\",\"content\":[]}', '', 1, 1)").run(id, id);
+  const pageRefs = async (s: S, id: string) => refs((await call(s, 'GET', `/api/v3/pages/${id}`)).json().content);
+
+  it('bloc collé depuis P dans Q : copié dans Q une seule fois ; illisible ou inconnu : retiré', async () => {
+    await boot();
+    addPage('q');
+    db.prepare("INSERT INTO pages (id, space_id, title, content, text, created_at, updated_at) VALUES ('secret', 'sp', 'Secret', '{\"type\":\"doc\",\"content\":[]}', '', 1, 1)").run();
+    db.prepare("INSERT INTO page_acl (page_id, user_id, level) VALUES ('secret', 'ed2', 'write')").run();
+    const hidden = await upload(await login('ed2'), 'secret', 'cache.txt', Buffer.from('cache'));
+    const ed1 = await login('ed1');
+    const x = await upload(ed1, 'p1', 'x.txt', Buffer.from('x'));
+    expect(await save(ed1, 'q', { type: 'doc', content: [block(x), block(hidden), block(ID)] })).toBe(200);
+    const [copy, ...rest] = await pageRefs(ed1, 'q');
+    expect(rest).toEqual([]);
+    expect(copy).not.toBe(x);
+    expect(db.prepare('SELECT page_id, copied_from FROM attachments WHERE id = ?').get(copy)).toEqual({ page_id: 'q', copied_from: x });
+    // Le client garde l'identifiant d'origine (co-édition) : l'enregistrement suivant réutilise la même copie.
+    expect(await save(ed1, 'q', { type: 'doc', content: [block(x), { type: 'paragraph', content: [{ type: 'text', text: 'suite' }] }] })).toBe(200);
+    expect(await pageRefs(ed1, 'q')).toEqual([copy]);
+    expect(rowsOf('q')).toEqual([copy]);
+    // Retiré de P puis délai écoulé : le fichier de P part, celui de Q reste.
+    expect(await save(ed1, 'p1', { type: 'doc', content: [{ type: 'paragraph' }] })).toBe(200);
+    const t0 = Date.now();
+    sweepUnreferenced(db, t0);
+    sweepUnreferenced(db, t0 + UNREFERENCED_GRACE_MS);
+    await drainAttachmentGc(db, filesDir);
+    expect(existsSync(join(filesDir, copy!))).toBe(true);
+    expect((await call(ed1, 'GET', `/api/v3/attachments/${copy}`)).statusCode).toBe(200);
+  });
+
+  it('nettoyage : jamais un fichier encore cité par une autre page', async () => {
+    await boot();
+    addPage('q');
+    const ed1 = await login('ed1');
+    const x = await upload(ed1, 'p1', 'x.txt', Buffer.from('x'));
+    // Citation écrite sans passer par l'API (ancienne page, import) : le nettoyage la trouve quand même.
+    db.prepare("UPDATE pages SET content = ? WHERE id = 'q'").run(JSON.stringify({ type: 'doc', content: [block(x)] }));
+    const t0 = Date.now();
+    sweepUnreferenced(db, t0);
+    expect(sweepUnreferenced(db, t0 + UNREFERENCED_GRACE_MS)).toBe(0);
+    expect(rowsOf('p1')).toEqual([x]);
+    expect((db.prepare('SELECT unreferenced_since AS s FROM attachments WHERE id = ?').get(x) as { s: number | null }).s).toBeNull();
+  });
+
+  it('plafond par opération et envois en cours comptés ; duplication à débit limité', async () => {
+    await boot({ ATTACHMENT_COPY_MAX_MB: '1', ATTACHMENTS_TOTAL_MB: '3' });
+    const ed1 = await login('ed1');
+    const a = await upload(ed1, 'p1', 'a.bin', randomBytes(600 * 1024));
+    const b = await upload(ed1, 'p1', 'b.bin', randomBytes(600 * 1024));
+    expect(await save(ed1, 'p1', { type: 'doc', content: [block(a), block(b)] })).toBe(200);
+    const tooMuch = await call(ed1, 'POST', '/api/v3/pages/p1/duplicate');
+    expect(tooMuch.statusCode).toBe(413);
+    expect(tooMuch.json().detail).toMatch(/1 Mo au plus/);
+    expect(await save(ed1, 'p1', { type: 'doc', content: [block(a)] })).toBe(200);
+    // 1,8 Mo en cours d'envoi : 600 Ko de plus dépasseraient les 3 Mo de l'instance (1,2 Mo déjà en base).
+    reservations(db).total = 1800 * 1024;
+    expect((await call(ed1, 'POST', '/api/v3/pages/p1/duplicate')).statusCode).toBe(413);
+    reservations(db).total = 0;
+    expect((await call(ed1, 'POST', '/api/v3/pages/p1/duplicate')).statusCode).toBe(201);
+    expect(await save(ed1, 'p1', { type: 'doc', content: [{ type: 'paragraph' }] })).toBe(200);
+    let last = 0;
+    for (let i = 0; i < 25 && last !== 429; i++) last = (await call(ed1, 'POST', '/api/v3/pages/p1/duplicate')).statusCode;
+    expect(last).toBe(429);
   });
 });

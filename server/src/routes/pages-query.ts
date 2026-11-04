@@ -2,7 +2,7 @@
 // La logique métier reste celle de lib/ ; seuls la forme des réponses et le contrôle de concurrence changent.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { loadReadablePage, loadWritablePage, readableSpaceIds } from '../lib/access.js';
+import { clonerFor, loadReadablePage, loadWritablePage, readableSpaceIds } from '../lib/access.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
 import { hasPageLink } from '../lib/content.js';
@@ -86,9 +86,11 @@ export default async function pageQueryRoutes(app: FastifyInstance) {
     if (typeof header === 'string' && !match) throw new HttpError(400, 'En-tête If-Match invalide (attendu : la valeur de l’ETag)');
     if (body.content !== undefined && !match) throw new HttpError(428, 'En-tête If-Match requis pour modifier le contenu : envoyez l’ETag reçu à la lecture');
     let row;
+    const cloner = clonerFor(db, app.config, req);
     try {
-      row = updatePage(db, id, { ...body, baseVersion: match ? Number(match[1]) : undefined }, userId(req));
+      row = updatePage(db, id, { ...body, baseVersion: match ? Number(match[1]) : undefined }, userId(req), cloner);
     } catch (err) {
+      cloner.rollback();
       if (err instanceof HttpError && err.statusCode === 409) throw new HttpError(412, 'La page a changé depuis votre lecture (ETag périmé)', err.details);
       throw err;
     }

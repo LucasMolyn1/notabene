@@ -168,7 +168,9 @@ export interface UpdatePageInput {
   baseVersion?: number;
 }
 
-export function updatePage(db: DB, id: string, input: UpdatePageInput, userId: string | null) {
+// `cloner` : une pièce jointe d'une autre page (ou d'un modèle) citée par le contenu est copiée dans cette page si l'auteur peut la
+// lire, sinon la citation est retirée. La page ne dépend ainsi jamais des fichiers d'une autre page.
+export function updatePage(db: DB, id: string, input: UpdatePageInput, userId: string | null, cloner?: AttachmentCloner) {
   return db.transaction(() => {
     const current = getPageRow(db, id);
     if (!current || current.deleted_at) throw new HttpError(404, 'Page introuvable');
@@ -186,7 +188,8 @@ export function updatePage(db: DB, id: string, input: UpdatePageInput, userId: s
     if (input.icon !== undefined) next.icon = input.icon;
     if (input.fullWidth !== undefined) next.full_width = input.fullWidth ? 1 : 0;
     if (input.content !== undefined) {
-      const doc = sanitizeDoc(input.content);
+      let doc = sanitizeDoc(input.content);
+      if (cloner) doc = cloner.clone(doc, { pageId: id }, { dropUnreadable: true });
       next.content = JSON.stringify(doc);
       next.text = docText(doc);
     }

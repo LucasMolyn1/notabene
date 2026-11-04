@@ -12,7 +12,8 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { type DB, MIGRATIONS, openDb } from '../src/db.js';
 import { contentDisposition, drainAttachmentGc, parseRange, sanitizeFilename, sniffMime, sweepAttachments } from '../src/lib/attachments.js';
-import { tarHeader, tarStream } from '../src/lib/tar.js';
+import { unzipSync } from 'fflate';
+import { ZIP_MAX_BYTES, zipEntryName, zipStream } from '../src/lib/zip.js';
 import { MAX_CONCURRENT_UPLOADS, uploadError } from '../src/routes/attachments.js';
 import { hashPassword } from '../src/lib/password.js';
 import { oldDb } from './migrations.js';
@@ -513,23 +514,9 @@ describe('requêtes partielles (Range)', () => {
   });
 });
 
-// Lecture d'une archive tar (ustar) : noms, contenus, somme de contrôle de chaque en-tête.
-function untar(buf: Buffer): Map<string, Buffer> {
-  const out = new Map<string, Buffer>();
-  let off = 0;
-  while (off + 512 <= buf.length) {
-    const h = buf.subarray(off, off + 512);
-    if (h.every((b) => b === 0)) break;
-    const field = (a: number, b: number) => h.toString('ascii', a, b).replace(/\0.*$/s, '').trim();
-    const copy = Buffer.from(h);
-    copy.fill(0x20, 148, 156);
-    expect(copy.reduce((s, b) => s + b, 0)).toBe(parseInt(field(148, 156), 8));
-    expect(field(257, 263)).toBe('ustar');
-    const size = parseInt(field(124, 136), 8);
-    out.set(field(0, 100), buf.subarray(off + 512, off + 512 + size));
-    off += 512 + Math.ceil(size / 512) * 512;
-  }
-  return out;
+// Lecture d'une archive ZIP (somme CRC de chaque entrée vérifiée par fflate) : noms et contenus.
+function unzip(buf: Buffer): Map<string, Buffer> {
+  return new Map(Object.entries(unzipSync(new Uint8Array(buf))).map(([k, v]) => [k, Buffer.from(v)]));
 }
 
 describe('données personnelles et pièces jointes', () => {
@@ -552,22 +539,25 @@ describe('données personnelles et pièces jointes', () => {
 
     const res = await get(ed1, '/api/v3/me/export/archive');
     expect(res.statusCode).toBe(200);
-    expect(res.headers['content-type']).toBe('application/x-tar');
-    expect(res.headers['content-disposition']).toBe('attachment; filename="mes-donnees-notabene.tar"');
+    expect(res.headers['content-type']).toBe('application/zip');
+    expect(res.headers['content-disposition']).toBe('attachment; filename="mes-donnees-notabene.zip"');
     expect(res.headers['x-content-type-options']).toBe('nosniff');
-    const files = untar(res.rawPayload);
+    const files = unzip(res.rawPayload);
     const data = JSON.parse(files.get('donnees.json')!.toString());
-    expect(data.attachments[0]).toMatchObject({ id: mine.id, included: true, file: `pieces-jointes/${mine.id}-compte rendu _t_.pdf` });
+    expect(data.attachments[0]).toMatchObject({ id: mine.id, included: true, file: `pieces-jointes/${mine.id}-compte rendu été.pdf` });
     expect(files.get(data.attachments[0].file)!.toString()).toBe('%PDF-1.7 contenu');
     expect([...files.keys()]).toHaveLength(2);
-    // L'archive est lisible par tar.
-    const tarFile = join(dataDir, 'export.tar');
-    writeFileSync(tarFile, res.rawPayload);
-    expect(execFileSync('tar', ['-tf', tarFile]).toString().trim().split('\n')).toEqual(['donnees.json', data.attachments[0].file]);
+    // L'archive est lisible par unzip (contrôle d'intégrité) ; le PDF est stocké sans recompression, le JSON compressé.
+    const zipFile = join(dataDir, 'export.zip');
+    writeFileSync(zipFile, res.rawPayload);
+    expect(execFileSync('unzip', ['-tq', zipFile]).toString()).toMatch(/No errors detected/);
+    const listing = execFileSync('unzip', ['-Zv', zipFile]).toString();
+    expect(listing).toMatch(/donnees\.json[\s\S]*?compression method:\s+deflated/);
+    expect(listing).toMatch(new RegExp(`${mine.id}[\\s\\S]*?compression method:\\s+none \\(stored\\)`));
 
     // Fichier absent du disque : signalé, pas joint.
     unlinkSync(join(filesDir, mine.id));
-    const missing = untar((await get(ed1, '/api/v3/me/export/archive')).rawPayload);
+    const missing = unzip((await get(ed1, '/api/v3/me/export/archive')).rawPayload);
     expect(JSON.parse(missing.get('donnees.json')!.toString()).attachments[0].included).toBe(false);
     expect(missing.size).toBe(1);
   });
@@ -581,7 +571,7 @@ describe('données personnelles et pièces jointes', () => {
     const admin = await login('admin');
     const res = await get(admin, '/api/v3/admin/users/ed1/export/archive');
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(untar(res.rawPayload).get('donnees.json')!.toString()).attachments).toHaveLength(1);
+    expect(JSON.parse(unzip(res.rawPayload).get('donnees.json')!.toString()).attachments).toHaveLength(1);
     expect((await get(admin, '/api/v3/admin/users/inconnu/export/archive')).statusCode).toBe(404);
   });
 
@@ -599,10 +589,21 @@ describe('données personnelles et pièces jointes', () => {
     expect((await get(ed2, '/api/v3/pages/p1/attachments')).json().items[0].uploader).toBeNull();
   });
 
-  it('tar : refuse un nom dangereux ou une taille qui ne correspond pas', async () => {
-    for (const bad of ['../x', '/etc/passwd', 'a/../../b', 'é.txt', 'x'.repeat(100), '']) expect(() => tarHeader(bad, 1, 0), bad).toThrow();
-    const drain = async (size: number) => { let n = 0; for await (const chunk of tarStream([{ name: 'a', size, mtime: 0, body: () => Buffer.from('abc') }])) n += chunk.length; return n; };
-    await expect(drain(2)).rejects.toThrow(/taille/);
-    await expect(drain(3)).resolves.toBe(512 * 4);
+  it('zip : noms d’entrée assainis et uniques, taille vérifiée, archive trop volumineuse refusée avant tout envoi', async () => {
+    expect(zipEntryName('../../etc/passwd')).toBe('etc/passwd');
+    expect(zipEntryName('/abs/./x/../y')).toBe('abs/x/y');
+    expect(zipEntryName('C:\\Windows\\a.txt')).toBe('C__Windows_a.txt');
+    expect(zipEntryName('a\u202Eb\r\n.txt')).toBe('ab.txt');
+    expect(zipEntryName('..')).toBe('fichier');
+    const read = async (entries: Parameters<typeof zipStream>[0]) => { const parts: Buffer[] = []; for await (const c of zipStream(entries)) parts.push(c); return Buffer.concat(parts); };
+    const files = unzip(await read([
+      { name: 'a.txt', size: 1, mtime: 0, body: () => Buffer.from('1') },
+      { name: 'A.txt', size: 1, mtime: 0, body: () => Buffer.from('2') },
+      { name: '../a.txt', size: 1, mtime: Date.now(), store: true, body: () => Buffer.from('3') },
+    ]));
+    expect([...files.keys()]).toEqual(['a.txt', 'A (2).txt', 'a (3).txt']);
+    expect(files.get('a (3).txt')!.toString()).toBe('3');
+    await expect(read([{ name: 'a', size: 2, mtime: 0, body: () => Buffer.from('abc') }])).rejects.toThrow(/taille/);
+    expect(() => zipStream([{ name: 'gros', size: ZIP_MAX_BYTES, mtime: 0, body: () => Buffer.alloc(0) }])).toThrow(/trop volumineuse/);
   });
 });

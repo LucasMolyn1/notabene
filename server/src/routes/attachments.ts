@@ -16,7 +16,7 @@ import { z } from 'zod';
 import { guard, requireAuth } from '../auth/context.js';
 import { canReadAttachment, loadReadablePage, loadWritablePage } from '../lib/access.js';
 import {
-  ATTACHMENT_ID, attachmentPath, attachmentsDir, contentDisposition, drainAttachmentGc, INLINE_MIMES, newAttachmentId, parseRange,
+  ATTACHMENT_ID, attachmentPath, attachmentsDir, contentDisposition, drainAttachmentGc, INLINE_MIMES, newAttachmentId, parseRange, reservations,
   sanitizeFilename, SNIFF_BYTES, sniffMime, tempName, usedBytes, userBytes, type AttachmentMime,
 } from '../lib/attachments.js';
 import { audit } from '../lib/audit.js';
@@ -77,8 +77,9 @@ export default async function attachmentRoutes(app: FastifyInstance) {
 
   // Octets des envois en cours (pas encore en base), au total et par personne : comptés dans les plafonds dès leur arrivée,
   // pour que plusieurs envois simultanés ne remplissent pas le disque au-delà du plafond avant d'être enregistrés.
-  let reserved = 0;
-  const inFlight = new Map<string, { count: number; bytes: number }>();
+  // Partagées avec le copieur de pièces jointes (lib/attachments.ts) : une copie tient compte des envois en cours.
+  const held = reservations(db);
+  const inFlight = held.byUser;
 
   // Écrit le flux dans un fichier temporaire (0600), en calculant l'empreinte et en gardant les premiers octets pour le type.
   // Coupe dès que le fichier dépasserait un plafond, ou si l'envoi reste muet trop longtemps ou dure trop.
@@ -95,10 +96,10 @@ export default async function attachmentRoutes(app: FastifyInstance) {
     const tap: Transform = new Transform({
       transform(chunk: Buffer, _enc, done) {
         size += chunk.length;
-        reserved += chunk.length;
+        held.total += chunk.length;
         mine.bytes += chunk.length;
         own.bytes += chunk.length;
-        if (usedTotal + reserved > maxTotal) { done(new HttpError(413, 'Espace de stockage des pièces jointes plein')); return; }
+        if (usedTotal + held.total > maxTotal) { done(new HttpError(413, 'Espace de stockage des pièces jointes plein')); return; }
         if (usedUser + mine.bytes > maxUser) { done(new HttpError(413, `Quota personnel de pièces jointes atteint (${config.ATTACHMENT_USER_MB} Mo)`)); return; }
         hash.update(chunk);
         if (headLen < SNIFF_BYTES) { head.push(chunk.subarray(0, SNIFF_BYTES - headLen)); headLen += Math.min(chunk.length, SNIFF_BYTES - headLen); }
@@ -169,7 +170,7 @@ export default async function attachmentRoutes(app: FastifyInstance) {
     const page = loadWritablePage(db, req, (req.params as { id: string }).id);
     if (page.kind !== 'doc') throw new HttpError(409, 'Une base ne reçoit pas de pièce jointe');
     if (!req.isMultipart()) throw new HttpError(415, 'Envoi attendu en multipart/form-data');
-    if (usedBytes(db) + reserved >= maxTotal) throw new HttpError(413, 'Espace de stockage des pièces jointes plein');
+    if (usedBytes(db) + held.total >= maxTotal) throw new HttpError(413, 'Espace de stockage des pièces jointes plein');
     const mine = inFlight.get(auth.user.id) ?? { count: 0, bytes: 0 };
     if (mine.count >= MAX_CONCURRENT_UPLOADS) throw new HttpError(429, 'Trop d’envois simultanés : attendez la fin des précédents');
     mine.count++;
@@ -183,7 +184,7 @@ export default async function attachmentRoutes(app: FastifyInstance) {
       const got = await receive(file.file, auth.user.id, mine, own);
       return await commit(req, reply, auth.user.id, page.id, file.filename, got);
     } finally {
-      reserved -= own.bytes;
+      held.total -= own.bytes;
       mine.bytes -= own.bytes;
       if (--mine.count === 0) inFlight.delete(auth.user.id);
     }

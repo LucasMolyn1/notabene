@@ -101,7 +101,12 @@ export default async function pageRoutes(app: FastifyInstance) {
     return toMeta(row);
   });
 
-  app.post('/pages/:id/duplicate', { preHandler: guard('write'), schema: { tags, summary: 'Dupliquer une page', params: idParams } }, async (req, reply) => {
+  // Débit limité : une duplication copie les fichiers de la page (de façon synchrone, plafonnée par opération).
+  app.post('/pages/:id/duplicate', {
+    preHandler: guard('write'),
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    schema: { tags, summary: 'Dupliquer une page', params: idParams },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string };
     writable(req, id);
     const row = withCloner(req, (cloner) => duplicatePage(db, id, userId(req), cloner));
@@ -210,7 +215,7 @@ export default async function pageRoutes(app: FastifyInstance) {
     const { id, versionId } = req.params as { id: string; versionId: number };
     writable(req, id);
     const v = getVersion(db, id, versionId);
-    const row: PageRow = updatePage(db, id, { title: v.title, content: v.content }, userId(req));
+    const row: PageRow = withCloner(req, (cloner) => updatePage(db, id, { title: v.title, content: v.content }, userId(req), cloner));
     bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: id, version: row.version, by: by(req) });
     return toMeta(row);
   });

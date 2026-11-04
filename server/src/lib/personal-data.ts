@@ -5,8 +5,8 @@
 import { createReadStream, statSync } from 'node:fs';
 import type { Auth } from '../auth/context.js';
 import type { DB } from '../db.js';
-import { attachmentPath } from './attachments.js';
-import { tarStream, type TarEntry } from './tar.js';
+import { attachmentPath, sanitizeFilename } from './attachments.js';
+import { zipEntryName, zipStream, type ZipEntry } from './zip.js';
 import { filterReadable, keepPagesClosed, pagesOnlyOpenTo } from './page-acl.js';
 import { inPersonalSpace } from './personal-spaces.js';
 
@@ -77,13 +77,15 @@ export function exportUserData(db: DB, userId: string, requesterId: string = use
 export type PersonalData = NonNullable<ReturnType<typeof exportUserData>>;
 
 // Nom d'un fichier dans l'archive : identifiant (unique) puis nom d'origine réduit à l'ASCII sûr, pour rester sous 100 octets.
+// Nom de l'entrée : dossier fixe, identifiant (unique) puis nom d'origine assaini, sans chemin ; déjà sous la forme que garde l'archive.
 function archiveName(id: string, name: string): string {
-  const safe = name.replace(/[^A-Za-z0-9._ -]/g, '_').replace(/^[. ]+/, '').slice(-60);
-  return `pieces-jointes/${id}${safe ? `-${safe}` : ''}`;
+  return zipEntryName(`pieces-jointes/${id}-${sanitizeFilename(name)}`);
 }
+// Déjà compressés : stockés tels quels dans l'archive.
+const STORED = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf', 'application/zip', 'video/mp4', 'video/webm', 'audio/mpeg', 'audio/ogg']);
 
 /**
- * Archive tar de l'export : `donnees.json` puis les fichiers des pièces jointes. Un fichier absent du disque, ou dont la taille
+ * Archive ZIP de l'export : `donnees.json` puis les fichiers des pièces jointes. Un fichier absent du disque, ou dont la taille
  * ne correspond plus, est signalé dans le JSON (`included: false`) au lieu d'être joint.
  */
 export function personalDataArchive(data: PersonalData, filesDir: string): AsyncGenerator<Buffer> {
@@ -94,11 +96,11 @@ export function personalDataArchive(data: PersonalData, filesDir: string): Async
     return { a, path, included };
   });
   const json = Buffer.from(JSON.stringify({ ...data, attachments: files.map(({ a, included }) => ({ ...a, included })) }, null, 2));
-  const entries: TarEntry[] = [
+  const entries: ZipEntry[] = [
     { name: 'donnees.json', size: json.length, mtime: Date.now(), body: () => json },
-    ...files.filter((f) => f.included).map((f) => ({ name: f.a.file, size: f.a.size, mtime: f.a.createdAt, body: () => createReadStream(f.path) })),
+    ...files.filter((f) => f.included).map((f) => ({ name: f.a.file, size: f.a.size, mtime: f.a.createdAt, store: STORED.has(f.a.mime), body: () => createReadStream(f.path) })),
   ];
-  return tarStream(entries);
+  return zipStream(entries);
 }
 
 // Effacement : le compte et ce qui lui est propre disparaissent ; ce qu'il a écrit reste mais sans auteur.

@@ -47,7 +47,7 @@ export async function renderProfile(el) {
         },
       }, icon('download', 15), 'Télécharger mes données'),
       // Archive produite en flux par le serveur : un simple lien, le navigateur la télécharge sans la garder en mémoire.
-      h('a', { class: 'btn btn-ghost', href: '/api/v3/me/export/archive', download: '' }, icon('download', 15), 'Exporter mes données avec mes fichiers (archive .tar)'))),
+      h('a', { class: 'btn btn-ghost', href: '/api/v3/me/export/archive', download: '' }, icon('download', 15), 'Exporter mes données avec mes fichiers (archive .zip)'))),
     card('Sessions actives', 'Chaque navigateur connecté ouvre une session distincte, valable au maximum la durée configurée.', sessionsBox),
     card('Déconnexion', null, h('button', { class: 'btn btn-ghost', onClick: () => session.logout() }, icon('move', 15), 'Se déconnecter'))].filter(Boolean));
 

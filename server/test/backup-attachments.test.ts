@@ -78,6 +78,16 @@ describe('sauvegarde des pièces jointes', () => {
     expect(readFileSync(join(second.attachmentsDir, a)).toString()).toBe('alpha');
   });
 
+  it('fichier de la sauvegarde précédente abîmé (même taille) : jamais repris, recopié depuis le dossier vivant', async () => {
+    const a = attach('alpha');
+    const first = await createBackup(db, { dataDir, dir: backups, env, now: at(0) });
+    writeFileSync(join(first.attachmentsDir, a), 'ALPHA');
+    const second = await createBackup(db, { dataDir, dir: backups, env, now: at(1) });
+    expect(second.attachments).toMatchObject({ files: 1, copied: 1, reused: 0, corrupt: [] });
+    expect(statSync(join(second.attachmentsDir, a)).ino).not.toBe(statSync(join(first.attachmentsDir, a)).ino);
+    expect(readFileSync(join(second.attachmentsDir, a)).toString()).toBe('alpha');
+  });
+
   it('pièce jointe supprimée pendant la sauvegarde : retirée de la copie, qui reste cohérente ; fichier disparu : signalé', async () => {
     const gone = attach('supprimee');
     const lost = attach('perdue');

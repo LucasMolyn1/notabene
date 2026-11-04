@@ -115,7 +115,10 @@ export async function backupAttachments(opts: { live: DB; snapshot: string; sour
     if (!ATTACHMENT_ID.test(r.id)) { report.corrupt.push(r.id); continue; }
     const out = join(opts.dest, r.id + ext);
     const prev = opts.previous ? join(opts.previous, r.id + ext) : null;
-    if (prev && existsSync(prev) && (ext || statSync(prev).size === r.size)) { reuse(prev, out); report.reused++; continue; }
+    // Reprise d'un fichier en clair seulement si son contenu est bien celui attendu (taille puis empreinte) : un fichier abîmé dans
+    // la sauvegarde précédente n'est jamais propagé, il est recopié depuis le dossier vivant. Un fichier chiffré ne peut pas être
+    // relu sans la clé privée : il est repris tel quel et contrôlé par `verify`.
+    if (prev && existsSync(prev) && (ext || (statSync(prev).size === r.size && (await transfer(prev, null)).sha256 === r.sha256))) { reuse(prev, out); report.reused++; continue; }
     const src = join(opts.source, r.id);
     if (!existsSync(src)) {
       (stillLive.get(r.id) ? report.missing : report.dropped).push(r.id);

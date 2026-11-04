@@ -128,14 +128,17 @@ export default async function adminRoutes(app: FastifyInstance) {
   const sendExport = (reply: FastifyReply, data: unknown, name: string) =>
     reply.header('content-type', 'application/json; charset=utf-8').header('content-disposition', `attachment; filename="${name}.json"`).send(JSON.stringify(data, null, 2));
 
-  // Même export, avec les fichiers des pièces jointes envoyées par la personne (archive tar, produite en flux).
-  const sendArchive = (reply: FastifyReply, data: PersonalData, name: string) =>
-    reply
-      .header('content-type', 'application/x-tar')
-      .header('content-disposition', `attachment; filename="${name}.tar"`)
+  // Même export, avec les fichiers des pièces jointes envoyées par la personne (archive ZIP, produite en flux).
+  // L'archive est construite avant les en-têtes : une archive trop volumineuse donne une vraie réponse 413.
+  const sendArchive = (reply: FastifyReply, data: PersonalData, name: string) => {
+    const archive = personalDataArchive(data, attachmentsDir(config.DATA_DIR));
+    return reply
+      .header('content-type', 'application/zip')
+      .header('content-disposition', `attachment; filename="${name}.zip"`)
       .header('cache-control', 'private, no-store')
       .header('x-content-type-options', 'nosniff')
-      .send(Readable.from(personalDataArchive(data, attachmentsDir(config.DATA_DIR))));
+      .send(Readable.from(archive));
+  };
 
   // Droit d'accès et de portabilité : l'utilisateur télécharge ses propres données.
   app.get('/me/export', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } }, schema: { hide: true } }, async (req, reply) => {
