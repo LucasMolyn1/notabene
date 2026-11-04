@@ -2,9 +2,10 @@
 // Le nom sur disque est toujours l'identifiant aléatoire, jamais le nom d'origine ; le type est déduit des premiers octets,
 // jamais de l'extension ni du Content-Type envoyé par le client. Rien n'est servi en ligne sauf une image raster reconnue.
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { z } from 'zod';
 import type { DB } from '../db.js';
 
 // Types reconnus par signature. Tout le reste est servi en application/octet-stream.
@@ -122,10 +123,46 @@ export async function sweepAttachments(db: DB, dir: string, quarantine: string):
       if (name.startsWith(TMP_PREFIX)) { unlinkSync(join(dir, name)); temp++; }
       else if (ATTACHMENT_ID.test(name) && !known.get(name)) {
         mkdirSync(quarantine, { recursive: true, mode: 0o700 });
-        renameSync(join(dir, name), join(quarantine, name));
+        moveFile(join(dir, name), join(quarantine, name));
         quarantined++;
       }
     } catch { /* fichier disparu entre-temps ou non déplaçable : repris au prochain démarrage */ }
   }
   return { temp, quarantined };
+}
+
+/** Déplace un fichier sans jamais écraser la destination ; copie puis efface si les deux dossiers sont sur des volumes différents. */
+export function moveFile(from: string, to: string): void {
+  if (existsSync(to)) throw new Error(`destination déjà présente : ${to}`);
+  try {
+    renameSync(from, to);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EXDEV') throw err;
+    copyFileSync(from, to, constants.COPYFILE_EXCL);
+    unlinkSync(from);
+  }
+}
+
+// ---- Requêtes partielles (Range, RFC 9110 section 14) -------------------------------------
+// Une seule plage d'octets est servie (lecture vidéo et audio). Plusieurs plages, une autre unité ou une forme invalide :
+// l'en-tête est ignoré et le fichier entier est renvoyé, comme la norme le permet. Bornes limitées à 15 chiffres.
+const rangeHeader = z.string().max(100).regex(/^bytes=(\d{0,15})-(\d{0,15})$/);
+
+/** Plage demandée : `null` (fichier entier), `'unsatisfiable'` (416) ou les bornes incluses. */
+export function parseRange(header: string | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | null {
+  if (header === undefined) return null;
+  const ok = rangeHeader.safeParse(header.trim());
+  if (!ok.success) return null;
+  const [, a, b] = /^bytes=(\d*)-(\d*)$/.exec(ok.data)!;
+  if (a === '' && b === '') return null;
+  if (a === '') {
+    // Suffixe « bytes=-n » : les n derniers octets.
+    const n = Number(b);
+    if (n === 0 || size === 0) return 'unsatisfiable';
+    return { start: Math.max(0, size - n), end: size - 1 };
+  }
+  const start = Number(a);
+  if (b !== '' && Number(b) < start) return null;
+  if (start >= size) return 'unsatisfiable';
+  return { start, end: b === '' ? size - 1 : Math.min(Number(b), size - 1) };
 }

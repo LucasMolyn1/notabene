@@ -44,6 +44,27 @@ mkdir -p /srv/appdata/notabene && chown 1000:1000 /srv/appdata/notabene && chmod
 
 Dans un conteneur LXC non privilégié, le chown se fait dans le conteneur LXC (l'uid 1000 y est décalé automatiquement). Sans cela le serveur s'arrête au démarrage avec un message qui l'indique.
 
+Contenu de `/data` : `notabene.db` (la base), `attachments/` (fichiers des pièces jointes), `attachments-quarantaine/` (fichiers mis de côté, voir ci-dessous) et `backups/`. Le conteneur est en lecture seule (`read_only: true`) : **tout ce qui doit survivre est dans ce volume**.
+
+## Pièces jointes
+
+Les fichiers joints aux pages sont écrits dans `/data/attachments` (un fichier par pièce jointe, nommé par un identifiant aléatoire, permissions `600`). La base n'en garde que l'inventaire : **une base sans son dossier `attachments` donne des pièces jointes introuvables**.
+
+- **Volume persistant** : le dossier doit être sur un volume persistant, normalement le même que la base (`/data`). S'il est monté à part (`/data/attachments` sur un autre disque), montez aussi `/data/attachments-quarantaine` sur ce disque, ou acceptez que la mise en quarantaine copie puis efface au lieu de déplacer.
+- **Sauvegarde** : `backup.js backup` sauvegarde la base et les pièces jointes ensemble (voir [BACKUP.md](BACKUP.md)). Un instantané du volume ou une copie externe doit prendre le dossier en même temps que la base.
+- **Quarantaine** : au démarrage, un fichier du dossier que la base ne connaît pas (base restaurée plus ancienne, par exemple) n'est pas effacé mais déplacé dans `/data/attachments-quarantaine`. Videz ce dossier à la main après vérification.
+- **Plafonds** (en Mo, dans le `.env`) :
+
+  | Variable | Défaut | Rôle |
+  |---|---|---|
+  | `ATTACHMENT_MAX_MB` | 25 | taille maximale d'un fichier (1 à 1024) |
+  | `ATTACHMENTS_TOTAL_MB` | 5120 | volume total de l'instance ; au-delà, tout envoi est refusé |
+  | `ATTACHMENT_USER_MB` | 1024 | volume envoyé par une même personne |
+  | `ATTACHMENT_UPLOAD_IDLE_SECONDS` | 30 | silence maximal pendant un envoi avant coupure |
+
+  Prévoyez sur le disque `ATTACHMENTS_TOTAL_MB`, plus la place des sauvegardes (les fichiers inchangés d'une sauvegarde à l'autre sont partagés par lien physique, voir BACKUP.md).
+- **Reverse proxy** : la taille de corps acceptée doit couvrir `ATTACHMENT_MAX_MB` (Nginx : `client_max_body_size 26m;` pour 25 Mo ; Traefik et Caddy n'ont pas de limite par défaut). Les requêtes `Range` (lecture vidéo et audio) doivent être transmises telles quelles ; ne mettez pas de cache devant `/api/v3/attachments/` : les droits sont vérifiés à chaque requête.
+
 ## Derrière un reverse proxy
 
 - **TLS obligatoire** : `PUBLIC_URL` en `https://` (cookies `Secure`, préfixe `__Host-`, HSTS). Le nom doit être exactement celui que voient les navigateurs.

@@ -6,6 +6,17 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## Non publié
 
+### Ajouté
+- **Pièces jointes** : un fichier quelconque se joint à une page (un seul par envoi). Il est rangé sur le disque sous un identifiant aléatoire (`DATA_DIR/attachments`), son type est reconnu sur ses octets (jamais d'après le nom ni le type annoncé), son nom d'origine est assaini. Seules les images raster s'affichent dans le navigateur ; tout le reste est proposé au téléchargement, sans exécution possible (`nosniff`, CSP `sandbox`). Le droit de lecture de la page est revérifié à chaque téléchargement ; un lien de partage public couvre les pièces jointes des pages qu'il partage. Requêtes partielles (`Range`, réponses 206 et 416) pour la lecture vidéo et audio. Plafonds réglables : `ATTACHMENT_MAX_MB` (25), `ATTACHMENTS_TOTAL_MB` (5120), `ATTACHMENT_USER_MB` (1024), `ATTACHMENT_UPLOAD_IDLE_SECONDS` (30). Fichiers effacés du disque avec la pièce jointe, la page ou l'espace. Migration v19. Nouvelles routes `/api/v3/pages/:id/attachments`, `/api/v3/attachments/:id`, `/api/v3/public/shares/:token/attachments/:id`.
+- **Sauvegardes avec les pièces jointes** : `backup.js backup` copie aussi les fichiers référencés par la base (dossier `notabene-….attachments` à côté de la base), chiffrés pour la même clé age si la sauvegarde l'est ; les fichiers inchangés sont partagés entre sauvegardes par lien physique. `verify` contrôle la présence et l'empreinte de chaque fichier et signale ceux qui manquent. `restore` restaure les fichiers sans rien écraser (fichier différent mis en quarantaine) et refuse de remplacer la base s'il en manque, sauf `--allow-missing`.
+- **Données personnelles** : l'export liste les pièces jointes envoyées par la personne ; une archive tar (`/api/v3/me/export/archive`, et pour un administrateur `/api/v3/admin/users/:id/export/archive`) contient le JSON et les fichiers. À l'effacement d'un compte, ses pièces jointes restent rattachées à leur page, sans envoyeur.
+
+### Attention à la mise à jour
+- Migration v19 (automatique) : nouvelles tables des pièces jointes, aucune donnée existante modifiée. Elle ne se défait pas : en cas de retour arrière, restaurez la sauvegarde prise avant la mise à jour, avec l'ancienne image.
+- **Le dossier `DATA_DIR/attachments` (`/data/attachments` dans le conteneur) doit être sur un volume persistant et sauvegardé avec la base.** Avec le compose fourni, il est dans le volume `/data` : rien à faire. Si vous sauvegardez autrement qu'avec `backup.js` (instantané, copie du volume), incluez ce dossier. Le téléchargement de sauvegarde depuis l'interface ne contient que la base.
+- Une sauvegarde est désormais un fichier **et** un dossier du même nom : adaptez une copie externe qui ne prendrait que les fichiers `notabene-*.db*` (avec rsync, ajoutez `-H` pour conserver les liens physiques).
+- Derrière Nginx, réglez `client_max_body_size` au moins à `ATTACHMENT_MAX_MB` (voir `docs/DEPLOIEMENT.md`).
+
 ### Modifié
 - **Marque BeNote** : le nom affiché devient BeNote (interface, titres, e-mails, documentation, API OpenAPI, exports). Les identifiants techniques restent `notabene` : dépôt, images, variables `NOTABENE_*`, noms de fichiers et agents utilisateurs HTTP. L'émetteur affiché par les applications d'authentification passe à BeNote pour les nouvelles inscriptions TOTP ; les comptes existants restent valides.
 

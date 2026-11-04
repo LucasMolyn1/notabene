@@ -8,12 +8,13 @@ Ce document aide la personne ou l'organisation qui **déploie** BeNote à respec
 |---|---|---|
 | Compte | nom, adresse e-mail, rôle, date de création et de dernière connexion ; pour un compte local : hash du mot de passe, secret TOTP chiffré | base SQLite |
 | Contenu | pages, versions, commentaires (et personnes mentionnées), libellés, modèles, favoris, suivis, permissions, appartenance aux groupes et aux espaces (y compris celle recopiée du fournisseur d'identité à chaque connexion), espace personnel (lisible de son seul propriétaire), liens de partage public (jeton, auteur du lien) ; l'auteur est rattaché par identifiant | base SQLite |
+| Pièces jointes | fichiers joints aux pages (contenu libre, qui peut contenir des données personnelles), nom d'origine, envoyeur (identifiant), date ; visibles de qui peut lire la page | fichiers dans `DATA_DIR/attachments`, inventaire en base |
 | Photo de profil (facultative) | une image réduite à 256 px, envoyée par la personne elle-même ; visible des personnes connectées ; métadonnées retirées par le navigateur ; supprimée avec le compte, ou par la personne, ou par un administrateur | base SQLite |
 | Sessions et jetons | hash de l'identifiant de session, hash des jetons d'API, dates | base SQLite |
 | Journal d'audit | action, date, identifiant de l'utilisateur, **adresse IP** | base SQLite |
 | Notifications | type, page concernée, auteur, état de lecture ; l'e-mail ne contient que le titre, le nom et un lien | base SQLite, serveur SMTP |
 | Journaux du serveur | selon votre proxy et `LOG_LEVEL` | votre infrastructure |
-| Sauvegardes | copie de la base | votre stockage |
+| Sauvegardes | copie de la base et des pièces jointes | votre stockage |
 
 Cookies : uniquement techniques (session, liaison de la connexion SSO). Aucun traceur. Les préférences d'affichage restent dans le navigateur (`localStorage`).
 
@@ -35,7 +36,7 @@ Adaptez ces durées à votre finalité et documentez-les dans votre registre des
 
 | Droit | Comment l'exercer |
 |---|---|
-| Accès et portabilité | La personne télécharge ses données dans **Paramètres, Profil et sessions, Télécharger mes données** (JSON, sans aucun secret). Un administrateur peut produire la même copie depuis **Utilisateurs, Données**. |
+| Accès et portabilité | La personne télécharge ses données dans **Paramètres, Profil et sessions, Télécharger mes données** (JSON, sans aucun secret). Un administrateur peut produire la même copie depuis **Utilisateurs, Données**. Les pièces jointes qu'elle a envoyées y sont listées ; l'archive tar (`/api/v3/me/export/archive`, ou `/api/v3/admin/users/<id>/export/archive` pour un administrateur) contient en plus leurs fichiers. Comme pour les pages, seules celles de pages qu'elle peut encore lire sont détaillées (le nombre total figure dans `contributions.attachmentsUploaded`). |
 | Effacement | Un administrateur utilise **Utilisateurs, Supprimer** (mot de passe demandé). Voir « Effacement » ci-dessous. |
 | Rectification | Compte fédéré : à modifier chez le fournisseur d'identité, la correction est reprise à la connexion suivante. Compte local : nom et e-mail modifiables par un administrateur. |
 | Limitation | **Utilisateurs, Désactiver** : le compte ne peut plus se connecter mais ses données restent. |
@@ -45,6 +46,7 @@ Adaptez ces durées à votre finalité et documentez-les dans votre registre des
 
 La suppression est une **anonymisation** : le compte et ce qui lui est propre disparaissent (sessions, jetons, favoris, suivis, notifications, permissions, préférences). Les pages, versions, commentaires, libellés et modèles restent, **sans nom d'auteur**, pour que le wiki reste cohérent. Les adresses IP et la cible des entrées du journal qui le concernent sont effacées. L'effacement lui-même est journalisé, sans l'identité de la personne.
 
+- **Pièces jointes** : les fichiers envoyés par la personne **restent rattachés à leur page**, comme le texte qu'elle a écrit, et l'envoyeur est retiré (affiché sans nom). Ils ne comptent plus dans aucun quota personnel. Le nom d'origine du fichier et son contenu sont conservés : si la demande porte sur un fichier précis (une photo, un document personnel), un rédacteur de la page ou un administrateur le supprime à part ; le fichier est alors effacé du disque.
 - **Mentions** : une mention dans une page ne conserve que l'identifiant de la personne, jamais son nom, et une mention dans un commentaire est supprimée avec le compte. Le texte d'un commentaire est en revanche un texte libre : si quelqu'un y a tapé le nom de la personne, ce texte reste (comme tout texte écrit par un tiers) ; un administrateur peut supprimer le commentaire.
 - Un compte fédéré (SSO, LDAP) est **recréé** à sa prochaine connexion s'il reste autorisé par l'annuaire : retirez-le d'abord des groupes.
 - Le texte d'un commentaire peut contenir des données personnelles écrites par la personne ; un administrateur peut le supprimer à part si la demande le justifie.

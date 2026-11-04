@@ -152,6 +152,7 @@ export async function renderUsers(el) {
       u.local && u.mfa && h('button', { class: 'btn btn-ghost btn-sm', onClick: async () => { if (await confirmModal({ title: 'Réinitialiser la double authentification ?', message: u.name, confirm: 'Réinitialiser', danger: true })) patch(u, { resetMfa: true }, 'MFA réinitialisée'); } }, 'Réinit. MFA'),
       u.local && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => resetPassword(u) }, 'Mot de passe'),
       u.id !== session.user.id && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => exportUser(u) }, 'Données'),
+      u.id !== session.user.id && /^[A-Za-z0-9_-]{1,64}$/.test(u.id) && h('a', { class: 'btn btn-ghost btn-sm', href: `/api/v3/admin/users/${u.id}/export/archive`, download: '' }, 'Données et fichiers (.tar)'),
       u.id !== session.user.id && h('button', { class: 'btn btn-ghost btn-sm danger-text', onClick: () => eraseUser(u) }, 'Supprimer')));
 
   const mail = h('input', { class: 'input', type: 'email', placeholder: 'E-mail', maxlength: '200', autocomplete: 'off' });

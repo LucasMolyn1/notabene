@@ -2,7 +2,8 @@
 //  - envoi : droit d'écriture sur la page (rôle, portée « write » du jeton, espace, permission fine), plafond par fichier et par instance ;
 //  - lecture : droit de lecture de la page revérifié à CHAQUE requête (rien n'est mis en cache côté serveur ni partagé entre personnes) ;
 //    un visiteur sans compte ne lit que par un lien de partage public qui couvre la page ;
-//  - réponse : type reconnu sur les octets, téléchargement forcé sauf image raster, nosniff et CSP qui interdit toute exécution.
+//  - réponse : type reconnu sur les octets, téléchargement forcé sauf image raster, nosniff et CSP qui interdit toute exécution ;
+//    requêtes partielles (Range, une seule plage) pour la lecture vidéo et audio, avec les mêmes en-têtes et les mêmes droits.
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, mkdirSync } from 'node:fs';
 import { rename, unlink } from 'node:fs/promises';
@@ -15,7 +16,7 @@ import { z } from 'zod';
 import { guard, requireAuth } from '../auth/context.js';
 import { loadReadablePage, loadWritablePage } from '../lib/access.js';
 import {
-  ATTACHMENT_ID, attachmentPath, attachmentsDir, contentDisposition, drainAttachmentGc, INLINE_MIMES, newAttachmentId,
+  ATTACHMENT_ID, attachmentPath, attachmentsDir, contentDisposition, drainAttachmentGc, INLINE_MIMES, newAttachmentId, parseRange,
   sanitizeFilename, SNIFF_BYTES, sniffMime, tempName, usedBytes, userBytes, type AttachmentMime,
 } from '../lib/attachments.js';
 import { audit } from '../lib/audit.js';
@@ -127,27 +128,35 @@ export default async function attachmentRoutes(app: FastifyInstance) {
     return { tmp, size, sha256: hash.digest('hex'), head: Buffer.concat(head) };
   }
 
-  // Envoi d'un fichier : réponse sûre, quel que soit ce qu'il contient. Jamais gardé en cache : l'accès est revérifié à chaque fois.
+  // Envoi d'un fichier : réponse sûre, quel que soit ce qu'il contient. Jamais gardé en cache : l'accès est revérifié à chaque fois,
+  // y compris pour chaque morceau demandé par un lecteur vidéo (l'appelant a déjà contrôlé les droits de cette requête).
   const serve = async (req: FastifyRequest, reply: FastifyReply, row: AttachmentRow) => {
     const inline = INLINE_MIMES.has(row.mime);
     const etag = `"${row.sha256}"`;
     reply
       .header('etag', etag)
       .header('cache-control', 'private, no-store')
+      .header('accept-ranges', 'bytes')
       .header('x-content-type-options', 'nosniff')
       .header('content-security-policy', "default-src 'none'; sandbox")
       .header('cross-origin-resource-policy', 'same-origin')
       .header('referrer-policy', 'no-referrer');
     if (req.headers['if-none-match'] === etag) return reply.status(304).send();
-    const stream = createReadStream(attachmentPath(dir, row.id));
+    // If-Range : la plage n'est servie que si le fichier est toujours celui que le client connaît (sinon : fichier entier).
+    const ifRange = req.headers['if-range'];
+    const range = ifRange === undefined || ifRange === etag ? parseRange(req.headers.range, row.size) : null;
+    if (range === 'unsatisfiable') return reply.status(416).header('content-range', `bytes */${row.size}`).send();
+    const stream = createReadStream(attachmentPath(dir, row.id), range ?? {});
     // Fichier absent du disque (dossier non restauré, effacé à la main) : introuvable, sans détail.
     await new Promise<void>((ok, ko) => { stream.once('open', () => ok()); stream.once('error', ko); }).catch(() => { throw new HttpError(404, 'Pièce jointe introuvable'); });
-    return reply
+    reply
       // Le type enregistré est celui reconnu sur les octets (octet-stream à défaut) : jamais celui annoncé par le client.
       .header('content-type', row.mime)
-      .header('content-length', row.size)
-      .header('content-disposition', contentDisposition(inline ? 'inline' : 'attachment', row.name))
-      .send(stream);
+      .header('content-disposition', contentDisposition(inline ? 'inline' : 'attachment', row.name));
+    if (range) {
+      reply.status(206).header('content-range', `bytes ${range.start}-${range.end}/${row.size}`).header('content-length', range.end - range.start + 1);
+    } else reply.header('content-length', row.size);
+    return reply.send(stream);
   };
 
   // ---- Envoi ------------------------------------------------------------------------------
