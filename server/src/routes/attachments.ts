@@ -14,7 +14,7 @@ import multipart from '@fastify/multipart';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { guard, requireAuth } from '../auth/context.js';
-import { loadReadablePage, loadWritablePage } from '../lib/access.js';
+import { canReadAttachment, loadReadablePage, loadWritablePage } from '../lib/access.js';
 import {
   ATTACHMENT_ID, attachmentPath, attachmentsDir, contentDisposition, drainAttachmentGc, INLINE_MIMES, newAttachmentId, parseRange,
   sanitizeFilename, SNIFF_BYTES, sniffMime, tempName, usedBytes, userBytes, type AttachmentMime,
@@ -25,7 +25,7 @@ import { HttpError, idParams } from '../lib/http.js';
 import { activeShare, sharedDescendants } from '../lib/shares.js';
 
 interface AttachmentRow {
-  id: string; page_id: string; uploader_id: string | null; uploader_name: string | null; name: string; mime: AttachmentMime;
+  id: string; page_id: string | null; template_id: string | null; uploader_id: string | null; uploader_name: string | null; name: string; mime: AttachmentMime;
   size: number; sha256: string; created_at: number; seq: number;
 }
 
@@ -234,7 +234,7 @@ export default async function attachmentRoutes(app: FastifyInstance) {
     const row = byId((req.params as { id: string }).id);
     if (!row) throw new HttpError(404, 'Pièce jointe introuvable');
     // Page illisible (restreinte, hors espace, à la corbeille) : même réponse qu'un identifiant inconnu.
-    try { loadReadablePage(db, req, row.page_id); } catch { throw new HttpError(404, 'Pièce jointe introuvable'); }
+    if (!canReadAttachment(db, req, row)) throw new HttpError(404, 'Pièce jointe introuvable');
     return serve(req, reply, row);
   });
 
@@ -259,8 +259,8 @@ export default async function attachmentRoutes(app: FastifyInstance) {
     schema: { tags, summary: 'Supprimer une pièce jointe (droit d’écriture sur la page)', params: attachmentParams },
   }, async (req, reply) => {
     const row = byId((req.params as { id: string }).id);
-    if (!row) throw new HttpError(404, 'Pièce jointe introuvable');
-    try { loadReadablePage(db, req, row.page_id); } catch { throw new HttpError(404, 'Pièce jointe introuvable'); }
+    // Celle d'un modèle disparaît avec le modèle : elle ne se supprime pas seule.
+    if (!row?.page_id || !canReadAttachment(db, req, row)) throw new HttpError(404, 'Pièce jointe introuvable');
     loadWritablePage(db, req, row.page_id);
     db.prepare('DELETE FROM attachments WHERE id = ?').run(row.id);
     audit(db, req, 'attachment.delete', row.id, { pageId: row.page_id, size: row.size });

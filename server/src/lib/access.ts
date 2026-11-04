@@ -3,6 +3,8 @@
 import type { FastifyRequest } from 'fastify';
 import { can } from '../auth/context.js';
 import type { DB } from '../db.js';
+import type { Config } from '../config.js';
+import { AttachmentCloner, attachmentsDir, type AttachmentRef } from './attachments.js';
 import { HttpError } from './http.js';
 import { canReadPage, canWritePage } from './page-acl.js';
 import { getPageRow, type PageRow } from './pages.js';
@@ -73,3 +75,20 @@ export function requireSpaceRole(db: DB, req: FastifyRequest, spaceId: string, w
 }
 
 export const spaceRoleOf = (db: DB, req: FastifyRequest, spaceId: string) => spaceRole(db, actor(req), spaceId);
+
+// Pièce jointe lisible par l'appelant : celle d'une page se lit avec la page (espace, restriction, corbeille) ; celle d'un modèle,
+// par une personne connectée qui lit l'espace du modèle (comme le modèle lui-même).
+export function canReadAttachment(db: DB, req: FastifyRequest, row: Pick<AttachmentRef, 'page_id' | 'template_id'>): boolean {
+  if (row.page_id) {
+    try { loadReadablePage(db, req, row.page_id); return true; } catch { return false; }
+  }
+  if (!row.template_id || !can(req.auth, 'read')) return false;
+  const t = db.prepare('SELECT space_id FROM page_templates WHERE id = ?').get(row.template_id) as { space_id: string } | undefined;
+  return !!t && readableSpaceIds(db, req).includes(t.space_id);
+}
+
+/** Copieur des pièces jointes citées, pour une copie faite par l'appelant (droits de lecture et quotas de l'appelant). */
+export const clonerFor = (db: DB, config: Config, req: FastifyRequest) => new AttachmentCloner(
+  db, attachmentsDir(config.DATA_DIR), req.auth?.user.id ?? null, (row) => canReadAttachment(db, req, row),
+  { totalBytes: config.ATTACHMENTS_TOTAL_MB * 1024 * 1024, userBytes: config.ATTACHMENT_USER_MB * 1024 * 1024 },
+);

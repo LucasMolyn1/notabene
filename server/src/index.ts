@@ -4,7 +4,7 @@ import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
 import { cleanup, openDb } from './db.js';
 import { seedDemo } from './seed.js';
-import { attachmentsDir, drainAttachmentGc, quarantineDir, sweepAttachments } from './lib/attachments.js';
+import { attachmentsDir, drainAttachmentGc, quarantineDir, sweepAttachments, sweepUnreferenced } from './lib/attachments.js';
 
 let config;
 try {
@@ -38,7 +38,12 @@ const filesDir = attachmentsDir(config.DATA_DIR);
 const swept = await sweepAttachments(db, filesDir, quarantineDir(config.DATA_DIR));
 if (swept.temp) console.log(`Pièces jointes : ${swept.temp} envoi(s) interrompu(s) effacé(s).`);
 if (swept.quarantined) console.warn(`Pièces jointes : ${swept.quarantined} fichier(s) sans ligne en base déplacé(s) dans ${quarantineDir(config.DATA_DIR)} (à examiner, puis supprimer).`);
-setInterval(() => { cleanup(db, retention); void drainAttachmentGc(db, filesDir).catch(() => {}); }, 3_600_000).unref();
+// Chaque heure aussi : les pièces jointes qu'aucune version de leur page ne cite plus depuis 7 jours sont supprimées.
+setInterval(() => {
+  cleanup(db, retention);
+  try { sweepUnreferenced(db); } catch (err) { console.warn(`Pièces jointes non citées : ${(err as Error).message}`); }
+  void drainAttachmentGc(db, filesDir).catch(() => {});
+}, 3_600_000).unref();
 
 const app = await buildApp({
   config,

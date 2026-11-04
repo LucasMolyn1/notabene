@@ -10,7 +10,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import { type DB, openDb } from '../src/db.js';
+import { type DB, MIGRATIONS, openDb } from '../src/db.js';
 import { contentDisposition, drainAttachmentGc, parseRange, sanitizeFilename, sniffMime, sweepAttachments } from '../src/lib/attachments.js';
 import { tarHeader, tarStream } from '../src/lib/tar.js';
 import { MAX_CONCURRENT_UPLOADS, uploadError } from '../src/routes/attachments.js';
@@ -421,7 +421,7 @@ describe('nettoyage', () => {
     expect(up.prepare("SELECT name FROM sqlite_master WHERE name IN ('attachments', 'attachment_gc', 'attachments_ad') ORDER BY name").all()).toHaveLength(3);
     expect(up.prepare("SELECT id FROM pages WHERE id = 'p1'").get()).toBeTruthy();
     up.close();
-    expect(new Database(file).pragma('user_version', { simple: true })).toBe(19);
+    expect(new Database(file).pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
   });
 });
 

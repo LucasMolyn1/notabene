@@ -3,6 +3,7 @@
 // dessous, est laissée de côté) ; la copie reste aussi restreinte que la source (sinon copier vers un autre espace
 // rendrait visible à tous une page réservée) ; les mentions déjà notifiées ne le sont pas de nouveau.
 import type { DB } from '../db.js';
+import type { AttachmentCloner } from './attachments.js';
 import { type DocNode } from './content.js';
 import { copyBaseData } from './bases.js';
 import { HttpError } from './http.js';
@@ -28,6 +29,7 @@ export function copyTree(
   target: { spaceId: string; parentId: string | null },
   userId: string | null,
   canRead: (pageId: string) => boolean,
+  cloner?: AttachmentCloner,
 ): { root: PageRow; count: number; skipped: number } {
   // Arbre à copier, dans l'ordre d'affichage ; les pages illisibles sont écartées avec leurs descendantes.
   const plan: { src: PageRow; parent: number | null }[] = [];
@@ -54,7 +56,7 @@ export function copyTree(
         icon: src.icon,
         content: stripCommentAnchors(JSON.parse(src.content) as DocNode),
         kind: src.kind,
-      }, userId);
+      }, userId, cloner);
       if (src.kind === 'base') copyBaseData(db, src.id, copy.id, userId);
       created.push(copy);
       db.prepare('INSERT INTO page_acl (page_id, user_id, level) SELECT ?, user_id, level FROM page_acl WHERE page_id = ?').run(copy.id, src.id);

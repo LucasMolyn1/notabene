@@ -55,6 +55,9 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
       case 'excalidraw': return '_[Dessin Excalidraw]_';
       case 'drawio': return '_[Diagramme Draw.io]_';
       case 'horizontalRule': return '---';
+      // Pièce jointe : lien vers le fichier ; le serveur revérifie le droit de lecture à chaque téléchargement.
+      case 'attachment': case 'video': case 'audio':
+        return `[${String(a.name || 'fichier').replace(/[\r\n]+/g, ' ').replace(/([\\*_`~[\]])/g, '\\$1')}](/api/v3/attachments/${mdUrl(String(a.id))})`;
       case 'image': return String(a.src).startsWith('data:') ? `_[Image : ${a.alt ?? ''}]_` : `![${a.alt ?? ''}](${mdUrl(String(a.src))})`;
       case 'bulletList': return list(node, () => '- ');
       case 'orderedList': return list(node, (_, i) => `${(Number(a.start) || 1) + i}. `);

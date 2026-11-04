@@ -475,6 +475,36 @@ export const MIGRATIONS: string[] = [
     INSERT OR IGNORE INTO attachment_gc (id) VALUES (old.id);
   END;
   `,
+  // v20 : une pièce jointe appartient à une page OU à un modèle (copie faite à l'enregistrement du modèle, pour qu'il ne dépende
+  // pas de la page d'origine) ; `unreferenced_since` date le premier constat qu'aucune version de la page ne la cite plus.
+  // SQLite ne modifie ni NOT NULL ni CHECK en place : la table est refaite, avec ses index et son déclencheur.
+  // Retour arrière : refaire la table v19 avec les lignes WHERE page_id IS NOT NULL (les fichiers des modèles deviennent orphelins).
+  `
+  CREATE TABLE attachments_v20 (
+    id          TEXT PRIMARY KEY,
+    page_id     TEXT REFERENCES pages(id) ON DELETE CASCADE,
+    template_id TEXT REFERENCES page_templates(id) ON DELETE CASCADE,
+    uploader_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    name        TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 255),
+    mime        TEXT NOT NULL CHECK (mime IN ('image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf', 'application/zip',
+                  'video/mp4', 'video/webm', 'audio/mpeg', 'audio/ogg', 'audio/wav', 'application/octet-stream')),
+    size        INTEGER NOT NULL CHECK (size > 0),
+    sha256      TEXT NOT NULL CHECK (length(sha256) = 64),
+    created_at  INTEGER NOT NULL,
+    unreferenced_since INTEGER,
+    CHECK ((page_id IS NULL) != (template_id IS NULL))
+  );
+  INSERT INTO attachments_v20 (id, page_id, uploader_id, name, mime, size, sha256, created_at)
+    SELECT id, page_id, uploader_id, name, mime, size, sha256, created_at FROM attachments ORDER BY rowid;
+  DROP TABLE attachments;
+  ALTER TABLE attachments_v20 RENAME TO attachments;
+  CREATE INDEX attachments_page ON attachments(page_id, created_at);
+  CREATE INDEX attachments_template ON attachments(template_id) WHERE template_id IS NOT NULL;
+  CREATE INDEX attachments_uploader ON attachments(uploader_id);
+  CREATE TRIGGER attachments_ad AFTER DELETE ON attachments BEGIN
+    INSERT OR IGNORE INTO attachment_gc (id) VALUES (old.id);
+  END;
+  `,
 ];
 
 export function openDb(file: string): DB {

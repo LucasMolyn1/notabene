@@ -1,5 +1,6 @@
 // Rendu HTML en lecture seule d'un document TipTap, pour les moteurs de recherche et les lecteurs sans JavaScript (pages publiques).
 // Tout est échappé ; seuls les nœuds, marques et liens connus sont rendus (liste blanche, comme lib/content.ts).
+import { ATTACHMENT_ID } from './attachments.js';
 import { type DocNode, isSafeHref, isSafeImageSrc } from './content.js';
 
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -42,6 +43,9 @@ export function renderHtml(doc: DocNode, titleOf: TitleOf, mentionName: MentionN
       case 'columns': return `<div>${(node.content ?? []).map((c) => `<div>${children(c)}</div>`).join('')}</div>`;
       case 'mermaid': case 'plantuml': return `<pre><code>${escapeHtml(String(a.code ?? ''))}</code></pre>`;
       case 'horizontalRule': return '<hr>';
+      // Pièce jointe : lien de téléchargement seulement (aucun lecteur intégré) ; le fichier n'est servi qu'à qui peut lire sa page.
+      case 'attachment': case 'video': case 'audio':
+        return ATTACHMENT_ID.test(String(a.id)) ? `<p><a href="/api/v3/attachments/${escapeHtml(String(a.id))}" rel="nofollow">${escapeHtml(String(a.name || 'Fichier'))}</a></p>` : '';
       case 'image': return isSafeImageSrc(a.src) && !String(a.src).startsWith('data:') ? `<img src="${escapeHtml(String(a.src))}" alt="${escapeHtml(String(a.alt ?? ''))}" loading="lazy">` : '';
       case 'bulletList': return `<ul>${children(node)}</ul>`;
       case 'orderedList': return `<ol>${children(node)}</ol>`;

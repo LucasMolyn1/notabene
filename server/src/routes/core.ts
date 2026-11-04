@@ -28,6 +28,8 @@ export default async function coreRoutes(app: FastifyInstance) {
     ai: isAiReady(db),
     personalSpaces: personalSpacesEnabled(db),
     sharing: sharingEnabled(db),
+    // Taille maximale d'une pièce jointe (Mo) : l'interface refuse avant l'envoi ce que le serveur refuserait.
+    attachmentMaxMb: config.ATTACHMENT_MAX_MB,
   }));
 
   app.get('/me', { schema: { tags: ['session'], summary: 'Utilisateur courant et permissions' } }, async (req) => {
