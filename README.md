@@ -1,6 +1,6 @@
 # BeNote
 
-BeNote est le nom commercial du projet ; le dépôt, les images Docker et les variables d'environnement gardent le nom technique `notabene`.
+Le projet s'appelle **NotaBene** ; **BeNote** en est le nom commercial, celui que voient les utilisateurs (interface, e-mails, documentation). Le dépôt, les images Docker et les variables d'environnement gardent le nom technique `notabene`.
 
 Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com) : espaces, pages imbriquées, éditeur riche, diagrammes, recherche par IA et API REST. Conçu *secure by design* et déployable autant de fois que nécessaire à partir de ce dépôt.
 
