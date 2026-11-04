@@ -451,6 +451,30 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE base_properties_v18 RENAME TO base_properties;
   CREATE INDEX base_properties_base ON base_properties(base_id, position);
   `,
+  // v19 : pièces jointes. Le fichier est sur disque (DATA_DIR/attachments/<id>), la ligne ne garde que les métadonnées ; le type est
+  // celui reconnu sur les octets. Quand une ligne disparaît (pièce jointe, page ou espace supprimés, en cascade comprise), le
+  // déclencheur inscrit son identifiant dans attachment_gc : le fichier est ensuite effacé du disque (lib/attachments.ts).
+  // Retour arrière : DROP TABLE attachment_gc; DROP TABLE attachments; (les fichiers du dossier deviennent alors inutiles).
+  `
+  CREATE TABLE attachments (
+    id          TEXT PRIMARY KEY,
+    page_id     TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    uploader_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    name        TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 255),
+    mime        TEXT NOT NULL CHECK (mime IN ('image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf', 'application/zip',
+                  'video/mp4', 'video/webm', 'audio/mpeg', 'audio/ogg', 'audio/wav', 'application/octet-stream')),
+    size        INTEGER NOT NULL CHECK (size > 0),
+    sha256      TEXT NOT NULL CHECK (length(sha256) = 64),
+    created_at  INTEGER NOT NULL
+  );
+  CREATE INDEX attachments_page ON attachments(page_id, created_at);
+  CREATE INDEX attachments_uploader ON attachments(uploader_id);
+
+  CREATE TABLE attachment_gc (id TEXT PRIMARY KEY);
+  CREATE TRIGGER attachments_ad AFTER DELETE ON attachments BEGIN
+    INSERT OR IGNORE INTO attachment_gc (id) VALUES (old.id);
+  END;
+  `,
 ];
 
 export function openDb(file: string): DB {

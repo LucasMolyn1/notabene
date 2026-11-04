@@ -154,6 +154,12 @@ const schema = z
     // Hôtes dont le contenu peut être intégré dans une page (iframe). Vide : aucune intégration (par défaut).
     CONTENT_EMBED_HOSTS: csv(''),
     SEED_DEMO: bool('true'),
+    // Pièces jointes : taille maximale d'un fichier et volume total de l'instance, en mégaoctets.
+    ATTACHMENT_MAX_MB: z.coerce.number().int().min(1).max(1024).default(25),
+    ATTACHMENTS_TOTAL_MB: z.coerce.number().int().min(1).max(10_485_760).default(5120),
+    // Volume de pièces jointes envoyées par une même personne (Mo), et silence maximal pendant un envoi (secondes).
+    ATTACHMENT_USER_MB: z.coerce.number().int().min(1).max(10_485_760).default(1024),
+    ATTACHMENT_UPLOAD_IDLE_SECONDS: z.coerce.number().int().min(1).max(600).default(30),
   })
   .superRefine((c, ctx) => {
     if (c.DEV_LOGIN && c.NODE_ENV === 'production') {

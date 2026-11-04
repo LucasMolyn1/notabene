@@ -4,6 +4,7 @@ import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
 import { cleanup, openDb } from './db.js';
 import { seedDemo } from './seed.js';
+import { attachmentsDir, drainAttachmentGc, quarantineDir, sweepAttachments } from './lib/attachments.js';
 
 let config;
 try {
@@ -31,7 +32,13 @@ const retention = {
   auditDays: config.AUDIT_RETENTION_DAYS,
 };
 cleanup(db, retention);
-setInterval(() => cleanup(db, retention), 3_600_000).unref();
+// Pièces jointes : avant d'ouvrir le port, effacer les envois interrompus et les fichiers sans ligne en base ; ensuite, chaque heure,
+// les fichiers des pages purgées de la corbeille.
+const filesDir = attachmentsDir(config.DATA_DIR);
+const swept = await sweepAttachments(db, filesDir, quarantineDir(config.DATA_DIR));
+if (swept.temp) console.log(`Pièces jointes : ${swept.temp} envoi(s) interrompu(s) effacé(s).`);
+if (swept.quarantined) console.warn(`Pièces jointes : ${swept.quarantined} fichier(s) sans ligne en base déplacé(s) dans ${quarantineDir(config.DATA_DIR)} (à examiner, puis supprimer).`);
+setInterval(() => { cleanup(db, retention); void drainAttachmentGc(db, filesDir).catch(() => {}); }, 3_600_000).unref();
 
 const app = await buildApp({
   config,
