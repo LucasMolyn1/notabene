@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installe, sur l'hôte, le service qui permet le bouton « Mettre à jour » de Paramètres, À propos.
-# Usage : sudo ./scripts/install-updater.sh [--sans-sauvegarde] [--sans-demarrage] [--activer-verification]
+# Usage : sudo ./scripts/install-updater.sh [--exiger-sauvegarde] [--sans-demarrage] [--activer-verification]
 # Relançable sans risque : rien n'est écrasé de ce que vous avez réglé (fichier de configuration, .env).
 #
 # Pourquoi un service sur l'hôte : le conteneur de BeNote reste en lecture seule et sans accès à Docker ; il se
@@ -17,12 +17,13 @@ ETC_DIR="${ETC_DIR:-/etc}"
 SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
 OVERRIDE="docker-compose.updater.yml"
 
-REQUIRE_BACKUP=true
+REQUIRE_BACKUP=false
 START=true
 CHECK=false
 for arg in "$@"; do
   case "$arg" in
-    --sans-sauvegarde) REQUIRE_BACKUP=false ;;
+    --exiger-sauvegarde) REQUIRE_BACKUP=true ;;
+    --sans-sauvegarde) REQUIRE_BACKUP=false ;; # conservé : c'est désormais le comportement par défaut
     --sans-demarrage) START=false ;;
     --activer-verification) CHECK=true ;;
     -h|--help) sed -n 2,5p "$0"; exit 0 ;;
@@ -90,7 +91,7 @@ say
 say "Service de mise à jour installé."
 if [ "$START" = false ]; then say "Démarrez ou relancez l'application : docker compose up -d"; fi
 if ! grep -q '^UPDATE_CHECK=' "$env_file"; then say "Dernière étape : Paramètres, À propos, « Activer la vérification » (un appel à GitHub, désactivé par défaut)."; fi
-if [ "$REQUIRE_BACKUP" = true ] && ! grep -q '^BACKUP_AGE_RECIPIENT=' "$env_file"; then
-  say "Attention : aucune clé de sauvegarde (BACKUP_AGE_RECIPIENT) : le service refusera de mettre à jour tant qu'elle manque."
-  say "Sur une instance de test seulement, relancez avec --sans-sauvegarde (prenez alors un instantané de la machine avant)."
+if ! grep -q '^BACKUP_AGE_RECIPIENT=' "$env_file"; then
+  say "Info : aucune clé de sauvegarde (BACKUP_AGE_RECIPIENT). La mise à jour se fera sans sauvegarde de la base : prenez un instantané de la machine avant."
+  say "Pour refuser toute mise à jour sans sauvegarde : relancez avec --exiger-sauvegarde."
 fi

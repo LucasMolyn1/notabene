@@ -159,19 +159,13 @@ EOF
 
 ### 5.2 Fichier Compose
 
-Récupérez le condensat (digest) de la version à installer, ici la 3.9.0 :
-
-```bash
-sudo docker buildx imagetools inspect ghcr.io/lucasmolyn1/notabene:3.9.0 | grep -m1 Digest
-```
-
-Créez `/opt/notabene/docker-compose.yml` en remplaçant `<digest>` par le résultat (`sha256:…`). Le tag seul peut être déplacé, le digest non :
+Créez `/opt/notabene/docker-compose.yml` en indiquant le numéro de version exact de l'image (ici la 3.9.0, jamais `latest`) :
 
 ```yaml
 name: notabene
 services:
   notabene:
-    image: ghcr.io/lucasmolyn1/notabene:3.9.0@<digest>
+    image: ghcr.io/lucasmolyn1/notabene:3.9.0
     restart: unless-stopped
     env_file: .env
     environment: { DATA_DIR: /data, HOST: 0.0.0.0, PORT: 3000 }
@@ -183,6 +177,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     deploy: { resources: { limits: { memory: 512m } } }
 ```
+
+Option durcie : pour qu'un tag déplacé ne change jamais l'image, ajoutez son condensat, `…:3.9.0@sha256:…` (`docker buildx imagetools inspect ghcr.io/lucasmolyn1/notabene:3.9.0`). Facultatif : le tag exact suffit pour la plupart des installations.
 
 Sur RHEL et dérivés avec SELinux actif, ajoutez `:Z` au volume : `"/srv/appdata/notabene:/data:Z"`.
 

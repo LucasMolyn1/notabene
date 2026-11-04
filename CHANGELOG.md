@@ -7,6 +7,8 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 ## Non publié
 
 ### Modifié
+- **Mise à jour simplifiée** : le service de l'hôte est installé par défaut par `setup.sh` ; le bouton « Mettre à jour » est réservé aux administrateurs et ne redemande plus le mot de passe (confirmation et journal d'audit conservés) ; l'absence de sauvegarde est signalée au lieu de bloquer (`REQUIRE_BACKUP=true` pour l'exiger) ; l'image est épinglée au tag exact, le digest devient facultatif (`PIN_DIGEST=true`).
+- **Attention à la mise à jour** : l'option `--sans-sauvegarde` de `install-updater.sh` est remplacée par `--exiger-sauvegarde` (ancienne option encore acceptée, sans effet).
 - **Marque BeNote** : le nom affiché devient BeNote (interface, titres, e-mails, documentation, API OpenAPI, exports). Les identifiants techniques restent `notabene` : dépôt, images, variables `NOTABENE_*`, noms de fichiers et agents utilisateurs HTTP. L'émetteur affiché par les applications d'authentification passe à BeNote pour les nouvelles inscriptions TOTP ; les comptes existants restent valides.
 
 ## [3.10.0] - 2026-11-01

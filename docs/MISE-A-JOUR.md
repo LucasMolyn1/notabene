@@ -28,13 +28,13 @@ Une instance ne se met jamais à jour toute seule. Deux façons d'être prévenu
 
 ## Mettre à jour
 
-1. Dans le fichier compose, changer le numéro de version de l'image (et le digest si vous l'épinglez) :
+1. Dans le fichier compose, changer le numéro de version de l'image (et le digest si vous l'épinglez, option durcie) :
 
    ```yaml
-   image: ghcr.io/lucasmolyn1/notabene:3.3.0@sha256:<digest>
+   image: ghcr.io/lucasmolyn1/notabene:3.3.0
    ```
 
-   Le digest d'un tag : `docker buildx imagetools inspect ghcr.io/lucasmolyn1/notabene:3.3.0`. Vérifier la provenance : `gh attestation verify oci://ghcr.io/lucasmolyn1/notabene:3.3.0 --owner LucasMolyn1`.
+   Le digest d'un tag, si vous l'épinglez : `docker buildx imagetools inspect ghcr.io/lucasmolyn1/notabene:3.3.0`. Vérifier la provenance : `gh attestation verify oci://ghcr.io/lucasmolyn1/notabene:3.3.0 --owner LucasMolyn1`.
 2. Télécharger et redémarrer :
 
    ```bash
@@ -56,9 +56,9 @@ Une instance ne se met jamais à jour toute seule. Deux façons d'être prévenu
 - Se connecter, ouvrir une page, en modifier une, lancer une recherche.
 - Paramètres, À propos : « À jour ».
 
-## Mettre à jour depuis l'interface (service sur l'hôte, optionnel)
+## Mettre à jour depuis l'interface (administrateurs)
 
-Un administrateur peut lancer la mise à jour depuis Paramètres, À propos (bouton « Mettre à jour vers la X »). **BeNote ne touche pas à Docker** : son conteneur reste en lecture seule et sans privilèges. Le bouton dépose une *demande* dans un dossier d'échange ; un petit service installé sur l'hôte décide et exécute.
+Un administrateur peut lancer la mise à jour depuis Paramètres, À propos (bouton « Mettre à jour vers la X »), après une simple confirmation. `./scripts/setup.sh` installe le service de l'hôte par défaut ; sans lui, la page indique comment l'installer. **BeNote ne touche pas à Docker** : son conteneur reste en lecture seule et sans privilèges. Le bouton dépose une *demande* dans un dossier d'échange ; un petit service installé sur l'hôte décide et exécute.
 
 ### Ce que fait le service, et ce qu'il refuse
 
@@ -66,8 +66,8 @@ Un administrateur peut lancer la mise à jour depuis Paramètres, À propos (bou
 
 1. **Traite la demande comme non fiable.** Seul un numéro `x.y.z` en est extrait, puis comparé à la dernière release publiée sur GitHub, que **le service interroge lui-même**. Une autre version est refusée.
 2. Refuse s'il est déjà à jour, si GitHub est injoignable, ou si la demande est mal formée (liens symboliques, fichier trop gros, version piégée).
-3. **Sauvegarde la base** (`backup.js backup`). Sans sauvegarde réussie, il s'arrête (sauf `REQUIRE_BACKUP=false`, à réserver aux instances de test).
-4. Télécharge l'image `ghcr.io/lucasmolyn1/notabene:X.Y.Z`, relève son digest, vérifie la provenance si `VERIFY_ATTESTATION=true`, puis écrit `NOTABENE_IMAGE=…:X.Y.Z@sha256:…` dans le `.env` et relance `docker compose up -d`.
+3. **Tente de sauvegarder la base** (`backup.js backup`). Sans clé de sauvegarde, il continue et le dit dans le statut (« aucune sauvegarde de la base ») : prenez alors un instantané de la machine avant. Pour refuser toute mise à jour sans sauvegarde : `REQUIRE_BACKUP=true` dans `/etc/notabene-updater.conf`.
+4. Télécharge l'image `ghcr.io/lucasmolyn1/notabene:X.Y.Z`, vérifie la provenance si `VERIFY_ATTESTATION=true`, puis écrit `NOTABENE_IMAGE=…:X.Y.Z` dans le `.env` (avec `@sha256:…` si `PIN_DIGEST=true`) et relance `docker compose up -d`.
 5. Attend que `/healthz` réponde **et** que la version en marche soit la bonne. Sinon, il **remet l'ancienne image**.
 
 Il publie son avancement dans `status.json` (lu par l'interface) et journalise dans `journalctl -u notabene-updater`.
@@ -82,7 +82,7 @@ Il publie son avancement dans `status.json` (lu par l'interface) et journalise d
 sudo ./scripts/install-updater.sh
 ```
 
-Le script fait les quatre étapes ci-dessous (dossier d'échange, volume dans un fichier `docker-compose.updater.yml` à part, `.env`, service et minuteur), puis relance l'application. Il peut être relancé sans risque et n'écrase jamais `/etc/notabene-updater.conf`. Options : `--sans-sauvegarde` (instance de test seulement), `--sans-demarrage`, `--activer-verification` (sinon, activer dans Paramètres, À propos). `./scripts/setup.sh` propose aussi de l'installer. L'installation manuelle ci-dessous reste valable.
+Le script fait les quatre étapes ci-dessous (dossier d'échange, volume dans un fichier `docker-compose.updater.yml` à part, `.env`, service et minuteur), puis relance l'application. Il peut être relancé sans risque et n'écrase jamais `/etc/notabene-updater.conf`. Options : `--exiger-sauvegarde`, `--sans-demarrage`, `--activer-verification` (sinon, activer dans Paramètres, À propos). `./scripts/setup.sh` propose aussi de l'installer. L'installation manuelle ci-dessous reste valable.
 
 **À la main :**
 
@@ -118,7 +118,7 @@ Le script fait les quatre étapes ci-dessous (dossier d'échange, volume dans un
 
 4. `docker compose up -d`, puis ouvrir Paramètres, À propos : le bouton apparaît quand une version plus récente existe et que le service donne signe de vie. Sans service, la page indique comment l'installer.
 
-Le bouton exige le mot de passe de l'administrateur **à chaque fois** (même dans la fenêtre de 10 minutes), et chaque demande est journalisée (`update.request`). Il demande aussi que la vérification de mise à jour soit activée.
+Le bouton est réservé aux administrateurs et chaque demande est journalisée (`update.request`). Il demande que la vérification de mise à jour soit activée (un clic dans Paramètres, À propos).
 
 ## Revenir en arrière
 

@@ -223,13 +223,11 @@ export async function renderAbout(el) {
     const target = update.latest.version;
     const ok = await confirmModal({
       title: `Mettre à jour vers la version ${target} ?`,
-      message: 'Le service de l’hôte va sauvegarder la base, télécharger la nouvelle image et redémarrer BeNote : l’application sera indisponible une à deux minutes. Si la nouvelle version ne démarre pas, l’ancienne est remise en place. Avez-vous lu les nouveautés, surtout « Attention à la mise à jour » ?',
+      message: 'Le service de l’hôte va tenter de sauvegarder la base (sans clé de sauvegarde, il continue sans : prenez alors un instantané de la machine), télécharger la nouvelle image et redémarrer BeNote : l’application sera indisponible une à deux minutes. Si la nouvelle version ne démarre pas, l’ancienne est remise en place. Avez-vous lu les nouveautés, surtout « Attention à la mise à jour » ?',
       confirm: 'Mettre à jour',
     });
     if (!ok) return;
-    const reauth = await askReauth('lancer la mise à jour de l’instance', { strict: true });
-    if (!reauth) return;
-    if (!(await A.attempt(() => api.post('/admin/update/apply', { version: target, reauth })))) return;
+    if (!(await A.attempt(() => api.post('/admin/update/apply', { version: target })))) return;
     followUpdate(target);
   };
   const progress = h('p', { class: 'hint', role: 'status', 'aria-live': 'polite' });
