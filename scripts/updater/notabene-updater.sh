@@ -21,9 +21,11 @@ IMAGE_REPO="${IMAGE_REPO:-ghcr.io/lucasmolyn1/notabene}"
 GITHUB_REPO="${GITHUB_REPO:-LucasMolyn1/notabene}"
 GITHUB_API="${GITHUB_API:-https://api.github.com}"
 SERVICE="${SERVICE:-notabene}"
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3000/healthz}"
+# Vide par défaut : on lit l'état de santé du conteneur (indépendant de l'adresse sur laquelle le port est publié).
+HEALTH_URL="${HEALTH_URL:-}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-120}"
-REQUIRE_BACKUP="${REQUIRE_BACKUP:-true}"
+REQUIRE_BACKUP="${REQUIRE_BACKUP:-false}"
+PIN_DIGEST="${PIN_DIGEST:-false}"
 VERIFY_ATTESTATION="${VERIFY_ATTESTATION:-false}"
 STATE_DIR="${STATE_DIR:-/var/lib/notabene-updater}"
 
@@ -110,18 +112,25 @@ if [ "$current" = "$VERSION" ] || [ "$(printf '%s\n%s\n' "$current" "$VERSION" |
   fail "Déjà à jour ou version plus ancienne (installée : $current)."
 fi
 
-# 2. Sauvegarde : sans elle, pas de mise à jour (les migrations de base ne reviennent pas en arrière).
+# 2. Sauvegarde : tentée à chaque fois. Un échec est signalé mais n'arrête la mise à jour que si REQUIRE_BACKUP=true
+# (les migrations de base ne reviennent pas en arrière : sans sauvegarde, prenez un instantané de la machine).
 set_state running "$VERSION" 'Sauvegarde de la base…'
+backup_note=''
 if ! compose exec -T "$SERVICE" node dist/server/backup.js backup >/dev/null 2>&1; then
   if [ "$REQUIRE_BACKUP" = true ]; then fail 'Sauvegarde impossible (clé de chiffrement BACKUP_AGE_RECIPIENT absente ?) : mise à jour annulée.'; fi
-  log 'sauvegarde impossible, poursuite autorisée par REQUIRE_BACKUP=false'
+  log 'sauvegarde impossible, poursuite (REQUIRE_BACKUP=false)'
+  backup_note=' Attention : aucune sauvegarde de la base n’a pu être faite.'
 fi
 
-# 3. Image : téléchargée par version, épinglée par digest.
+# 3. Image : téléchargée par version exacte ; épinglée aussi par digest seulement si PIN_DIGEST=true.
 set_state running "$VERSION" 'Téléchargement de l’image…'
 docker pull "$IMAGE_REPO:$VERSION" >/dev/null 2>&1 || fail 'Téléchargement de l’image impossible : mise à jour annulée.'
-digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE_REPO:$VERSION" 2>/dev/null | sed 's/.*@//')
-[[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'Empreinte de l’image illisible : mise à jour annulée.'
+new_image="$IMAGE_REPO:$VERSION"
+if [ "$PIN_DIGEST" = true ]; then
+  digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE_REPO:$VERSION" 2>/dev/null | sed 's/.*@//')
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'Empreinte de l’image illisible : mise à jour annulée.'
+  new_image="$new_image@$digest"
+fi
 if [ "$VERIFY_ATTESTATION" = true ]; then
   gh attestation verify "oci://$IMAGE_REPO:$VERSION" --owner "${GITHUB_REPO%%/*}" >/dev/null 2>&1 || fail 'Attestation de provenance invalide : mise à jour annulée.'
 fi
@@ -132,13 +141,18 @@ old_line=$(grep -m1 '^NOTABENE_IMAGE=' "$ENV_FILE" || true)
 [ -n "$old_line" ] || fail 'NOTABENE_IMAGE absent du .env : mise à jour annulée.'
 printf '%s\n' "$old_line" > "$STATE_DIR/previous-image"
 set_state running "$VERSION" 'Redémarrage de BeNote…'
-sed -i "s#^NOTABENE_IMAGE=.*#NOTABENE_IMAGE=$IMAGE_REPO:$VERSION@$digest#" "$ENV_FILE"
+sed -i "s#^NOTABENE_IMAGE=.*#NOTABENE_IMAGE=$new_image#" "$ENV_FILE"
 compose up -d >/dev/null 2>&1 || true
+
+container_ok() {
+  if [ -n "$HEALTH_URL" ]; then curl -fsS -m 5 "$HEALTH_URL" >/dev/null 2>&1; return; fi
+  [ "$(docker inspect --format '{{.State.Health.Status}}' "$(compose ps -q "$SERVICE" | head -1)" 2>/dev/null)" = healthy ]
+}
 
 healthy() {
   local deadline=$(( $(date +%s) + HEALTH_TIMEOUT )) now_version
   while [ "$(date +%s)" -lt "$deadline" ]; do
-    if curl -fsS -m 5 "$HEALTH_URL" >/dev/null 2>&1; then
+    if container_ok; then
       now_version=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$(compose ps -q "$SERVICE" | head -1)" 2>/dev/null || true)
       [ "$now_version" = "$1" ] && return 0
     fi
@@ -149,7 +163,7 @@ healthy() {
 
 if healthy "$VERSION"; then
   log "mise à jour réussie : $current -> $VERSION"
-  set_state success "$VERSION" "Mise à jour réussie ($current vers $VERSION)."
+  set_state success "$VERSION" "Mise à jour réussie ($current vers $VERSION).$backup_note"
   exit 0
 fi
 

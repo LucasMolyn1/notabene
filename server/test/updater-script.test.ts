@@ -31,6 +31,7 @@ case "$1 $2" in
   "pull ghcr.io/lucasmolyn1/notabene:"*) exit 0 ;;
   inspect*)
     case "$*" in
+      *Health.Status*) if [ -e "${root}/upped" ] && [ -z "$STUB_HEALTH_FAIL" ]; then echo healthy; else echo starting; fi ;;
       *RepoDigests*) echo "ghcr.io/lucasmolyn1/notabene@${DIGEST}" ;;
       *) if [ -e "${root}/upped" ] && [ -z "$STUB_HEALTH_FAIL" ]; then echo "$STUB_LATEST"; else echo "\${STUB_CURRENT:-3.1.0}"; fi ;;
     esac ;;
@@ -62,15 +63,30 @@ describe.skipIf(process.platform !== 'linux')('service de mise à jour de l’h�
     expect(envImage()).toBe(OLD);
   });
 
-  it('met à jour vers la dernière release : sauvegarde, image épinglée par digest, statut « success », demande consommée', () => {
+  it('met à jour vers la dernière release : sauvegarde, image au tag exact, statut « success », demande consommée', () => {
     request('{"version":"3.2.0","requestedBy":"a"}');
     expect(run().status).toBe(0);
     expect(status()).toMatchObject({ state: 'success', version: '3.2.0' });
-    expect(envImage()).toBe(`ghcr.io/lucasmolyn1/notabene:3.2.0@${DIGEST}`);
+    expect(envImage()).toBe('ghcr.io/lucasmolyn1/notabene:3.2.0');
     expect(existsSync(join(exchange, 'request.json'))).toBe(false);
     const log = readFileSync(join(root, 'docker.log'), 'utf8');
     expect(log).toContain('backup.js backup');
     expect(log.indexOf('backup.js backup')).toBeLessThan(log.indexOf('pull '));
+  });
+
+  it('sans HEALTH_URL, juge la santé d’après le conteneur (port publié sur une autre adresse que 127.0.0.1)', () => {
+    const conf = join(root, 'conf-sans-url');
+    writeFileSync(conf, readFileSync(join(root, 'conf'), 'utf8').split('\n').filter((l) => !l.startsWith('HEALTH_URL=')).join('\n'));
+    request('{"version":"3.2.0"}');
+    spawnSync('bash', [SCRIPT], { env: { PATH: `${bin}:${process.env.PATH}`, NOTABENE_UPDATER_CONF: conf, STUB_LATEST: '3.2.0' }, encoding: 'utf8' });
+    expect(status()).toMatchObject({ state: 'success', version: '3.2.0' });
+  });
+
+  it('épingle aussi le digest avec PIN_DIGEST=true', () => {
+    request('{"version":"3.2.0"}');
+    run({ PIN_DIGEST: 'true' });
+    expect(status()).toMatchObject({ state: 'success' });
+    expect(envImage()).toBe(`ghcr.io/lucasmolyn1/notabene:3.2.0@${DIGEST}`);
   });
 
   it('refuse une version qui n’est pas la dernière release, sans rien toucher', () => {
@@ -103,9 +119,17 @@ describe.skipIf(process.platform !== 'linux')('service de mise à jour de l’h�
     expect(envImage()).toBe(OLD);
   });
 
-  it('annule sans sauvegarde réussie (REQUIRE_BACKUP par défaut)', () => {
+  it('sans sauvegarde possible : met à jour quand même et le signale (REQUIRE_BACKUP=false par défaut)', () => {
     request('{"version":"3.2.0"}');
     run({ STUB_BACKUP_FAIL: '1' });
+    expect(status()).toMatchObject({ state: 'success', version: '3.2.0' });
+    expect(status().message).toContain('aucune sauvegarde');
+    expect(envImage()).toBe('ghcr.io/lucasmolyn1/notabene:3.2.0');
+  });
+
+  it('annule sans sauvegarde réussie si REQUIRE_BACKUP=true', () => {
+    request('{"version":"3.2.0"}');
+    run({ STUB_BACKUP_FAIL: '1', REQUIRE_BACKUP: 'true' });
     expect(status()).toMatchObject({ state: 'failed' });
     expect(status().message).toContain('Sauvegarde impossible');
     expect(envImage()).toBe(OLD);

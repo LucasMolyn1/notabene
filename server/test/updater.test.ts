@@ -63,24 +63,26 @@ describe('POST /admin/update/apply', () => {
     return { cookies: { nb_session: cookie }, headers: { 'x-csrf-token': me.csrf as string } };
   }
   const apply = (s: Awaited<ReturnType<typeof boot>>, payload: object) => app.inject({ method: 'POST', url: '/api/v3/admin/update/apply', ...s, payload });
-  const ok = { version: '9.9.9', reauth: { password: PASS } };
+  const ok = { version: '9.9.9' };
 
-  it('dépose la demande (mot de passe exigé, journalisée) quand tout est réuni', async () => {
+  it('dépose la demande (administrateur, journalisée) quand tout est réuni', async () => {
     status();
     const s = await boot();
     expect((await app.inject({ method: 'GET', url: '/api/v3/admin/update-check', ...s })).json().updater).toMatchObject({ available: true, state: 'idle' });
-    expect((await apply(s, { version: '9.9.9', reauth: { password: 'faux' } })).statusCode).toBe(401);
-    expect(existsSync(join(dir, 'request.json'))).toBe(false);
     expect((await apply(s, ok)).statusCode).toBe(200);
     expect(JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8')).version).toBe('9.9.9');
     expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'update.request'").get()).toEqual({ n: 1 });
   });
 
-  it('exige le mot de passe même dans la fenêtre de 10 minutes', async () => {
+  it('refuse un jeton d’API, même administrateur', async () => {
     status();
     const s = await boot();
-    await app.inject({ method: 'PUT', url: '/api/v3/admin/update-check/settings', ...s, payload: { enabled: true, reauth: { password: PASS } } }).catch(() => null);
-    expect((await apply(s, { version: '9.9.9', reauth: {} })).statusCode).toBe(401);
+    const created = await app.inject({ method: 'POST', url: '/api/v3/tokens', ...s, payload: { name: 'ci', scopes: ['read', 'write', 'admin'], expiresInDays: 7 } });
+    const token = created.json().token as string | undefined;
+    expect(token).toBeTruthy();
+    const res = await app.inject({ method: 'POST', url: '/api/v3/admin/update/apply', headers: { authorization: `Bearer ${token}` }, payload: ok });
+    expect([401, 403]).toContain(res.statusCode);
+    expect(existsSync(join(dir, 'request.json'))).toBe(false);
   });
 
   it('refuse sans service hôte, pendant une mise à jour, pour une autre version, hors administrateur, vérification coupée', async () => {
