@@ -21,7 +21,8 @@ IMAGE_REPO="${IMAGE_REPO:-ghcr.io/lucasmolyn1/notabene}"
 GITHUB_REPO="${GITHUB_REPO:-LucasMolyn1/notabene}"
 GITHUB_API="${GITHUB_API:-https://api.github.com}"
 SERVICE="${SERVICE:-notabene}"
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3000/healthz}"
+# Vide par défaut : on lit l'état de santé du conteneur (indépendant de l'adresse sur laquelle le port est publié).
+HEALTH_URL="${HEALTH_URL:-}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-120}"
 REQUIRE_BACKUP="${REQUIRE_BACKUP:-false}"
 PIN_DIGEST="${PIN_DIGEST:-false}"
@@ -143,10 +144,15 @@ set_state running "$VERSION" 'Redémarrage de BeNote…'
 sed -i "s#^NOTABENE_IMAGE=.*#NOTABENE_IMAGE=$new_image#" "$ENV_FILE"
 compose up -d >/dev/null 2>&1 || true
 
+container_ok() {
+  if [ -n "$HEALTH_URL" ]; then curl -fsS -m 5 "$HEALTH_URL" >/dev/null 2>&1; return; fi
+  [ "$(docker inspect --format '{{.State.Health.Status}}' "$(compose ps -q "$SERVICE" | head -1)" 2>/dev/null)" = healthy ]
+}
+
 healthy() {
   local deadline=$(( $(date +%s) + HEALTH_TIMEOUT )) now_version
   while [ "$(date +%s)" -lt "$deadline" ]; do
-    if curl -fsS -m 5 "$HEALTH_URL" >/dev/null 2>&1; then
+    if container_ok; then
       now_version=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$(compose ps -q "$SERVICE" | head -1)" 2>/dev/null || true)
       [ "$now_version" = "$1" ] && return 0
     fi

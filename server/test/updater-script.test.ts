@@ -31,6 +31,7 @@ case "$1 $2" in
   "pull ghcr.io/lucasmolyn1/notabene:"*) exit 0 ;;
   inspect*)
     case "$*" in
+      *Health.Status*) if [ -e "${root}/upped" ] && [ -z "$STUB_HEALTH_FAIL" ]; then echo healthy; else echo starting; fi ;;
       *RepoDigests*) echo "ghcr.io/lucasmolyn1/notabene@${DIGEST}" ;;
       *) if [ -e "${root}/upped" ] && [ -z "$STUB_HEALTH_FAIL" ]; then echo "$STUB_LATEST"; else echo "\${STUB_CURRENT:-3.1.0}"; fi ;;
     esac ;;
@@ -71,6 +72,14 @@ describe.skipIf(process.platform !== 'linux')('service de mise à jour de l’h�
     const log = readFileSync(join(root, 'docker.log'), 'utf8');
     expect(log).toContain('backup.js backup');
     expect(log.indexOf('backup.js backup')).toBeLessThan(log.indexOf('pull '));
+  });
+
+  it('sans HEALTH_URL, juge la santé d’après le conteneur (port publié sur une autre adresse que 127.0.0.1)', () => {
+    const conf = join(root, 'conf-sans-url');
+    writeFileSync(conf, readFileSync(join(root, 'conf'), 'utf8').split('\n').filter((l) => !l.startsWith('HEALTH_URL=')).join('\n'));
+    request('{"version":"3.2.0"}');
+    spawnSync('bash', [SCRIPT], { env: { PATH: `${bin}:${process.env.PATH}`, NOTABENE_UPDATER_CONF: conf, STUB_LATEST: '3.2.0' }, encoding: 'utf8' });
+    expect(status()).toMatchObject({ state: 'success', version: '3.2.0' });
   });
 
   it('épingle aussi le digest avec PIN_DIGEST=true', () => {

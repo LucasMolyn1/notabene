@@ -68,7 +68,7 @@ Un administrateur peut lancer la mise à jour depuis Paramètres, À propos (bou
 2. Refuse s'il est déjà à jour, si GitHub est injoignable, ou si la demande est mal formée (liens symboliques, fichier trop gros, version piégée).
 3. **Tente de sauvegarder la base** (`backup.js backup`). Sans clé de sauvegarde, il continue et le dit dans le statut (« aucune sauvegarde de la base ») : prenez alors un instantané de la machine avant. Pour refuser toute mise à jour sans sauvegarde : `REQUIRE_BACKUP=true` dans `/etc/notabene-updater.conf`.
 4. Télécharge l'image `ghcr.io/lucasmolyn1/notabene:X.Y.Z`, vérifie la provenance si `VERIFY_ATTESTATION=true`, puis écrit `NOTABENE_IMAGE=…:X.Y.Z` dans le `.env` (avec `@sha256:…` si `PIN_DIGEST=true`) et relance `docker compose up -d`.
-5. Attend que `/healthz` réponde **et** que la version en marche soit la bonne. Sinon, il **remet l'ancienne image**.
+5. Attend que le conteneur soit signalé sain par Docker (`HEALTH_URL` pour sonder une adresse précise à la place) **et** que la version en marche soit la bonne. Sinon, il **remet l'ancienne image**.
 
 Il publie son avancement dans `status.json` (lu par l'interface) et journalise dans `journalctl -u notabene-updater`.
 
