@@ -1,4 +1,6 @@
-# Notabene
+# BeNote
+
+BeNote est le nom commercial du projet ; le dépôt, les images Docker et les variables d'environnement gardent le nom technique `notabene`.
 
 Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com) : espaces, pages imbriquées, éditeur riche, diagrammes, recherche par IA et API REST. Conçu *secure by design* et déployable autant de fois que nécessaire à partir de ce dépôt.
 
@@ -30,7 +32,7 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | Guide | Pour |
 | --- | --- |
 | [docs/ESSAI.md](docs/ESSAI.md) | Essayer en 10 minutes avec Docker seul |
-| [docs/INSTALLATION.md](docs/INSTALLATION.md) | Partir d'une machine vierge : distributions compatibles, Docker, Notabene, HTTPS |
+| [docs/INSTALLATION.md](docs/INSTALLATION.md) | Partir d'une machine vierge : distributions compatibles, Docker, BeNote, HTTPS |
 | [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) | Installer pour de vrai : image, reverse proxy, adresses, premier démarrage |
 | [docs/AUTHENTIK.md](docs/AUTHENTIK.md) | Connexion unique avec Authentik |
 | [docs/MISE-A-JOUR.md](docs/MISE-A-JOUR.md) | Savoir qu'une version existe, la lire, l'installer, revenir en arrière |
@@ -115,7 +117,7 @@ Pour récupérer l'accès (mot de passe perdu, MFA bloquée), ajoutez `--reset` 
 
 ### LDAP / Active Directory
 
-`LDAP_URL` active la connexion par identifiant d’annuaire. Notabene cherche l’utilisateur avec un compte de service, puis vérifie son mot de passe par une liaison (bind) avec son propre DN : aucun mot de passe d’annuaire n’est stocké.
+`LDAP_URL` active la connexion par identifiant d’annuaire. BeNote cherche l’utilisateur avec un compte de service, puis vérifie son mot de passe par une liaison (bind) avec son propre DN : aucun mot de passe d’annuaire n’est stocké.
 
 ```env
 LDAP_URL=ldaps://ad.example.org
@@ -132,7 +134,7 @@ LDAP_TLS_CA_FILE=/data/ca.pem                  # si l’AC est interne (à monte
 
 ### SAML 2.0
 
-`SAML_ENTRY_POINT` active le SSO SAML (initié par Notabene uniquement).
+`SAML_ENTRY_POINT` active le SSO SAML (initié par BeNote uniquement).
 
 ```env
 SAML_ENTRY_POINT=https://idp.example.org/saml/sso
@@ -219,7 +221,7 @@ Sécurité : voir [SECURITY.md](SECURITY.md). Données personnelles (RGPD) : voi
 
 ## Versions et releases
 
-Notabene suit le [versionnage sémantique](https://semver.org/lang/fr/) : **MAJOR** (rupture), **MINOR** (nouvelle fonction compatible), **PATCH** (correctif). La version courante est le champ `version` de `package.json` ; elle s'affiche dans **Paramètres, Instance** avec le commit de l'image. L'historique est dans [CHANGELOG.md](CHANGELOG.md).
+BeNote suit le [versionnage sémantique](https://semver.org/lang/fr/) : **MAJOR** (rupture), **MINOR** (nouvelle fonction compatible), **PATCH** (correctif). La version courante est le champ `version` de `package.json` ; elle s'affiche dans **Paramètres, Instance** avec le commit de l'image. L'historique est dans [CHANGELOG.md](CHANGELOG.md).
 
 Pour publier une version `X.Y.Z` :
 

@@ -69,7 +69,7 @@ export function startNotifications(db: DB, bus: EventBus, mailer: Mailer, config
     const title = oneLine(page.title || 'Sans titre');
     const url = `${config().PUBLIC_URL}/p/${pageId}`;
     const what = { comment: 'a commenté', reply: 'a répondu à votre commentaire sur', 'page.updated': 'a modifié', mention: 'vous a mentionné dans' }[type];
-    await mailer.send({ to: target.email, ...mails.notification(`Notabene : ${oneLine(actor)} ${what} « ${title} »`, `${oneLine(actor)} ${what} la page « ${title} ».\n\nOuvrir la page : ${url}`) });
+    await mailer.send({ to: target.email, ...mails.notification(`BeNote : ${oneLine(actor)} ${what} « ${title} »`, `${oneLine(actor)} ${what} la page « ${title} ».\n\nOuvrir la page : ${url}`) });
   };
 
   // Mentions dans le contenu d'une page : une notification par page et par personne, à la première apparition.

@@ -47,7 +47,7 @@ const FORMS = {
   },
   saml: {
     title: 'SAML 2.0',
-    desc: 'Connexion unique SAML initiée par Notabene. L’assertion doit être signée par le fournisseur d’identité.',
+    desc: 'Connexion unique SAML initiée par BeNote. L’assertion doit être signée par le fournisseur d’identité.',
     fields: [
       { k: 'entryPoint', label: 'URL SSO du fournisseur', type: 'url', ph: 'https://idp.exemple.fr/saml/sso' },
       { k: 'idpCert', label: 'Certificat de signature du fournisseur (PEM)', type: 'pem' },
@@ -71,7 +71,7 @@ const FORMS = {
       { k: 'mode', label: 'Chiffrement', type: 'select', options: [['starttls', 'STARTTLS (port 587)'], ['tls', 'TLS direct (port 465)']] },
       { k: 'user', label: 'Utilisateur (optionnel)', type: 'text' },
       { k: 'password', label: 'Mot de passe SMTP', type: 'secret' },
-      { k: 'from', label: 'Expéditeur', type: 'text', ph: 'Notabene <wiki@exemple.fr>' },
+      { k: 'from', label: 'Expéditeur', type: 'text', ph: 'BeNote <wiki@exemple.fr>' },
     ],
   },
 };
@@ -288,7 +288,7 @@ export function embedOriginsCard(data, { card, refresh }) {
     const origins = textToList(area.value);
     if (await call('put', '/admin/settings/embed', { config: { enabled: true, origins } }, 'modifier les sites autorisés')) { toast('Sites autorisés mis à jour'); refresh(); }
   });
-  return card('2. Sites autorisés', 'Origines autorisées à afficher Notabene en iframe (en-tête CSP frame-ancestors). Appliqué immédiatement, sans redémarrage. Format : https://domaine, sans chemin ni joker.',
+  return card('2. Sites autorisés', 'Origines autorisées à afficher BeNote en iframe (en-tête CSP frame-ancestors). Appliqué immédiatement, sans redémarrage. Format : https://domaine, sans chemin ni joker.',
     h('div', { class: 'row wrap' }, sourcePill(view)),
     view.locked && h('div', { class: 'notice info' }, 'Configuration verrouillée (CONFIG_LOCKED) : modifiable uniquement dans l’environnement du déploiement.'),
     !view.values.origins.length && h('div', { class: 'notice warning' }, 'Aucune origine autorisée : l’intégration est inactive.'),

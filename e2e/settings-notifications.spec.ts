@@ -30,7 +30,7 @@ test('la cloche signale un commentaire sur une page suivie', async ({ browser })
   expect((await api(admin.request, 'PUT', `/pages/${target.id}/watch`)).ok()).toBeTruthy();
   const page = await admin.newPage();
   await page.goto('/');
-  await expect(page.getByText('Bienvenue sur Notabene').first()).toBeVisible();
+  await expect(page.getByText('Bienvenue sur BeNote').first()).toBeVisible();
 
   // D'autres tests de la série peuvent avoir laissé des notifications non lues : on compte à partir de l'état de départ.
   const before = Number(await page.locator('.bell-badge').textContent()) || 0;

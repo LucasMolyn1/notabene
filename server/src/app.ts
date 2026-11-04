@@ -227,10 +227,10 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
 
   await app.register(swagger, {
     openapi: {
-      info: { title: 'Notabene API', version: VERSION, description: 'API REST du wiki Notabene. Authentification par jeton personnel : `Authorization: Bearer nb_…`.' },
+      info: { title: 'BeNote API', version: VERSION, description: 'API REST du wiki BeNote. Authentification par jeton personnel : `Authorization: Bearer nb_…`.' },
       components: {
         securitySchemes: {
-          bearerAuth: { type: 'http', scheme: 'bearer', description: 'Jeton personnel créé dans Notabene (menu utilisateur → Jetons d’API).' },
+          bearerAuth: { type: 'http', scheme: 'bearer', description: 'Jeton personnel créé dans BeNote (menu utilisateur → Jetons d’API).' },
         },
       },
       security: [{ bearerAuth: [] }],

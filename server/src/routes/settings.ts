@@ -142,7 +142,7 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
     if (!app.mail.enabled) throw new HttpError(409, 'SMTP non configuré');
     if (!auth.user.email) throw new HttpError(400, 'Votre compte n’a pas d’adresse e-mail');
     try {
-      await app.mail.send({ to: auth.user.email, ...mails.alert('Ceci est un message de test envoyé depuis les paramètres de Notabene.') });
+      await app.mail.send({ to: auth.user.email, ...mails.alert('Ceci est un message de test envoyé depuis les paramètres de BeNote.') });
     } catch (err) {
       throw new HttpError(502, `Envoi impossible : ${String((err as Error).message).slice(0, 200)}`);
     }

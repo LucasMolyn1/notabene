@@ -35,8 +35,8 @@ export function selfHost(publicUrl: string): string {
 }
 
 /**
- * Un hôte du même site que Notabene (lui-même, un de ses sous-domaines ou un domaine parent) ne peut pas figurer dans la liste :
- * une page de Notabene intégrée dans Notabene n'est pas isolée, et un cadre du même site reçoit les cookies `SameSite=Lax`.
+ * Un hôte du même site que BeNote (lui-même, un de ses sous-domaines ou un domaine parent) ne peut pas figurer dans la liste :
+ * une page de BeNote intégrée dans BeNote n'est pas isolée, et un cadre du même site reçoit les cookies `SameSite=Lax`.
  */
 export const sameSiteAsSelf = (host: string, self: string): boolean => !!self && (host === self || host.endsWith(`.${self}`) || self.endsWith(`.${host}`));
 

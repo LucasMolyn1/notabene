@@ -3,7 +3,7 @@
 # Usage : sudo ./scripts/install-updater.sh [--sans-sauvegarde] [--sans-demarrage] [--activer-verification]
 # Relançable sans risque : rien n'est écrasé de ce que vous avez réglé (fichier de configuration, .env).
 #
-# Pourquoi un service sur l'hôte : le conteneur de Notabene reste en lecture seule et sans accès à Docker ; il se
+# Pourquoi un service sur l'hôte : le conteneur de BeNote reste en lecture seule et sans accès à Docker ; il se
 # contente de déposer une demande dans un dossier d'échange, que ce service (root) vérifie avant d'agir.
 # Voir docs/MISE-A-JOUR.md.
 set -euo pipefail

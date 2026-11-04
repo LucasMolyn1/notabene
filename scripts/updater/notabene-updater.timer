@@ -1,5 +1,5 @@
 [Unit]
-Description=Surveille les demandes de mise à jour de Notabene (et signale que le service tourne)
+Description=Surveille les demandes de mise à jour de BeNote (et signale que le service tourne)
 
 [Timer]
 OnBootSec=1min

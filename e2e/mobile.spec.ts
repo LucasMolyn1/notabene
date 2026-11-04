@@ -17,7 +17,7 @@ test('aucun écran ne déborde en largeur, et les boutons se touchent du doigt',
     await page.waitForTimeout(300);
     expect(await overflow(page), path).toBeLessThanOrEqual(0);
   }
-  await page.getByRole('treeitem', { name: 'Bienvenue sur Notabene' }).click({ force: true }).catch(() => {});
+  await page.getByRole('treeitem', { name: 'Bienvenue sur BeNote' }).click({ force: true }).catch(() => {});
   const small = await page.evaluate(() => [...document.querySelectorAll('.topbar button, .topbar a')]
     .filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && (r.width < 40 || r.height < 40); }).map((e) => e.className));
   expect(small).toEqual([]);
@@ -26,7 +26,7 @@ test('aucun écran ne déborde en largeur, et les boutons se touchent du doigt',
 test('la barre du haut se limite à l’essentiel ; le reste est dans le menu « … »', async ({ page }) => {
   await loginUi(page, ADMIN.email, ADMIN.password);
   await page.getByRole('button', { name: /Barre latérale/ }).click();
-  await page.getByRole('treeitem', { name: 'Bienvenue sur Notabene' }).click();
+  await page.getByRole('treeitem', { name: 'Bienvenue sur BeNote' }).click();
   await expect(page.locator('.topbar .icon-btn:visible')).toHaveCount(4); // menu, commentaires, « … », notifications (+ le bouton lecture/édition)
   await expect(page.locator('.tb-secondary:visible')).toHaveCount(0);
   await page.getByRole('button', { name: 'Plus d’options' }).click();
@@ -56,7 +56,7 @@ test('la barre de mise en forme apparaît dans l’éditeur, met en gras et ouvr
   await expect(page.locator('.bubble:not(.table-menu):visible')).toHaveCount(0); // la bulle de bureau ne s'affiche pas sur écran tactile
 });
 
-test('le manifeste permet d’installer Notabene comme une application', async ({ page, request }) => {
+test('le manifeste permet d’installer BeNote comme une application', async ({ page, request }) => {
   await page.goto('/?login');
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest');
   const manifest = await (await request.get('/manifest.webmanifest')).json();

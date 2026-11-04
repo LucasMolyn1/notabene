@@ -62,8 +62,8 @@ export function seedDemo(db: DB) {
     const pub = space('Documentation', 'globe', 'Espace public : présentation du projet, guide de l’éditeur et API. Visible sans connexion.', 'public', 0);
     const team = space('Équipe', 'lock', 'Espace privé : réservé aux utilisateurs authentifiés.', 'private', 1);
 
-    const welcome = page(pub, null, 'star', 'Bienvenue sur Notabene', doc(
-      p('Notabene est un **wiki collaboratif auto-hébergé** inspiré de Docmost : des espaces, des pages imbriquées, un éditeur riche, des diagrammes et une recherche par IA.'),
+    const welcome = page(pub, null, 'star', 'Bienvenue sur BeNote', doc(
+      p('BeNote est un **wiki collaboratif auto-hébergé** inspiré de Docmost : des espaces, des pages imbriquées, un éditeur riche, des diagrammes et une recherche par IA.'),
       callout('info', p('Cet espace est **public** : il est lisible sans connexion, idéal pour l’intégrer à un portfolio. L’espace « Équipe » est réservé aux personnes connectées via votre fournisseur d’identité.')),
       h(2, 'Ce que vous pouvez faire'),
       ul(
@@ -73,7 +73,7 @@ export function seedDemo(db: DB) {
         'Automatisez avec l’**API REST** et des jetons personnels à portées limitées.',
       ),
       h(2, 'Comment ça marche'),
-      mermaid('flowchart LR\n  U[Navigateur] -->|cookie HttpOnly| S[Serveur Notabene]\n  S -->|OIDC + PKCE| A[Authentik]\n  S --> D[(SQLite)]\n  S -->|clé chiffrée| L[LLM]\n  C[Script / CI] -->|Bearer nb_…| S'),
+      mermaid('flowchart LR\n  U[Navigateur] -->|cookie HttpOnly| S[Serveur BeNote]\n  S -->|OIDC + PKCE| A[Authentik]\n  S --> D[(SQLite)]\n  S -->|clé chiffrée| L[LLM]\n  C[Script / CI] -->|Bearer nb_…| S'),
       h(2, 'Premiers pas'),
       tasks([true, 'Se connecter avec Authentik'], [false, 'Créer une page avec le bouton **+**'], [false, 'Insérer un diagramme Mermaid avec `/mermaid`'], [false, 'Créer un jeton d’API depuis le menu utilisateur']),
     ));
@@ -95,7 +95,7 @@ export function seedDemo(db: DB) {
         '**Excalidraw** : croquis à main levée, intégré à la page.',
         '**Draw.io** : diagrammes d’architecture complets, servi par votre propre instance.',
       ),
-      mermaid('sequenceDiagram\n  participant N as Navigateur\n  participant S as Notabene\n  participant A as Authentik\n  N->>S: GET /auth/login\n  S-->>N: Redirection (PKCE, state, nonce)\n  N->>A: Authentification\n  A-->>N: Code d’autorisation\n  N->>S: GET /auth/callback?code=…\n  S->>A: Échange du code\n  S-->>N: Cookie de session HttpOnly'),
+      mermaid('sequenceDiagram\n  participant N as Navigateur\n  participant S as BeNote\n  participant A as Authentik\n  N->>S: GET /auth/login\n  S-->>N: Redirection (PKCE, state, nonce)\n  N->>A: Authentification\n  A-->>N: Code d’autorisation\n  N->>S: GET /auth/callback?code=…\n  S->>A: Échange du code\n  S-->>N: Cookie de session HttpOnly'),
       h(2, 'Callouts'),
       callout('success', p('**Astuce** : cliquez sur l’icône d’un callout pour changer son type.')),
       callout('warning', p('**Attention** : les images sont compressées avant envoi.')),

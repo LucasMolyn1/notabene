@@ -1,4 +1,4 @@
-// Pont avec le service de mise à jour de l'hôte (scripts/updater). Notabene ne touche jamais à Docker : il dépose une DEMANDE
+// Pont avec le service de mise à jour de l'hôte (scripts/updater). BeNote ne touche jamais à Docker : il dépose une DEMANDE
 // dans un dossier d'échange et lit un STATUT que l'hôte y publie. Tout ce qui vient de ce dossier est traité comme non fiable.
 import { closeSync, constants, fstatSync, openSync, readSync, renameSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';

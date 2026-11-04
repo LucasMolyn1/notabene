@@ -180,7 +180,7 @@ describe('réglages modifiables à chaud', () => {
   it('SMTP : test de connexion, mot de passe chiffré, e-mail de test', async () => {
     const id = await addUser('a@example.com', 'admin');
     const s = await login('a@example.com');
-    const body = { config: { enabled: true, host: 'smtp.example.org', port: 587, mode: 'starttls', user: 'bot', from: 'Notabene <wiki@example.org>' }, secrets: { password: 'smtp-pass' }, reauth };
+    const body = { config: { enabled: true, host: 'smtp.example.org', port: 587, mode: 'starttls', user: 'bot', from: 'BeNote <wiki@example.org>' }, secrets: { password: 'smtp-pass' }, reauth };
     mailer.fail = true;
     expect((await api(s, 'POST', '/admin/settings/smtp/test', body)).json()).toMatchObject({ ok: false, message: expect.stringContaining('535') });
     mailer.fail = false;

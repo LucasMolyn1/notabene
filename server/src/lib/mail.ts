@@ -45,19 +45,19 @@ export class Mailer {
 // Modèles de messages (texte brut, aucun contenu fourni par un tiers hors prénom/nom déjà validé).
 export const mails = {
   reset: (url: string, minutes: number): Omit<Mail, 'to'> => ({
-    subject: 'Notabene : réinitialisation de votre mot de passe',
-    text: `Une réinitialisation de mot de passe a été demandée pour votre compte Notabene.\n\nOuvrez ce lien (valable ${minutes} minutes, utilisable une seule fois) :\n${url}\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez ce message : votre mot de passe reste inchangé.`,
+    subject: 'BeNote : réinitialisation de votre mot de passe',
+    text: `Une réinitialisation de mot de passe a été demandée pour votre compte BeNote.\n\nOuvrez ce lien (valable ${minutes} minutes, utilisable une seule fois) :\n${url}\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez ce message : votre mot de passe reste inchangé.`,
   }),
   invite: (url: string, hours: number, name: string): Omit<Mail, 'to'> => ({
-    subject: 'Notabene : invitation à rejoindre le wiki',
-    text: `Bonjour ${oneLine(name)},\n\nUn compte Notabene a été créé pour vous. Choisissez votre mot de passe via ce lien (valable ${hours} heures, utilisable une seule fois) :\n${url}\n`,
+    subject: 'BeNote : invitation à rejoindre le wiki',
+    text: `Bonjour ${oneLine(name)},\n\nUn compte BeNote a été créé pour vous. Choisissez votre mot de passe via ce lien (valable ${hours} heures, utilisable une seule fois) :\n${url}\n`,
   }),
   notification: (subject: string, text: string): Omit<Mail, 'to'> => ({
     subject,
     text: `${text}\n\nVous pouvez régler ces e-mails dans Paramètres > Profil > Notifications.`,
   }),
   alert: (what: string): Omit<Mail, 'to'> => ({
-    subject: 'Notabene : alerte de sécurité sur votre compte',
+    subject: 'BeNote : alerte de sécurité sur votre compte',
     text: `${what}\n\nSi vous n'êtes pas à l'origine de cette action, contactez un administrateur sans attendre.`,
   }),
 };

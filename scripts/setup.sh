@@ -16,7 +16,7 @@ random_key() {
 
 ask() { local prompt="$1" default="${2:-}" value; read -rp "$prompt${default:+ [$default]} : " value; echo "${value:-$default}"; }
 
-echo "== Notabene : configuration du déploiement =="
+echo "== BeNote : configuration du déploiement =="
 PUBLIC_URL=$(ask "URL publique (https://…)" "https://wiki.example.com")
 PROJECT=$(ask "Nom du déploiement (unique sur cette machine)" "notabene")
 PORT=$(ask "Port local de l'application" "3000")
@@ -25,7 +25,7 @@ CLIENT_ID=$(ask "Client ID OIDC")
 read -rsp "Client secret OIDC : " CLIENT_SECRET; echo
 DRAWIO_URL=$(ask "URL publique de Draw.io (vide pour désactiver)" "")
 DRAWIO_PORT=$(ask "Port local de Draw.io" "8081")
-EMBED=$(ask "Origines autorisées à intégrer Notabene (portfolio, séparées par des virgules)" "")
+EMBED=$(ask "Origines autorisées à intégrer BeNote (portfolio, séparées par des virgules)" "")
 
 umask 077
 cat > .env <<EOF

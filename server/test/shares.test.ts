@@ -22,7 +22,7 @@ const logs: string[] = [];
 
 async function boot(logger = false) {
   clientDir = mkdtempSync(join(tmpdir(), 'nb-share-'));
-  writeFileSync(join(clientDir, 'index.html'), '<!doctype html><html><head><title>Notabene</title></head><body><main id="main"></main></body></html>');
+  writeFileSync(join(clientDir, 'index.html'), '<!doctype html><html><head><title>BeNote</title></head><body><main id="main"></main></body></html>');
   db = openDb(':memory:');
   app = await buildApp({ config: loadConfig(env), db, clientDir, ...(logger ? { logger: { level: 'info', stream: { write: (s: string) => { logs.push(s); } } } } : {}) });
   for (const [id, role] of [['admin', 'admin'], ['ed1', 'editor'], ['ed2', 'editor'], ['rd', 'reader']] as const) {

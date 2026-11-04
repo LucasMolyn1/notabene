@@ -184,7 +184,7 @@ const schema = z
       if (!normalizeEmbedHost(host) || normalizeEmbedHost(host) !== host) {
         ctx.addIssue({ code: 'custom', path: ['CONTENT_EMBED_HOSTS'], message: `hôte invalide : ${host} (nom de domaine en minuscules, sans https://, chemin, port ni joker)` });
       } else if (sameSiteAsSelf(host, selfHost(c.PUBLIC_URL))) {
-        ctx.addIssue({ code: 'custom', path: ['CONTENT_EMBED_HOSTS'], message: `${host} est du même site que Notabene (${selfHost(c.PUBLIC_URL)}) : il ne peut pas être intégré` });
+        ctx.addIssue({ code: 'custom', path: ['CONTENT_EMBED_HOSTS'], message: `${host} est du même site que BeNote (${selfHost(c.PUBLIC_URL)}) : il ne peut pas être intégré` });
       }
     }
     for (const origin of c.EMBED_ALLOWED_ORIGINS) {

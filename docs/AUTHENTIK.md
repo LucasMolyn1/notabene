@@ -1,6 +1,6 @@
-# Configurer Authentik pour Notabene
+# Configurer Authentik pour BeNote
 
-Exemple : Notabene sur `https://wiki.example.com`, Authentik sur `https://auth.example.com`.
+Exemple : BeNote sur `https://wiki.example.com`, Authentik sur `https://auth.example.com`.
 
 ## 1. Fournisseur OAuth2/OpenID
 
@@ -8,7 +8,7 @@ Exemple : Notabene sur `https://wiki.example.com`, Authentik sur `https://auth.e
 
 | Champ | Valeur |
 | --- | --- |
-| Name | `Notabene` |
+| Name | `BeNote` |
 | Authorization flow | `default-provider-authorization-explicit-consent` (ou *implicit* pour éviter l’écran de consentement) |
 | Client type | **Confidential** |
 | Redirect URIs | `https://wiki.example.com/auth/callback` (mode **Strict**) |
@@ -24,7 +24,7 @@ Notez le **Client ID** et le **Client Secret**.
 
 ## 2. Application
 
-**Applications → Create** : nom `Notabene`, slug `notabene`, provider créé ci-dessus.
+**Applications → Create** : nom `BeNote`, slug `notabene`, provider créé ci-dessus.
 
 L’issuer OIDC est alors `https://auth.example.com/application/o/notabene/` (avec le `/` final).
 
@@ -32,7 +32,7 @@ L’issuer OIDC est alors `https://auth.example.com/application/o/notabene/` (av
 
 Créez les groupes puis ajoutez-y les utilisateurs :
 
-| Groupe Authentik | Rôle Notabene |
+| Groupe Authentik | Rôle BeNote |
 | --- | --- |
 | `notabene-admins` | admin |
 | `notabene-editors` | éditeur |
@@ -53,10 +53,10 @@ OIDC_CLIENT_SECRET=…
 
 ## 5. Déconnexion
 
-Notabene appelle l’`end_session_endpoint` d’Authentik avec `id_token_hint` et revient sur `PUBLIC_URL`. Si Authentik affiche une erreur de redirection, ajoutez `https://wiki.example.com/` aux redirect URIs autorisées.
+BeNote appelle l’`end_session_endpoint` d’Authentik avec `id_token_hint` et revient sur `PUBLIC_URL`. Si Authentik affiche une erreur de redirection, ajoutez `https://wiki.example.com/` aux redirect URIs autorisées.
 
 ## Dépannage
 
-- **`auth_error=callback`** : vérifiez l’issuer (slash final), le secret et que le serveur Notabene peut joindre Authentik (DNS / réseau Docker). Les détails sont dans les logs du conteneur.
+- **`auth_error=callback`** : vérifiez l’issuer (slash final), le secret et que le serveur BeNote peut joindre Authentik (DNS / réseau Docker). Les détails sont dans les logs du conteneur.
 - **`auth_error=forbidden`** : l’utilisateur n’est dans aucun groupe autorisé.
 - **Boucle de connexion derrière un proxy** : `TRUST_PROXY` (nombre de proxys, voir [DEPLOIEMENT.md](DEPLOIEMENT.md)) et `PUBLIC_URL` en `https://` doivent correspondre à l’URL vue par le navigateur.

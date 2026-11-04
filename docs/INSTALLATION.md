@@ -1,4 +1,4 @@
-# Installer Notabene sur une machine vierge
+# Installer BeNote sur une machine vierge
 
 Guide pas à pas, de la machine neuve à un wiki joignable en HTTPS. Il suppose que vous savez ouvrir un terminal en SSH, rien de plus. Pour un simple essai sur un poste, voir [ESSAI.md](ESSAI.md) ; pour l'exploitation (proxy, mises à jour, sauvegardes), voir [DEPLOIEMENT.md](DEPLOIEMENT.md), [MISE-A-JOUR.md](MISE-A-JOUR.md) et [BACKUP.md](BACKUP.md).
 
@@ -18,7 +18,7 @@ Un nom de domaine et un certificat TLS sont nécessaires dès que l'on sort d'un
 
 ## 2. Quelle distribution choisir
 
-Notabene ne dépend pas de la distribution : il tourne dans un conteneur Debian 12 (`bookworm-slim`), publié pour **amd64 et arm64**. Le choix de la machine ne dépend donc que de Docker. Constat au 31 octobre 2026, d'après la documentation de Docker et ce qui a été essayé.
+BeNote ne dépend pas de la distribution : il tourne dans un conteneur Debian 12 (`bookworm-slim`), publié pour **amd64 et arm64**. Le choix de la machine ne dépend donc que de Docker. Constat au 31 octobre 2026, d'après la documentation de Docker et ce qui a été essayé.
 
 | Distribution | Docker Engine officiel | Verdict |
 |---|---|---|
@@ -57,7 +57,7 @@ sudo dnf upgrade -y
 sudo dnf install -y ca-certificates curl openssl
 ```
 
-Pare-feu : n'ouvrez que SSH, HTTP et HTTPS (si un reverse proxy existant s'en charge sur une autre machine, ni 80 ni 443 : voir l'étape 6). Notabene lui-même n'écoute qu'en local (`127.0.0.1:3000`) et ne doit pas être exposé directement.
+Pare-feu : n'ouvrez que SSH, HTTP et HTTPS (si un reverse proxy existant s'en charge sur une autre machine, ni 80 ni 443 : voir l'étape 6). BeNote lui-même n'écoute qu'en local (`127.0.0.1:3000`) et ne doit pas être exposé directement.
 
 ```bash
 sudo ufw allow OpenSSH && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw enable
@@ -69,7 +69,7 @@ Heure : le système doit être à l'heure (`timedatectl` doit indiquer `System c
 
 ## 4. Installer Docker
 
-Deux voies. La première donne la version courante de Docker directement auprès de l'éditeur ; la seconde, plus courte, utilise le paquet de la distribution (Debian 13 : Docker 26, suffisant pour Notabene).
+Deux voies. La première donne la version courante de Docker directement auprès de l'éditeur ; la seconde, plus courte, utilise le paquet de la distribution (Debian 13 : Docker 26, suffisant pour BeNote).
 
 ### 4.a Dépôt officiel Docker (Debian)
 
@@ -127,7 +127,7 @@ echo '{ "log-driver": "local", "log-opts": { "max-size": "10m", "max-file": "3" 
 sudo systemctl restart docker
 ```
 
-## 5. Installer Notabene
+## 5. Installer BeNote
 
 ### 5.1 Dossiers et fichier de configuration
 
@@ -199,16 +199,16 @@ La commande `create-admin` demande le mot de passe (saisi sans écho, 12 caract�
 
 ## 6. Reverse proxy et HTTPS
 
-**Vous avez déjà un reverse proxy** (Traefik, Nginx Proxy Manager, HAProxy, Caddy, Apache) **qui porte vos autres services ? Passez cette étape** : n'installez pas un second proxy, ajoutez simplement Notabene derrière celui qui existe. Il faut alors :
+**Vous avez déjà un reverse proxy** (Traefik, Nginx Proxy Manager, HAProxy, Caddy, Apache) **qui porte vos autres services ? Passez cette étape** : n'installez pas un second proxy, ajoutez simplement BeNote derrière celui qui existe. Il faut alors :
 
 1. **Un nom de domaine** qui mène à ce proxy, et `PUBLIC_URL=https://ce-nom` dans le `.env` (exactement le nom saisi dans les navigateurs).
-2. **Un service** du proxy qui pointe vers `http://<adresse de la machine Notabene>:3000`, avec le certificat TLS géré par le proxy.
+2. **Un service** du proxy qui pointe vers `http://<adresse de la machine BeNote>:3000`, avec le certificat TLS géré par le proxy.
 3. **Le port atteignable par le proxy, et par lui seul.** Le compose de ce guide publie `127.0.0.1:3000:3000`, ce qui ne convient que si le proxy tourne sur la même machine, hors Docker. Selon votre cas :
-   - proxy sur **une autre machine** (autre VM ou LXC) : remplacez par l'adresse de la machine Notabene, par exemple `192.168.1.50:3000:3000`, et n'autorisez le port 3000 dans le pare-feu que depuis l'adresse du proxy ;
+   - proxy sur **une autre machine** (autre VM ou LXC) : remplacez par l'adresse de la machine BeNote, par exemple `192.168.1.50:3000:3000`, et n'autorisez le port 3000 dans le pare-feu que depuis l'adresse du proxy ;
    - proxy **dans Docker, sur la même machine** : retirez la ligne `ports`, rattachez les deux conteneurs à un réseau Docker commun (`networks`) et visez `http://notabene:3000` ; le port n'est alors publié nulle part ;
    - proxy **sur la même machine, hors Docker** : gardez `127.0.0.1:3000:3000`.
-4. **`TRUST_PROXY`** : le nombre de proxys entre Internet et Notabene (`1` pour un seul proxy ; plus si Cloudflare ou un second proxy est devant). Voir [DEPLOIEMENT.md](DEPLOIEMENT.md).
-5. **WebSocket** autorisés jusqu'à Notabene (co-édition). Traefik et Caddy le font sans réglage ; Nginx Proxy Manager a une case « Websockets Support » à cocher ; HAProxy veut un `timeout tunnel` d'au moins une heure.
+4. **`TRUST_PROXY`** : le nombre de proxys entre Internet et BeNote (`1` pour un seul proxy ; plus si Cloudflare ou un second proxy est devant). Voir [DEPLOIEMENT.md](DEPLOIEMENT.md).
+5. **WebSocket** autorisés jusqu'à BeNote (co-édition). Traefik et Caddy le font sans réglage ; Nginx Proxy Manager a une case « Websockets Support » à cocher ; HAProxy veut un `timeout tunnel` d'au moins une heure.
 6. **Toutes les adresses transmises**, pas seulement `/` (`/p/…`, `/s/…`, `/share/…`, `/sitemap.xml`, `/robots.txt`).
 
 Exemple Traefik (fichier dynamique), pour un proxy sur une autre machine :
@@ -228,11 +228,11 @@ http:
           - url: http://192.168.1.50:3000
 ```
 
-(Le nom de l'entrée et du résolveur de certificats sont ceux de votre installation. Avec un gestionnaire graphique, l'équivalent est un hôte « domaine → http, adresse, 3000, TLS » avec les WebSocket activés.) Sur la machine Notabene, le pare-feu n'a alors pas besoin d'ouvrir les ports 80 et 443.
+(Le nom de l'entrée et du résolveur de certificats sont ceux de votre installation. Avec un gestionnaire graphique, l'équivalent est un hôte « domaine → http, adresse, 3000, TLS » avec les WebSocket activés.) Sur la machine BeNote, le pare-feu n'a alors pas besoin d'ouvrir les ports 80 et 443.
 
 ### Sans proxy existant : Caddy
 
-Notabene attend un proxy qui termine TLS, transmet **toutes** les adresses (pas seulement `/`) et laisse passer les WebSocket (co-édition). Exemple avec [Caddy](https://caddyserver.com/docs/install#debian-ubuntu-raspbian) (installation par son dépôt officiel), qui obtient et renouvelle le certificat tout seul. Le nom de domaine doit déjà pointer vers la machine et les ports 80 et 443 être ouverts :
+BeNote attend un proxy qui termine TLS, transmet **toutes** les adresses (pas seulement `/`) et laisse passer les WebSocket (co-édition). Exemple avec [Caddy](https://caddyserver.com/docs/install#debian-ubuntu-raspbian) (installation par son dépôt officiel), qui obtient et renouvelle le certificat tout seul. Le nom de domaine doit déjà pointer vers la machine et les ports 80 et 443 être ouverts :
 
 ```
 # /etc/caddy/Caddyfile

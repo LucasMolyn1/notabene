@@ -1,4 +1,4 @@
-# Notabene + Draw.io auto-hébergé.
+# BeNote + Draw.io auto-hébergé.
 # Chaque déploiement = un clone du dépôt avec son propre .env (voir scripts/setup.sh).
 # Par défaut les ports n'écoutent que sur 127.0.0.1 : placez un reverse proxy TLS devant.
 

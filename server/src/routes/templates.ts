@@ -1,4 +1,4 @@
-// Modèles de pages : fournis par Notabene ou enregistrés à partir d'une page d'un espace.
+// Modèles de pages : fournis par BeNote ou enregistrés à partir d'une page d'un espace.
 // Un modèle est lisible par toute personne connectée qui lit son espace ; il se crée depuis une page qu'on peut modifier,
 // et seul son auteur ou un administrateur le renomme ou le supprime.
 import type { FastifyInstance } from 'fastify';

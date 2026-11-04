@@ -1,6 +1,6 @@
-# Essayer Notabene en 10 minutes
+# Essayer BeNote en 10 minutes
 
-Pour voir à quoi ressemble Notabene avant d'y consacrer une vraie installation. Il faut Docker avec le plugin Compose, et rien d'autre : pas de compte à créer ailleurs, pas de fournisseur d'identité, pas de certificat.
+Pour voir à quoi ressemble BeNote avant d'y consacrer une vraie installation. Il faut Docker avec le plugin Compose, et rien d'autre : pas de compte à créer ailleurs, pas de fournisseur d'identité, pas de certificat.
 
 ## Démarrer
 

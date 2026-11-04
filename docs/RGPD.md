@@ -1,6 +1,6 @@
 # Données personnelles (RGPD)
 
-Ce document aide la personne ou l'organisation qui **déploie** Notabene à respecter le RGPD. Elle est le *responsable de traitement* : Notabene est l'outil, pas le responsable. Ce texte n'est pas un avis juridique ; faites-le relire par votre DPO ou un juriste.
+Ce document aide la personne ou l'organisation qui **déploie** BeNote à respecter le RGPD. Elle est le *responsable de traitement* : BeNote est l'outil, pas le responsable. Ce texte n'est pas un avis juridique ; faites-le relire par votre DPO ou un juriste.
 
 ## Données traitées
 
@@ -69,7 +69,7 @@ Les mesures techniques sont décrites dans [SECURITY.md](../SECURITY.md). En cas
 
 ## Liste de contrôle pour le déploiement
 
-- [ ] Inscrire Notabene au registre des traitements.
+- [ ] Inscrire BeNote au registre des traitements.
 - [ ] Choisir les durées de conservation et les noter dans le registre.
 - [ ] Informer les utilisateurs (mention ci-dessus).
 - [ ] Si la recherche IA utilise un service externe : contrat de sous-traitance et transferts.

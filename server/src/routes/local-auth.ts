@@ -144,7 +144,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
         db.prepare('UPDATE users SET failed_logins = ?, locked_until = ? WHERE id = ?').run(failures >= MAX_FAILURES ? 0 : failures, failures >= MAX_FAILURES ? now + LOCK_MS : null, user.id);
       }
       audit(db, req, 'auth.local.failed', user?.id ?? null, { reason });
-      if (user && user.failed_logins + 1 >= MAX_FAILURES) notify(user, 'Votre compte Notabene a été verrouillé 15 minutes après plusieurs tentatives de connexion échouées.');
+      if (user && user.failed_logins + 1 >= MAX_FAILURES) notify(user, 'Votre compte BeNote a été verrouillé 15 minutes après plusieurs tentatives de connexion échouées.');
       throw new HttpError(401, 'Identifiants invalides');
     };
     if (!user || !user.password_hash || !valid || user.disabled) return fail('password');
@@ -178,7 +178,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(await hashPassword(b.next), user.id);
     const { changes } = closeOtherSessions(user.id, auth.sessionHash);
     audit(db, req, 'auth.local.password', user.id, { closedSessions: changes });
-    notify(user, 'Le mot de passe de votre compte Notabene vient d’être modifié.');
+    notify(user, 'Le mot de passe de votre compte BeNote vient d’être modifié.');
     return { ok: true, closedSessions: changes };
   });
 
@@ -198,7 +198,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     const codes = newRecoveryCodes();
     db.prepare('UPDATE users SET totp_enabled = 1, totp_last_step = ?, recovery_codes = ? WHERE id = ?').run(step, JSON.stringify(codes.map(hashCode)), user.id);
     audit(db, req, 'auth.mfa.enable', user.id);
-    notify(user, 'La double authentification vient d’être activée sur votre compte Notabene.');
+    notify(user, 'La double authentification vient d’être activée sur votre compte BeNote.');
     return { recoveryCodes: codes };
   });
 
@@ -212,7 +212,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     if (!(await verifyPassword(b.password, user.password_hash)) || !checkSecondFactor(user, b.code)) throw new HttpError(403, 'Mot de passe ou code incorrect');
     db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_last_step = NULL, recovery_codes = NULL WHERE id = ?').run(user.id);
     audit(db, req, 'auth.mfa.disable', user.id);
-    notify(user, 'La double authentification vient d’être désactivée sur votre compte Notabene.');
+    notify(user, 'La double authentification vient d’être désactivée sur votre compte BeNote.');
     return { ok: true };
   });
 
@@ -250,7 +250,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     db.prepare('UPDATE users SET password_hash = ?, failed_logins = 0, locked_until = NULL WHERE id = ?').run(hash, user.id);
     db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
     audit(db, req, 'auth.local.reset', user.id);
-    notify(user, 'Le mot de passe de votre compte Notabene vient d’être réinitialisé.');
+    notify(user, 'Le mot de passe de votre compte BeNote vient d’être réinitialisé.');
     return { ok: true };
   });
 

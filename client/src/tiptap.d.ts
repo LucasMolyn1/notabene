@@ -1,4 +1,4 @@
-// Commandes TipTap propres à Notabene (déclarées par augmentation de module : le code est en JavaScript).
+// Commandes TipTap propres à BeNote (déclarées par augmentation de module : le code est en JavaScript).
 import '@tiptap/core';
 
 declare module '@tiptap/core' {

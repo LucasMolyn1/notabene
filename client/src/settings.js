@@ -45,7 +45,7 @@ export function showSettings(sectionId) {
   const manager = store.spaces.some((s) => s.role === 'full');
   const sections = SECTIONS.filter((s) => !s.admin || session.can('admin')).filter((s) => !s.manager || session.can('admin') || manager).filter((s) => !s.write || session.can('write'));
   const section = sections.find((s) => s.id === sectionId) || sections[0];
-  document.title = `${section.label} · Paramètres · Notabene`;
+  document.title = `${section.label} · Paramètres · BeNote`;
 
   let group = null;
   const nav = h('nav', { class: 'set-nav', 'aria-label': 'Sections des paramètres' });

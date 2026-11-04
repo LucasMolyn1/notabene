@@ -1,4 +1,4 @@
-# Mettre à jour Notabene
+# Mettre à jour BeNote
 
 Pour une instance qui tourne avec l'image publiée (`ghcr.io/lucasmolyn1/notabene`). Les changements de chaque version sont dans le [CHANGELOG](../CHANGELOG.md) et dans Paramètres, À propos.
 
@@ -6,7 +6,7 @@ Pour une instance qui tourne avec l'image publiée (`ghcr.io/lucasmolyn1/notaben
 
 Une instance ne se met jamais à jour toute seule. Deux façons d'être prévenu :
 
-- **Dans l'application (recommandé)** : Paramètres, À propos, « Activer la vérification » (administrateur ; ou `UPDATE_CHECK=true` dans le `.env`). Quand un administrateur ouvre l'application, Notabene demande à GitHub quelle est la dernière release (au plus toutes les 12 heures). Si elle est plus récente, une alerte « Version X disponible » apparaît dans la barre latérale et mène à Paramètres, À propos, qui affiche les nouveautés de cette version, y compris « Attention à la mise à jour », et les commandes ci-dessous.
+- **Dans l'application (recommandé)** : Paramètres, À propos, « Activer la vérification » (administrateur ; ou `UPDATE_CHECK=true` dans le `.env`). Quand un administrateur ouvre l'application, BeNote demande à GitHub quelle est la dernière release (au plus toutes les 12 heures). Si elle est plus récente, une alerte « Version X disponible » apparaît dans la barre latérale et mène à Paramètres, À propos, qui affiche les nouveautés de cette version, y compris « Attention à la mise à jour », et les commandes ci-dessous.
   - Ce que GitHub voit : l'adresse IP publique du serveur, l'heure et le numéro de version. Aucune donnée de l'instance n'est envoyée. Ce n'est pas une mise à jour automatique : l'instance prévient, vous installez. C'est pourquoi la vérification est désactivée par défaut.
   - Si l'IP de sortie du serveur est celle que vous cachez derrière un proxy (Cloudflare), vérifiez-la avant d'activer.
   - Seuls les administrateurs voient l'alerte.
@@ -58,7 +58,7 @@ Une instance ne se met jamais à jour toute seule. Deux façons d'être prévenu
 
 ## Mettre à jour depuis l'interface (service sur l'hôte, optionnel)
 
-Un administrateur peut lancer la mise à jour depuis Paramètres, À propos (bouton « Mettre à jour vers la X »). **Notabene ne touche pas à Docker** : son conteneur reste en lecture seule et sans privilèges. Le bouton dépose une *demande* dans un dossier d'échange ; un petit service installé sur l'hôte décide et exécute.
+Un administrateur peut lancer la mise à jour depuis Paramètres, À propos (bouton « Mettre à jour vers la X »). **BeNote ne touche pas à Docker** : son conteneur reste en lecture seule et sans privilèges. Le bouton dépose une *demande* dans un dossier d'échange ; un petit service installé sur l'hôte décide et exécute.
 
 ### Ce que fait le service, et ce qu'il refuse
 
@@ -92,7 +92,7 @@ Le script fait les quatre étapes ci-dessous (dossier d'échange, volume dans un
    install -d -o root -g 1000 -m 0770 /srv/appdata/notabene-updater
    ```
 
-2. L'ajouter au compose et à l'environnement de Notabene :
+2. L'ajouter au compose et à l'environnement de BeNote :
 
    ```yaml
    services:
@@ -146,5 +146,5 @@ Voir le README, « Versions et releases ». Le tag `vX.Y.Z` construit l'image pu
 
 ```bash
 scripts/release-notes.sh 3.2.0 > notes.md
-gh release create v3.2.0 --title "Notabene 3.2.0" --notes-file notes.md --verify-tag
+gh release create v3.2.0 --title "BeNote 3.2.0" --notes-file notes.md --verify-tag
 ```

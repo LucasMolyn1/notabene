@@ -1,4 +1,4 @@
-// Import Markdown (export « fichiers/Git » de Wiki.js, dossiers de notes…) vers des pages Notabene.
+// Import Markdown (export « fichiers/Git » de Wiki.js, dossiers de notes…) vers des pages BeNote.
 // Le Markdown est converti en document TipTap puis passe par sanitizeDoc comme tout contenu.
 import { type Token, type Tokens, marked } from 'marked';
 import type { DB } from '../db.js';

@@ -128,7 +128,7 @@ export default async function mcpRoutes(app: FastifyInstance) {
           protocolVersion: typeof wanted === 'string' && PROTOCOLS.includes(wanted) ? wanted : PROTOCOLS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'notabene', version: '1.0.0' },
-          instructions: 'Wiki Notabene : recherchez, lisez et créez des pages. Les droits sont ceux du jeton utilisé.',
+          instructions: 'Wiki BeNote : recherchez, lisez et créez des pages. Les droits sont ceux du jeton utilisé.',
         });
       }
       case 'ping':

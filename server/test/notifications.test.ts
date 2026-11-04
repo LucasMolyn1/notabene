@@ -42,7 +42,7 @@ async function login(email: string) {
 type S = Awaited<ReturnType<typeof login>>;
 const call = (s: S, method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH', url: string, payload?: object) => app.inject({ method, url, payload, ...s });
 const tick = () => new Promise((r) => setTimeout(r, 20));
-const pageId = () => (db.prepare("SELECT id FROM pages WHERE title = 'Bienvenue sur Notabene'").get() as { id: string }).id;
+const pageId = () => (db.prepare("SELECT id FROM pages WHERE title = 'Bienvenue sur BeNote'").get() as { id: string }).id;
 const inbox = async (s: S, qs = '') => (await call(s, 'GET', `/api/v3/notifications${qs}`)).json() as { items: { id: string; type: string; count: number; read: boolean; actor: { id: string } | null; page: { title: string } }[]; nextCursor: string | null };
 
 describe('notifications', () => {
@@ -52,7 +52,7 @@ describe('notifications', () => {
     await call(ed1, 'POST', `/api/v3/pages/${pageId()}/comments`, { body: 'Texte secret du commentaire' });
     await tick();
     const mine = await inbox(ed2);
-    expect(mine.items).toMatchObject([{ type: 'comment', read: false, actor: { id: 'ed1' }, page: { title: 'Bienvenue sur Notabene' } }]);
+    expect(mine.items).toMatchObject([{ type: 'comment', read: false, actor: { id: 'ed1' }, page: { title: 'Bienvenue sur BeNote' } }]);
     expect((await inbox(ed1)).items).toHaveLength(0); // l'auteur ne se notifie pas
     // E-mail : titre, auteur et lien, jamais le contenu.
     expect(mailer.sent).toHaveLength(1);
@@ -143,7 +143,7 @@ describe('notifications', () => {
     await call(admin, 'PUT', `/api/v3/pages/${hidden}/permissions`, { entries: [{ userId: 'ed1', level: 'write' }] });
     const first = await inbox(ed2, '?limit=2');
     expect(first.items).toHaveLength(2);
-    expect(first.items.every((i) => i.page.title === 'Bienvenue sur Notabene')).toBe(true);
+    expect(first.items.every((i) => i.page.title === 'Bienvenue sur BeNote')).toBe(true);
     const second = await inbox(ed2, `?limit=2&cursor=${first.nextCursor}`);
     expect(second.items.length).toBeGreaterThan(0);
     expect(JSON.stringify([first, second])).not.toContain('Onboarding');

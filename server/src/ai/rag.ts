@@ -7,7 +7,7 @@ const MAX_DOCS = 6;
 const PER_DOC = 3_500;
 const TOTAL = 18_000;
 
-export const SYSTEM_PROMPT = `Tu es l'assistant de recherche d'une base de documentation interne (wiki Notabene).
+export const SYSTEM_PROMPT = `Tu es l'assistant de recherche d'une base de documentation interne (wiki BeNote).
 Réponds à la question de l'utilisateur en t'appuyant uniquement sur les extraits fournis dans <documents>.
 Cite tes sources avec la notation [n], où n est l'index du document utilisé.
 Si les extraits ne suffisent pas pour répondre, dis-le clairement et propose des termes de recherche ou les pages à consulter.

@@ -130,7 +130,7 @@ describe('réglage de l’administrateur', () => {
     expect(await frameSrc()).toBe("'none'");
   });
 
-  it('refuse les hôtes dangereux, y compris injection dans la politique de sécurité, et l’hôte de Notabene', async () => {
+  it('refuse les hôtes dangereux, y compris injection dans la politique de sécurité, et l’hôte de BeNote', async () => {
     const admin = await login('a@example.com', 'admin');
     for (const bad of ['*', '*.example.com', 'https://example.com', 'example.com/x', '127.0.0.1', 'localhost', "a.com; script-src *", "a.com 'unsafe-inline'", 'a.com\nscript-src *', '']) {
       const res = await api(admin, 'PUT', '/admin/settings/embeds', { config: { enabled: true, hosts: [bad] }, reauth });
@@ -192,13 +192,13 @@ describe('relecture : valeurs enregistrées, même site, audit, Markdown', () =>
     expect((await app.inject({ method: 'GET', url: '/api/v3/me' })).statusCode).toBe(200);
   });
 
-  it('un hôte enregistré qui devient celui de Notabene (ou de son site) est écarté au démarrage', async () => {
+  it('un hôte enregistré qui devient celui de BeNote (ou de son site) est écarté au démarrage', async () => {
     store(['wiki.example.org', 'files.wiki.example.org', 'example.org', 'autre.example.test']);
     await reboot({ PUBLIC_URL: 'http://wiki.example.org:3000' });
     expect(await frameSrc()).toBe('https://autre.example.test');
   });
 
-  it('refuse un hôte du même site que Notabene : lui-même, un sous-domaine, le domaine parent', async () => {
+  it('refuse un hôte du même site que BeNote : lui-même, un sous-domaine, le domaine parent', async () => {
     await app.close(); db.close();
     await boot({ PUBLIC_URL: 'http://wiki.example.org:3000' });
     const admin = await login('a@example.com', 'admin');
