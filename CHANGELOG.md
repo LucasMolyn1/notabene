@@ -4,7 +4,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
-## Non publié
+## [3.12.0] - 2026-11-05
 
 ### Ajouté
 - **Recherche dans les pièces jointes** : la recherche (palette de commandes, `GET /api/v3/search`) trouve aussi les mots contenus dans les PDF, documents Word (.docx) et fichiers texte joints aux pages, et le nom des fichiers. Le texte est extrait en tâche de fond, une pièce jointe à la fois, avec le même processus isolé que l'import de documents ; un fichier illisible, protégé ou trop gros est simplement ignoré. Index distinct (`attachments_fts`). Un résultat n'est montré qu'aux personnes qui lisent la page porteuse (droits d'espace et de page, corbeille exclue) ; le texte extrait n'est jamais renvoyé, seulement un extrait balisé et le nom du fichier. Les pièces jointes déjà présentes sont rattrapées au premier démarrage. `ATTACHMENT_INDEX=false` désactive l'extraction. Migration v25. Voir `docs/RGPD.md` (texte dérivé gardé en base).
