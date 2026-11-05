@@ -42,30 +42,29 @@
   color-scheme: light;
 }
 
-/* Thème sombre : paliers de gris neutres (sans noir pur ni teinte bleue), du plus profond au plus clair :
-   barre latérale < page et éditeur < zones secondaires < blocs de code < cartes, menus et fenêtres.
-   Contrastes (WCAG AA) mesurés sur le palier le plus clair (#2c2c2c) : texte 10,8:1, texte secondaire 6,7:1,
-   texte tertiaire 5,9:1, bordure des champs 3,4:1 (4:1 sur la page). Ne pas éclaircir les fonds sans remesurer. */
+/* Thème sombre : fonds d'origine à teinte violette (page < barre latérale < zones secondaires < cartes), texte plus clair
+   pour la lecture des articles. Contrastes (WCAG AA) mesurés sur les cartes (#26262c) : texte 13,3:1, texte secondaire 8,6:1,
+   texte tertiaire 6,4:1, accent 5,2:1, bordure des champs 3,6:1. Ne pas éclaircir les fonds sans remesurer. */
 [data-theme='dark'] {
-  --tok-keyword: #c4a7ff; --tok-string: #7ee0b0; --tok-comment: #a3a3a3; --tok-number: #ffb27a; --tok-name: #8ec5ff; --tok-type: #ffcf8a; --tok-op: #cfcfcf;
-  --sidebar: #171717;
-  --bg: #1e1e1e;
-  --bg-soft: #252525;
-  --code-bg: #282828;
-  --elevated: #2c2c2c;
+  --tok-keyword: #c4a7ff; --tok-string: #7ee0b0; --tok-comment: #a3a8b3; --tok-number: #ffb27a; --tok-name: #8ec5ff; --tok-type: #ffcf8a; --tok-op: #cfd3da;
+  --sidebar: #1b1b1f; /* d'origine */
+  --bg: #17171a;
+  --bg-soft: #1f1f24;
+  --code-bg: #28282e;
+  --elevated: #26262c;
   --hover: rgba(255, 255, 255, 0.06);
   --active: rgba(255, 255, 255, 0.1);
-  --selection: rgba(255, 255, 255, 0.2);
-  --text: #e2e2e2;
-  --text-2: #b4b4b4;
-  --text-3: #a8a8a8;
-  --border: #333333;
-  --border-strong: #424242;
-  --control-border: #7c7c7c;
+  --selection: rgba(139, 128, 255, 0.34);
+  --text: #f1f0f4; /* un peu plus clair qu'avant : lecture des articles */
+  --text-2: #c4c3ca;
+  --text-3: #a9a8b1;
+  --border: #34343b;
+  --border-strong: #45454d;
+  --control-border: #7b7a85;
   --accent: #938aff; /* 4,9:1 sur les cartes et menus (liens d'action en couleur d'accent) */
   --accent-hover: #a39bff;
   --accent-soft: rgba(147, 138, 255, 0.14);
-  --accent-text: #aea6ff;
+  --accent-text: #b8b1ff;
   --danger: #ff6b6b;
   --danger-soft: rgba(255, 107, 107, 0.12);
   --mark: rgba(250, 210, 60, 0.3);
@@ -78,8 +77,8 @@
   --danger-bg: rgba(255, 90, 90, 0.08); --danger-bd: rgba(255, 90, 90, 0.22);
   /* Surlignages : fonds sourds sous un texte clair, plutôt que des pastels éblouissants. */
   --hl-text: var(--text);
-  --hl-gray: #444444; --hl-red: #5c2a26; --hl-orange: #5a3a1c; --hl-yellow: #4f4214;
-  --hl-green: #1f4a2e; --hl-blue: #253f5f; --hl-purple: #43306b; --hl-pink: #5a2645;
+  --hl-gray: #45454d; --hl-red: #5c2a26; --hl-orange: #5a3a1c; --hl-yellow: #4f4214;
+  --hl-green: #1f4a2e; --hl-blue: #253f5f; --hl-purple: #46346e; --hl-pink: #5a2645;
   color-scheme: dark;
 }
 
@@ -966,8 +965,8 @@ select.input { height: 36px; }
 .theme-preview i { border-radius: 4px; }
 .theme-preview i:first-child { grid-row: span 2; }
 .theme-preview.light { background: #fff; } .theme-preview.light i { background: #ecebe8; }
-.theme-preview.dark { background: #1e1e1e; } .theme-preview.dark i { background: #424242; }
-.theme-preview.system { background: linear-gradient(135deg, #fff 50%, #1e1e1e 50%); } .theme-preview.system i { background: rgba(128, 128, 128, .35); }
+.theme-preview.dark { background: #17171a; } .theme-preview.dark i { background: #45454d; }
+.theme-preview.system { background: linear-gradient(135deg, #fff 50%, #17171a 50%); } .theme-preview.system i { background: rgba(128, 128, 128, .35); }
 .theme-choice input:checked + .theme-preview { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 .tool-card { display: flex; align-items: flex-start; gap: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
