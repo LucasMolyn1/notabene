@@ -162,6 +162,9 @@ const schema = z
     ATTACHMENT_UPLOAD_IDLE_SECONDS: z.coerce.number().int().min(1).max(600).default(30),
     // Volume de pièces jointes copiées par une seule opération (copie, duplication, modèle), en Mo : la copie bloque le serveur.
     ATTACHMENT_COPY_MAX_MB: z.coerce.number().int().min(1).max(1024).default(100),
+    // Export ZIP d'une page et de ses sous-pages ou d'un espace : nombre de pages et volume total (Mo) au plus.
+    EXPORT_MAX_PAGES: z.coerce.number().int().min(1).max(100_000).default(5000),
+    EXPORT_MAX_MB: z.coerce.number().int().min(1).max(4000).default(2048),
   })
   .superRefine((c, ctx) => {
     if (c.DEV_LOGIN && c.NODE_ENV === 'production') {

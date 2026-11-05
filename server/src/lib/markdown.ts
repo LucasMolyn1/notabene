@@ -12,11 +12,22 @@ const mdUrl = (u: string) => u.replace(/[()\s<>]/g, (c) => `%${c.charCodeAt(0).t
 /** Nom d'une personne mentionnée, ou null si la personne n'a pas à être nommée (« @utilisateur »). */
 export type MentionName = (id: string) => string | null;
 
-export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: TitleOf, mentionName: MentionName = () => null): string {
+/**
+ * Adresses réécrites pour un export hors ligne (archive ZIP) : chemin relatif d'une page exportée, d'un fichier joint ou d'une
+ * image copiés dans l'archive. `null` (ou fonction absente) : adresse habituelle du wiki.
+ */
+export interface ExportLinks {
+  page?: (id: string) => string | null;
+  file?: (id: string) => string | null;
+  image?: (src: string) => string | null;
+}
+
+export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: TitleOf, mentionName: MentionName = () => null, links: ExportLinks = {}): string {
+  const pageHref = (id: string) => links.page?.(id) ?? `/p/${id}`;
   const inline = (nodes: DocNode[] = []): string => nodes.map((n) => {
     if (n.type === 'hardBreak') return '  \n';
     if (n.type === 'mention') return `@${(mentionName(String(n.attrs?.id)) ?? 'utilisateur').replace(/[\r\n]+/g, ' ').replace(/([\\*_`~[\]])/g, '\\$1')}`;
-    if (n.type === 'pageLink') return `[${titleOf(String(n.attrs?.id)) ?? 'Sans titre'}](/p/${n.attrs?.id})`;
+    if (n.type === 'pageLink') return `[${titleOf(String(n.attrs?.id)) ?? 'Sans titre'}](${mdUrl(pageHref(String(n.attrs?.id)))})`;
     if (n.type !== 'text') return '';
     const marks = n.marks ?? [];
     let t = n.text ?? '';
@@ -43,7 +54,7 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
       case 'callout': return quote(`[!${ALERT[String(a.type)] ?? 'NOTE'}]\n${blocks(node.content)}`);
       case 'codeBlock': return `\`\`\`${a.language ?? ''}\n${(node.content ?? []).map((t) => t.text).join('')}\n\`\`\``;
       case 'plantuml': return `\`\`\`plantuml\n${a.code ?? ''}\n\`\`\``;
-      case 'baseBlock': { const t = titleOf(String(a.id)); return t === null ? '' : `[${t.replace(/([\\*_`~[\]])/g, '\\$1')}](/p/${String(a.id)})`; }
+      case 'baseBlock': { const t = titleOf(String(a.id)); return t === null ? '' : `[${t.replace(/([\\*_`~[\]])/g, '\\$1')}](${mdUrl(pageHref(String(a.id)))})`; }
       case 'embed': return `[${String(a.url).replace(/([\\*_`~[\]])/g, '\\$1')}](${mdUrl(String(a.url))})`;
       case 'mermaid': return `\`\`\`mermaid\n${a.code ?? ''}\n\`\`\``;
       case 'math': return `$$\n${String(a.code ?? '').replace(/\$\$/g, '$ $')}\n$$`;
@@ -57,8 +68,12 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
       case 'horizontalRule': return '---';
       // Pièce jointe : lien vers le fichier ; le serveur revérifie le droit de lecture à chaque téléchargement.
       case 'attachment': case 'video': case 'audio':
-        return `[${String(a.name || 'fichier').replace(/[\r\n]+/g, ' ').replace(/([\\*_`~[\]])/g, '\\$1')}](/api/v3/attachments/${mdUrl(String(a.id))})`;
-      case 'image': return String(a.src).startsWith('data:') ? `_[Image : ${a.alt ?? ''}]_` : `![${a.alt ?? ''}](${mdUrl(String(a.src))})`;
+        return `[${String(a.name || 'fichier').replace(/[\r\n]+/g, ' ').replace(/([\\*_`~[\]])/g, '\\$1')}](${mdUrl(links.file?.(String(a.id)) ?? `/api/v3/attachments/${String(a.id)}`)})`;
+      case 'image': {
+        const local = links.image?.(String(a.src));
+        if (local) return `![${a.alt ?? ''}](${mdUrl(local)})`;
+        return String(a.src).startsWith('data:') ? `_[Image : ${a.alt ?? ''}]_` : `![${a.alt ?? ''}](${mdUrl(String(a.src))})`;
+      }
       case 'bulletList': return list(node, () => '- ');
       case 'orderedList': return list(node, (_, i) => `${(Number(a.start) || 1) + i}. `);
       case 'taskList': return list(node, (item) => `- [${item.attrs?.checked ? 'x' : ' '}] `);

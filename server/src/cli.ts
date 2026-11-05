@@ -1,9 +1,13 @@
 // Administration en ligne de commande, à lancer sur la machine qui héberge la base :
 //   node dist/server/cli.js create-admin <email> [--name "Nom"] [--reset]
+//   node dist/server/cli.js migrate-images [--dry-run] [--revert <exécution>] [--status]
 // Le mot de passe est saisi sans écho (ou lu sur l'entrée standard / NOTABENE_ADMIN_PASSWORD, pour l'automatisation).
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { z } from 'zod';
+import { attachmentsDir } from './lib/attachments.js';
 import { audit } from './lib/audit.js';
+import { dryRun, type MigrationLimits, migrationStatus, recentlyCoEdited, REASON_LABELS, startConversion, startRevert, type SkipReason } from './lib/image-migration.js';
 import { newId } from './lib/http.js';
 import { hashPassword, passwordProblem } from './lib/password.js';
 import { openDb, type DB } from './db.js';
@@ -38,6 +42,57 @@ export async function createAdmin(db: DB, opts: { email: string; name?: string; 
   return { id, created: true };
 }
 
+// Plafonds des pièces jointes : mêmes variables et mêmes valeurs par défaut que le serveur (config.ts).
+const MB = 1024 * 1024;
+export function migrationLimits(env: NodeJS.ProcessEnv): MigrationLimits {
+  const n = (max: number, def: number) => z.coerce.number().int().min(1).max(max).default(def);
+  const c = z.object({ ATTACHMENT_MAX_MB: n(1024, 25), ATTACHMENTS_TOTAL_MB: n(10_485_760, 5120), ATTACHMENT_USER_MB: n(10_485_760, 1024) }).parse(env);
+  return { fileBytes: c.ATTACHMENT_MAX_MB * MB, totalBytes: c.ATTACHMENTS_TOTAL_MB * MB, userBytes: c.ATTACHMENT_USER_MB * MB };
+}
+
+const describe = (reasons: Partial<Record<SkipReason, number>>) =>
+  Object.entries(reasons).map(([k, n]) => `  ${n} : ${REASON_LABELS[k as SkipReason]}`).join('\n');
+
+/**
+ * Conversion des images base64 en pièces jointes (voir lib/image-migration.ts). `--dry-run` : estimation, rien n'est écrit ;
+ * `--revert <exécution>` : défait une conversion ; `--status` : dernières exécutions. Une page récemment co-éditée (moins de
+ * dix minutes) est ignorée : la commande ne voit pas les salles du serveur en cours.
+ */
+export async function migrateImages(db: DB, args: string[], opts: { dataDir: string; limits: MigrationLimits; log?: (line: string) => void }): Promise<number> {
+  const log = opts.log ?? ((l: string) => console.log(l));
+  const ctx = {
+    db, filesDir: attachmentsDir(opts.dataDir), limits: opts.limits, busy: recentlyCoEdited(db), source: 'cli' as const, startedBy: null,
+    yieldBetweenBatches: () => new Promise<void>((done) => setImmediate(done)),
+  };
+  if (args.includes('--status')) {
+    const s = migrationStatus(db);
+    log(`Pages contenant encore des images base64 : ${s.pendingPages}`);
+    for (const r of s.runs) log(`${r.id}  ${r.kind}  ${r.status}  ${new Date(r.startedAt).toISOString()}  pages ${r.stats.converted + r.stats.reverted}, ignorées ${r.stats.skipped}, images ${r.stats.images}${r.reverts ? `  (défait ${r.reverts})` : ''}`);
+    return 0;
+  }
+  if (args.includes('--dry-run')) {
+    const r = dryRun(ctx);
+    log(`Estimation (rien n'est modifié) : ${r.pages} page(s), ${r.images} image(s), ${(r.bytes / MB).toFixed(1)} Mo à convertir.`);
+    if (Object.keys(r.reasons).length) log(`Laissées en place ou ignorées :\n${describe(r.reasons)}`);
+    for (const p of r.skipped) log(`  - ${p.pageId}  ${p.title || 'Sans titre'}  (${p.reasons.join(', ')})`);
+    return 0;
+  }
+  const at = args.indexOf('--revert');
+  const revertOf = at >= 0 ? args[at + 1] : undefined;
+  if (at >= 0 && (!revertOf || !/^[A-Za-z0-9_-]{1,64}$/.test(revertOf))) throw new Error('Usage : migrate-images --revert <identifiant de l’exécution> (voir --status)');
+  const started = revertOf ? startRevert(ctx, revertOf) : startConversion(ctx);
+  audit(db, null, revertOf ? 'cli.images.migration.revert' : 'cli.images.migration.start', started.id, revertOf ? { reverts: revertOf } : undefined);
+  log(`Exécution ${started.id} : ${revertOf ? `retour arrière de ${revertOf}` : 'conversion'} en cours…`);
+  const stats = await started.run();
+  audit(db, null, 'cli.images.migration.end', started.id, { ...stats });
+  log(revertOf
+    ? `Terminé : ${stats.reverted} page(s) rétablie(s), ${stats.images} image(s).`
+    : `Terminé : ${stats.converted} page(s) convertie(s), ${stats.images} image(s), ${(stats.bytes / MB).toFixed(1)} Mo.`);
+  if (stats.skipped || Object.keys(stats.reasons).length) log(`Ignorées ou laissées en place (détail : --status puis l'API d'administration) :\n${describe(stats.reasons)}`);
+  if (!revertOf) log(`Pour défaire : migrate-images --revert ${started.id}`);
+  return 0;
+}
+
 async function readSecret(prompt: string): Promise<string> {
   if (!process.stdin.isTTY) {
     const chunks: Buffer[] = [];
@@ -70,8 +125,14 @@ async function readSecret(prompt: string): Promise<string> {
 
 async function main(argv: string[]) {
   const [cmd, email, ...rest] = argv;
+  if (cmd === 'migrate-images') {
+    const dataDir = resolve(process.env.DATA_DIR ?? './data');
+    const db = openDb(resolve(dataDir, 'notabene.db'));
+    try { process.exitCode = await migrateImages(db, argv.slice(1), { dataDir, limits: migrationLimits(process.env) }); } finally { db.close(); }
+    return;
+  }
   if (cmd !== 'create-admin' || !email) {
-    console.error('Usage : create-admin <email> [--name "Nom"] [--reset]\nMot de passe : saisi sans écho, ou lu sur stdin, ou variable NOTABENE_ADMIN_PASSWORD.');
+    console.error('Usage : create-admin <email> [--name "Nom"] [--reset]\n        migrate-images [--dry-run] [--revert <exécution>] [--status]\nMot de passe : saisi sans écho, ou lu sur stdin, ou variable NOTABENE_ADMIN_PASSWORD.');
     process.exit(1);
   }
   const nameAt = rest.indexOf('--name');
