@@ -2,7 +2,7 @@
 // une pièce jointe à la fois, puis indexé (attachments_fts). L'extraction d'un PDF ou d'un Word passe par le même processus
 // enfant isolé que l'import de documents (doc-worker.js). Le texte extrait ne sort jamais tel quel de la base : seule la
 // recherche le lit, et un résultat n'est montré qu'à une personne qui lit la page porteuse (comme pour le texte des pages).
-import { readFileSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync } from 'node:fs';
 import type { DB } from '../db.js';
 import { attachmentPath } from './attachments.js';
 import { checkDocx, type DocLimits, runWorker } from './document-import.js';
@@ -66,9 +66,13 @@ export async function indexNext(db: DB, dir: string, limits: IndexLimits): Promi
     // Type, nom et taille d'abord : un fichier sans intérêt n'est jamais lu.
     const kind = kindOf(row.mime, row.name);
     if (!kind || (kind === 'text' && row.size > MAX_TEXT_FILE)) { finish('none'); return true; }
-    const path = attachmentPath(dir, row.id);
-    if (statSync(path).size > limits.maxBytes) { finish('none'); return true; }
-    const data = readFileSync(path);
+    // Un seul descripteur pour la taille et la lecture : le fichier ne peut pas changer entre les deux.
+    const fd = openSync(attachmentPath(dir, row.id), 'r');
+    let data: Buffer;
+    try {
+      if (fstatSync(fd).size > limits.maxBytes) { finish('none'); return true; }
+      data = readFileSync(fd);
+    } finally { closeSync(fd); }
     let text: string | null;
     if (kind === 'text') text = data.includes(0) ? null : plainText(data);
     else {
