@@ -8,7 +8,7 @@ import { attachmentsDir } from '../lib/attachments.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/http.js';
 import {
-  dryRun, type MigrationContext, migrationStatus, REASON_LABELS, releaseStaleServerRuns, runDetail, type RunStats, startConversion, startRevert, toRun, type RunRow,
+  clearServerAlive, dryRun, markServerAlive, type MigrationContext, migrationStatus, REASON_LABELS, releaseStaleServerRuns, runDetail, type RunStats, startConversion, startRevert, toRun, type RunRow,
 } from '../lib/image-migration.js';
 
 const runId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'identifiant invalide');
@@ -24,7 +24,17 @@ export default async function imageMigrationRoutes(app: FastifyInstance) {
 
   // Une exécution du serveur ne survit pas à son arrêt : celle restée « en cours » est marquée interrompue (reprise possible).
   releaseStaleServerRuns(db);
-  app.addHook('onClose', async () => { stopping = true; await current; });
+  // Signe de vie : la commande en ligne refuse de convertir tant que le serveur tourne.
+  const startedAt = Date.now();
+  markServerAlive(db, startedAt);
+  const alive = setInterval(() => { try { markServerAlive(db, startedAt); } catch { /* base fermée */ } }, 30_000);
+  alive.unref();
+  app.addHook('onClose', async () => {
+    stopping = true;
+    clearInterval(alive);
+    await current;
+    try { clearServerAlive(db); } catch { /* base déjà fermée */ }
+  });
 
   const context = (req: FastifyRequest): MigrationContext => ({
     db,
@@ -46,7 +56,7 @@ export default async function imageMigrationRoutes(app: FastifyInstance) {
   app.get('/admin/images/migration/runs/:runId', {
     preHandler: guard('admin'),
     schema: { tags, summary: 'Détail d’une exécution : pages converties, rétablies ou ignorées (avec le motif)', params: z.object({ runId }) },
-  }, async (req) => runDetail(db, (req.params as { runId: string }).runId));
+  }, async (req) => runDetail(db, (req.params as { runId: string }).runId, req.auth!.user.id));
 
   app.post('/admin/images/migration', {
     preHandler: guard('admin'),
@@ -58,7 +68,7 @@ export default async function imageMigrationRoutes(app: FastifyInstance) {
     const body = req.body as z.output<typeof startBody>;
     const ctx = context(req);
     if (body.action === 'dry-run') {
-      const report = dryRun(ctx);
+      const report = await dryRun(ctx, auth.user.id);
       audit(db, req, 'images.migration.dryrun', null, { pages: report.pages, images: report.images, bytes: report.bytes });
       return report;
     }

@@ -9,7 +9,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { type DB, openDb } from '../src/db.js';
-import { pathSegment } from '../src/lib/export-zip.js';
+import { buildExport, pathSegment } from '../src/lib/export-zip.js';
+import type { FastifyRequest } from 'fastify';
 import { hashPassword } from '../src/lib/password.js';
 import { createApiToken } from '../src/auth/tokens.js';
 
@@ -149,7 +150,7 @@ describe('export ZIP d’une page', () => {
     expect(Object.keys(z)).toContain('Racine/_script_alert(1)_-script_.html');
     const html = strFromU8(z['Racine.html']!);
     expect(html.startsWith('<!doctype html>')).toBe(true);
-    expect(html).toContain("default-src 'none'");
+    expect(html).toContain(`content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'"`);
     expect(html).toContain('<img src="attachments/image-1.png" alt="collée"');
     expect(html).toContain('<img src="attachments/sch%C3%A9ma%20(v1).png"');
     expect(html).not.toContain('data:image/svg');
@@ -204,7 +205,80 @@ describe('export ZIP d’une page', () => {
   });
 });
 
+describe('noms des fichiers joints et texte des liens', () => {
+  it('extension tirée du type reconnu sur les octets, jamais du nom d’origine ; .bin à défaut', async () => {
+    await boot();
+    const A4 = 'D'.repeat(21) + '4';
+    page('r', 'sp', null, 'R', docOf(
+      { type: 'attachment', attrs: { id: A1, name: 'facture.pdf.html' } },
+      { type: 'attachment', attrs: { id: A2, name: 'photo.html' } },
+      { type: 'attachment', attrs: { id: A3, name: 'sans-extension' } },
+      { type: 'attachment', attrs: { id: A4, name: 'rapport.pdf' } },
+    ));
+    attach(A1, 'r', 'facture.pdf.html', Buffer.from('<!doctype html><script>alert(1)</script>'), 'application/octet-stream');
+    attach(A2, 'r', 'photo.html', PNG);
+    attach(A3, 'r', 'sans-extension', Buffer.from('texte'), 'application/octet-stream');
+    attach(A4, 'r', 'rapport.pdf', Buffer.from('%PDF-1.7\n'), 'application/pdf');
+    const z = unzip((await get(await login('ed1'), '/api/v3/pages/r/export/zip')).rawPayload);
+    expect(names(z).filter((n) => n.startsWith('attachments/'))).toEqual(['attachments/facture.pdf.bin', 'attachments/photo.png', 'attachments/rapport.pdf', 'attachments/sans-extension.bin']);
+    expect(strFromU8(z['R.md']!)).toContain('[photo.html](attachments/photo.png)');
+  });
+
+  it('titre de page liée et texte alternatif échappés : ils ne ferment pas le lien', async () => {
+    await boot();
+    page('cible', 'sp', null, 'a](javascript:alert(1)) *x*');
+    page('r', 'sp', null, 'R', docOf(
+      { type: 'paragraph', content: [{ type: 'pageLink', attrs: { id: 'cible' } }] },
+      { type: 'image', attrs: { src: 'https://exemple.fr/i.png', alt: 'b](javascript:x)\n# titre' } },
+    ));
+    const z = unzip((await get(await login('ed1'), '/api/v3/pages/r/export/zip')).rawPayload);
+    const md = strFromU8(z['R.md']!);
+    expect(md).toContain('[a\\](javascript:alert(1)) \\*x\\*](/p/cible)');
+    expect(md).toContain('![b\\](javascript:x) # titre](https://exemple.fr/i.png)');
+  });
+});
+
 describe('plafonds et débit', () => {
+  it('images base64 : plafond propre, 413 clair', async () => {
+    await boot();
+    const big = `data:image/png;base64,${Buffer.concat([PNG, randomBytes(4000)]).toString('base64')}`;
+    page('r', 'sp', null, 'R', docOf({ type: 'image', attrs: { src: big } }));
+    const req = { auth: { user: { id: 'admin', name: 'a', email: null, role: 'admin' }, via: 'session', scopes: new Set(['read']) } } as unknown as FastifyRequest;
+    const opts = { spaceId: 'sp', rootIds: ['r'], subpages: false, format: 'md' as const, filesDir };
+    await expect(buildExport(db, req, { ...opts, limits: { maxPages: 10, maxBytes: 10 * 1024 * 1024, inlineBytes: 1024 } })).rejects.toThrow(/images intégrées/);
+    const ok = await buildExport(db, req, { ...opts, limits: { maxPages: 10, maxBytes: 10 * 1024 * 1024, inlineBytes: 1024 * 1024 } });
+    expect(ok.summary.images).toBe(1);
+    const chunks: Buffer[] = [];
+    for await (const c of ok.stream) chunks.push(c);
+    expect(Buffer.from(unzip(Buffer.concat(chunks))['attachments/image-1.png']!).length).toBe(PNG.length + 4000);
+  });
+
+  it('page modifiée entre la préparation et l’écriture : le texte suit, aucun fichier nouveau n’est ajouté', async () => {
+    await boot();
+    page('r', 'sp', null, 'R', docOf(para('court')));
+    attach(A1, 'r', 'tard.png', PNG);
+    const req = { auth: { user: { id: 'admin', name: 'a', email: null, role: 'admin' }, via: 'session', scopes: new Set(['read']) } } as unknown as FastifyRequest;
+    const built = await buildExport(db, req, { spaceId: 'sp', rootIds: ['r'], subpages: false, format: 'md', filesDir, limits: { maxPages: 10, maxBytes: 1e9, inlineBytes: 1e6 } });
+    db.prepare('UPDATE pages SET content = ? WHERE id = ?').run(docOf(para('beaucoup plus long qu’avant '.repeat(20)), { type: 'image', attrs: { src: `/api/v3/attachments/${A1}` } }), 'r');
+    const chunks: Buffer[] = [];
+    for await (const c of built.stream) chunks.push(c);
+    const z = unzip(Buffer.concat(chunks));
+    expect(names(z)).toEqual(['R.md']);
+    expect(strFromU8(z['R.md']!)).toContain(`beaucoup plus long`);
+    expect(strFromU8(z['R.md']!)).toContain(`(/api/v3/attachments/${A1})`);
+  });
+
+  it('un export à la fois par personne ; une autre personne n’attend pas ; créneau rendu ensuite', async () => {
+    await boot();
+    for (let i = 0; i < 120; i++) page(`p${i}`, 'sp', null, `P${i}`);
+    const [ed1, ed2] = [await login('ed1'), await login('ed2')];
+    const [a, b, c] = await Promise.all([get(ed1, '/api/v3/spaces/sp/export/zip'), get(ed1, '/api/v3/spaces/sp/export/zip'), get(ed2, '/api/v3/spaces/sp/export/zip')]);
+    expect([a.statusCode, b.statusCode].sort()).toEqual([200, 429]);
+    expect([a, b].find((r) => r.statusCode === 429)!.json().detail).toContain('déjà en cours pour votre compte');
+    expect(c.statusCode).toBe(200);
+    expect((await get(ed1, '/api/v3/spaces/sp/export/zip')).statusCode).toBe(200);
+  });
+
   it('trop de pages : 413 avant toute écriture', async () => {
     await boot({ EXPORT_MAX_PAGES: '2' });
     page('r', 'sp', null, 'R');

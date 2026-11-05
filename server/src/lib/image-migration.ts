@@ -150,13 +150,16 @@ export function releaseStaleServerRuns(db: DB): void {
   db.prepare("UPDATE image_migration_runs SET status = 'interrupted', finished_at = ? WHERE status = 'running' AND source = 'api'").run(Date.now());
 }
 
-const heartbeat = (db: DB, id: string, stats: RunStats, cursor: number) =>
-  db.prepare('UPDATE image_migration_runs SET heartbeat_at = ?, stats = ?, cursor = ? WHERE id = ?').run(Date.now(), JSON.stringify(stats), cursor, id);
+// N'écrivent que sur une exécution encore « en cours » : une exécution déclarée abandonnée (et peut-être remplacée) ne revient pas.
+// Une exécution qui a perdu son verrou s'arrête (`heartbeat` renvoie faux).
+const heartbeat = (db: DB, id: string, stats: RunStats, cursor: number): boolean =>
+  db.prepare("UPDATE image_migration_runs SET heartbeat_at = ?, stats = ?, cursor = ? WHERE id = ? AND status = 'running'").run(Date.now(), JSON.stringify(stats), cursor, id).changes === 1;
 
 function finish(db: DB, id: string, status: 'done' | 'interrupted' | 'failed', stats: RunStats, error: string | null = null) {
-  db.prepare('UPDATE image_migration_runs SET status = ?, finished_at = ?, heartbeat_at = ?, stats = ?, error = ? WHERE id = ?')
+  db.prepare("UPDATE image_migration_runs SET status = ?, finished_at = ?, heartbeat_at = ?, stats = ?, error = ? WHERE id = ? AND status = 'running'")
     .run(status, Date.now(), Date.now(), JSON.stringify(stats), error, id);
 }
+const LOST_LOCK = 'Exécution déclarée abandonnée par une autre : arrêtée';
 
 // Version de l'historique : l'état d'origine n'est inscrit que s'il n'est pas déjà la dernière version.
 function snapshot(db: DB, page: { id: string; title: string; content: string }, now: number) {
@@ -181,14 +184,18 @@ const candidates = (db: DB, after: number, limit: number) => db.prepare(
 // ---- Estimation sans rien écrire ----------------------------------------------------------
 export interface DryRunReport {
   pages: number; images: number; bytes: number; reasons: Partial<Record<SkipReason, number>>;
-  skipped: { pageId: string; title: string; reasons: SkipReason[] }[];
+  /** `title` à null et `hidden` vrai : page de l'espace personnel d'un autre compte (ni titre ni lien à afficher). */
+  skipped: { pageId: string; title: string | null; hidden: boolean; reasons: SkipReason[] }[];
 }
 
-export function dryRun(ctx: MigrationContext): DryRunReport {
+export async function dryRun(ctx: MigrationContext, viewerId: string | null = ctx.startedBy): Promise<DryRunReport> {
   const report: DryRunReport = { pages: 0, images: 0, bytes: 0, reasons: {}, skipped: [] };
+  const hidden = personalHidden(ctx.db, viewerId);
   let after = 0;
   for (;;) {
-    const rows = candidates(ctx.db, after, 200);
+    // Par lots, la boucle d'événements reprenant la main entre deux (l'estimation décode chaque image).
+    await (ctx.yieldBetweenBatches?.() ?? new Promise((done) => setImmediate(done)));
+    const rows = candidates(ctx.db, after, ctx.batchSize ?? 20);
     if (!rows.length) break;
     for (const p of rows) {
       after = p.seq;
@@ -201,10 +208,22 @@ export function dryRun(ctx: MigrationContext): DryRunReport {
         report.images += scan.found.size;
         for (const f of scan.found.values()) report.bytes += f.bytes.length;
       }
-      if (reasons.length && report.skipped.length < 500) report.skipped.push({ pageId: p.id, title: p.title, reasons });
+      if (reasons.length && report.skipped.length < 500) report.skipped.push({ pageId: p.id, title: hidden(p.id) ? null : p.title, hidden: hidden(p.id), reasons });
     }
   }
   return report;
+}
+
+/**
+ * Pages d'un espace personnel dont `viewerId` n'est pas le titulaire : leur titre n'est jamais montré (pas même à un
+ * administrateur, ni dans la commande en ligne), comme dans le journal d'audit et l'export des données personnelles.
+ */
+export function personalHidden(db: DB, viewerId: string | null): (pageId: string) => boolean {
+  const stmt = db.prepare("SELECT s.owner_id FROM pages p JOIN spaces s ON s.id = p.space_id WHERE p.id = ? AND s.kind = 'personal'");
+  return (pageId) => {
+    const row = stmt.get(pageId) as { owner_id: string | null } | undefined;
+    return !!row && (viewerId === null || row.owner_id !== viewerId);
+  };
 }
 
 // ---- Conversion ---------------------------------------------------------------------------
@@ -228,7 +247,7 @@ async function convertAll(ctx: MigrationContext, runId: string): Promise<RunStat
         stats.pages++;
         convertPage(ctx, runId, p, stats);
       }
-      heartbeat(db, runId, stats, after);
+      if (!heartbeat(db, runId, stats, after)) throw new Error(LOST_LOCK);
       await ctx.yieldBetweenBatches?.();
     }
     finish(db, runId, 'done', stats);
@@ -338,7 +357,7 @@ async function revertAll(ctx: MigrationContext, runId: string, convertRunId: str
     for (let i = 0; i < pages.length; i += size) {
       if (ctx.shouldStop?.()) { finish(db, runId, 'interrupted', stats); return stats; }
       for (const pageId of pages.slice(i, i + size)) { stats.pages++; revertPage(ctx, runId, convertRunId, pageId, stats); }
-      heartbeat(db, runId, stats, i + size);
+      if (!heartbeat(db, runId, stats, i + size)) throw new Error(LOST_LOCK);
       await ctx.yieldBetweenBatches?.();
     }
     finish(db, runId, 'done', stats);
@@ -399,7 +418,8 @@ export function migrationStatus(db: DB) {
   return { pendingPages: pending, current: runs.find((r) => r.status === 'running') ?? null, runs };
 }
 
-export function runDetail(db: DB, id: string) {
+export function runDetail(db: DB, id: string, viewerId: string | null = null) {
+  const hidden = personalHidden(db, viewerId);
   const row = db.prepare('SELECT * FROM image_migration_runs WHERE id = ?').get(id) as RunRow | undefined;
   if (!row) throw new HttpError(404, 'Exécution introuvable');
   const pages = (db.prepare(
@@ -407,8 +427,20 @@ export function runDetail(db: DB, id: string) {
      WHERE m.run_id = ? ORDER BY m.at, m.rowid LIMIT 1000`,
   ).all(id) as { page_id: string; status: string; reason: string | null; images: number; bytes: number; at: number; title: string | null }[])
     .map((r) => ({
-      pageId: r.page_id, title: r.title, status: r.status, images: r.images, bytes: r.bytes, at: r.at,
+      pageId: r.page_id, title: hidden(r.page_id) ? null : r.title, hidden: hidden(r.page_id), status: r.status, images: r.images, bytes: r.bytes, at: r.at,
       reasons: r.reason ? r.reason.split(',') : [],
     }));
   return { ...toRun(row), pages };
 }
+
+// ---- Présence du serveur ------------------------------------------------------------------
+// Le serveur inscrit un signe de vie toutes les 30 secondes ; la commande en ligne refuse de convertir s'il est récent.
+export const SERVER_ALIVE_MS = 90_000;
+export function markServerAlive(db: DB, startedAt: number): void {
+  db.prepare(
+    `INSERT INTO server_presence (id, pid, started_at, seen_at) VALUES (1, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET pid = excluded.pid, started_at = excluded.started_at, seen_at = excluded.seen_at`,
+  ).run(process.pid, startedAt, Date.now());
+}
+export const clearServerAlive = (db: DB) => db.prepare('DELETE FROM server_presence WHERE id = 1 AND pid = ?').run(process.pid);
+export const serverRunning = (db: DB) => !!db.prepare('SELECT 1 FROM server_presence WHERE id = 1 AND seen_at > ?').get(Date.now() - SERVER_ALIVE_MS);

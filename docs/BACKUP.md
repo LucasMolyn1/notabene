@@ -114,13 +114,15 @@ Les images collées dans l'éditeur avant les pièces jointes sont stockées dan
 ```bash
 docker compose exec -T notabene node dist/server/backup.js backup
 docker compose exec -T notabene node dist/server/backup.js verify /data/backups/notabene-AAAAMMJJ-HHMMSS.db
-docker compose exec -T notabene node dist/server/cli.js migrate-images --dry-run   # estimation, rien n'est modifié
-docker compose exec -T notabene node dist/server/cli.js migrate-images             # conversion
-docker compose exec -T notabene node dist/server/cli.js migrate-images --status    # exécutions passées
-docker compose exec -T notabene node dist/server/cli.js migrate-images --revert <exécution>
+docker compose exec -T notabene node dist/server/cli.js migrate-images --dry-run   # estimation, rien n'est modifié (serveur en marche possible)
+docker compose stop notabene                                                        # la conversion exige le serveur arrêté
+docker compose run --rm --no-deps notabene node dist/server/cli.js migrate-images   # conversion
+docker compose run --rm --no-deps notabene node dist/server/cli.js migrate-images --status
+docker compose run --rm --no-deps notabene node dist/server/cli.js migrate-images --revert <exécution>
+docker compose start notabene
 ```
 
-La même opération existe pour les administrateurs dans l'API (`/api/v3/admin/images/migration`), depuis une session web ; elle tourne alors en tâche de fond dans le serveur. Préférez-la quand le serveur est en marche : la commande en ligne ne voit pas les pages ouvertes en co-édition et ignore seulement celles co-éditées dans les dix dernières minutes.
+**La commande en ligne refuse de convertir ou de défaire tant que le serveur tourne** (il inscrit un signe de vie en base toutes les 30 secondes ; après un arrêt brutal, attendez 90 secondes) : elle ne voit ni les pages ouvertes en co-édition ni les enregistrements en cours. Sans arrêter le service, utilisez l'administration (`/api/v3/admin/images/migration`, session web d'un administrateur) : la conversion tourne alors en tâche de fond dans le serveur, qui sait quelles pages sont ouvertes.
 
 Ce que fait la conversion, page par page :
 

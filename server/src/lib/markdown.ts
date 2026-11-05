@@ -8,6 +8,8 @@ const ALERT: Record<string, string> = { info: 'NOTE', warning: 'WARNING', succes
 
 type TitleOf = (id: string) => string | null;
 // Adresse placée entre parenthèses d'un lien ou d'une image : parenthèses, espaces et chevrons encodés, pour qu'elle ne puisse pas fermer le lien.
+// Texte placé entre crochets (titre de lien, texte alternatif) : il ne peut ni fermer le lien ni ajouter de mise en forme.
+const mdLabel = (t: string) => t.replace(/[\r\n]+/g, ' ').replace(/([\\*_`~[\]])/g, '\\$1');
 const mdUrl = (u: string) => u.replace(/[()\s<>]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);
 /** Nom d'une personne mentionnée, ou null si la personne n'a pas à être nommée (« @utilisateur »). */
 export type MentionName = (id: string) => string | null;
@@ -27,7 +29,7 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
   const inline = (nodes: DocNode[] = []): string => nodes.map((n) => {
     if (n.type === 'hardBreak') return '  \n';
     if (n.type === 'mention') return `@${(mentionName(String(n.attrs?.id)) ?? 'utilisateur').replace(/[\r\n]+/g, ' ').replace(/([\\*_`~[\]])/g, '\\$1')}`;
-    if (n.type === 'pageLink') return `[${titleOf(String(n.attrs?.id)) ?? 'Sans titre'}](${mdUrl(pageHref(String(n.attrs?.id)))})`;
+    if (n.type === 'pageLink') return `[${mdLabel(titleOf(String(n.attrs?.id)) ?? 'Sans titre')}](${mdUrl(pageHref(String(n.attrs?.id)))})`;
     if (n.type !== 'text') return '';
     const marks = n.marks ?? [];
     let t = n.text ?? '';
@@ -71,8 +73,9 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
         return `[${String(a.name || 'fichier').replace(/[\r\n]+/g, ' ').replace(/([\\*_`~[\]])/g, '\\$1')}](${mdUrl(links.file?.(String(a.id)) ?? `/api/v3/attachments/${String(a.id)}`)})`;
       case 'image': {
         const local = links.image?.(String(a.src));
-        if (local) return `![${a.alt ?? ''}](${mdUrl(local)})`;
-        return String(a.src).startsWith('data:') ? `_[Image : ${a.alt ?? ''}]_` : `![${a.alt ?? ''}](${mdUrl(String(a.src))})`;
+        const alt = mdLabel(String(a.alt ?? ''));
+        if (local) return `![${alt}](${mdUrl(local)})`;
+        return String(a.src).startsWith('data:') ? `_[Image : ${alt}]_` : `![${alt}](${mdUrl(String(a.src))})`;
       }
       case 'bulletList': return list(node, () => '- ');
       case 'orderedList': return list(node, (_, i) => `${(Number(a.start) || 1) + i}. `);

@@ -4,6 +4,7 @@
 // avec toutes ses sous-pages, pièce jointe seulement si sa page (ou son modèle) est lisible. Les noms viennent des titres,
 // assainis (aucun « .. », séparateur ni caractère de contrôle) et rendus uniques dans chaque dossier.
 // Tout est calculé avant le premier octet : un plafond dépassé donne une vraie réponse 413 ; les fichiers sont lus en flux.
+import { createHash } from 'node:crypto';
 import { createReadStream, statSync } from 'node:fs';
 import type { FastifyRequest } from 'fastify';
 import type { DB } from '../db.js';
@@ -19,20 +20,26 @@ import { escapeHtml, renderHtml } from './render-html.js';
 import { zipEntryName, zipStream, type ZipEntry } from './zip.js';
 
 export type ExportFormat = 'md' | 'html';
-export interface ExportLimits { maxPages: number; maxBytes: number }
+export interface ExportLimits { maxPages: number; maxBytes: number; inlineBytes: number }
 export interface ExportSummary { pages: number; files: number; images: number; missing: number; bytes: number }
 
 interface Meta { id: string; parent_id: string | null; title: string; icon: string; kind: 'doc' | 'base'; updated_at: number }
 interface Node extends Meta { children: Node[]; file: string; dir: string }
 
 const MB = 1024 * 1024;
-// Images base64 encore dans les pages : décodées en mémoire au moment de l'écriture, donc plafonnées à part.
-export const INLINE_IMAGES_MAX_BYTES = 256 * MB;
+// Images base64 encore dans les pages : décodées une à une au moment de l'écriture, plafonnées à part.
+export const INLINE_IMAGES_MAX_BYTES = 64 * MB;
 const FILES_DIR = 'attachments';
 const IMAGE_SRC = /^\/api\/v3\/attachments\/([A-Za-z0-9_-]{22})$/;
 const DATA_IMAGE = /^data:image\/(png|jpe?g|webp|gif);base64,([A-Za-z0-9+/=]+)$/;
 const STORED = new Set<string>(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf', 'application/zip', 'video/mp4', 'video/webm', 'audio/mpeg', 'audio/ogg']);
-const EXT: Partial<Record<AttachmentMime, string>> = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
+// Extension d'un fichier de l'archive, d'après le type reconnu sur ses octets.
+const FILE_EXT: Record<AttachmentMime, string> = {
+  'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp', 'application/pdf': '.pdf', 'application/zip': '.zip',
+  'video/mp4': '.mp4', 'video/webm': '.webm', 'audio/mpeg': '.mp3', 'audio/ogg': '.ogg', 'audio/wav': '.wav', 'application/octet-stream': '.bin',
+};
+const PREPARE_BATCH = 50;
+const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 // Noms réservés par Windows : un dossier « CON » ne se crée pas.
 const RESERVED = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
 const SEGMENT_MAX = 120;
@@ -70,7 +77,7 @@ const htmlPage = (title: string, body: string) => `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src * data:; style-src 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'">
 <meta name="referrer" content="no-referrer">
 <title>${escapeHtml(title)}</title>
 <style>body{max-width:48rem;margin:2rem auto;padding:0 1rem;font-family:system-ui,sans-serif;line-height:1.6}img{max-width:100%}pre{overflow:auto;background:#f4f4f5;padding:.75rem}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:.25rem .5rem}aside{border-left:4px solid #888;padding-left:1rem}</style>
@@ -86,9 +93,9 @@ ${body}
  * Prépare l'archive. `rootIds` : pages de départ (déjà contrôlées par l'appelant), toutes dans `spaceId` ; `subpages` : descendre
  * dans les sous-pages lisibles. Lève 413 si un plafond est dépassé, avant toute écriture.
  */
-export function buildExport(db: DB, req: FastifyRequest, opts: {
+export async function buildExport(db: DB, req: FastifyRequest, opts: {
   spaceId: string; rootIds: string[]; subpages: boolean; format: ExportFormat; filesDir: string; limits: ExportLimits;
-}): { stream: AsyncGenerator<Buffer>; summary: ExportSummary } {
+}): Promise<{ stream: AsyncGenerator<Buffer>; summary: ExportSummary }> {
   const metas = db.prepare(
     `SELECT id, parent_id, title, icon, kind, updated_at FROM pages WHERE space_id = ? AND deleted_at IS NULL ORDER BY position, created_at`,
   ).all(opts.spaceId) as Meta[];
@@ -128,54 +135,63 @@ export function buildExport(db: DB, req: FastifyRequest, opts: {
   const fileOfPage = new Map(all.map((n) => [n.id, n.file]));
 
   // Fichiers cités : pièces jointes lisibles présentes sur le disque, images base64 raster (type reconnu sur les octets).
+  // Ils sont inscrits pendant la préparation ; ensuite (`frozen`), plus rien ne s'ajoute : une page modifiée pendant le flux ne
+  // peut pas citer un fichier absent de l'archive (son lien reste alors celui du wiki).
+  let frozen = false;
   const usedFiles = new Set<string>();
   const attachmentRow = db.prepare('SELECT id, page_id, template_id, name, mime, size, created_at FROM attachments WHERE id = ?');
   const files = new Map<string, { path: string; entry: ZipEntry } | null>();
+  // Images base64 : indexées par l'empreinte de la chaîne, jamais gardées en mémoire ; seuls la page et la taille sont retenues.
   const images = new Map<string, { path: string; entry: ZipEntry } | null>();
   let inlineBytes = 0;
   let inlineCount = 0;
   let missing = 0;
+  const content = db.prepare('SELECT content FROM pages WHERE id = ?');
   const fileFor = (id: string) => {
-    if (files.has(id)) return files.get(id)!;
-    const row = attachmentRow.get(id) as { id: string; page_id: string | null; template_id: string | null; name: string; mime: string; size: number; created_at: number } | undefined;
+    if (files.has(id) || frozen) return files.get(id) ?? null;
+    const row = attachmentRow.get(id) as { id: string; page_id: string | null; template_id: string | null; name: string; mime: AttachmentMime; size: number; created_at: number } | undefined;
     let out: { path: string; entry: ZipEntry } | null = null;
     if (row && ((row.page_id && fileOfPage.has(row.page_id)) || canReadAttachment(db, req, row))) {
       const disk = attachmentPath(opts.filesDir, row.id);
       let ok = false;
       try { ok = statSync(disk).size === row.size; } catch { /* absent du disque */ }
       if (ok) {
+        // Extension déduite du type reconnu sur les octets, jamais du nom d'origine (« facture.pdf.html » ne s'ouvre pas en HTML).
         const name = sanitizeFilename(row.name);
         const dot = name.lastIndexOf('.');
-        const suffix = dot > 0 && name.length - dot <= 12 ? pathSegment(name.slice(dot + 1), '') : '';
-        const ext = suffix ? `.${suffix}` : '';
-        const path = `${FILES_DIR}/${reserve(usedFiles, pathSegment(ext ? name.slice(0, dot) : name, 'fichier'), ext, false)}${ext}`;
+        const stem = dot > 0 && name.length - dot <= 12 ? name.slice(0, dot) : name;
+        const ext = FILE_EXT[row.mime] ?? '.bin';
+        const path = `${FILES_DIR}/${reserve(usedFiles, pathSegment(stem, 'fichier'), ext, false)}${ext}`;
         out = { path, entry: { name: path, size: row.size, mtime: row.created_at, store: STORED.has(row.mime), body: () => createReadStream(disk) } };
       } else missing++;
     }
     files.set(id, out);
     return out;
   };
-  const imageFor = (src: string) => {
-    if (images.has(src)) return images.get(src)!;
-    let out: { path: string; entry: ZipEntry } | null = null;
+  const imageFor = (src: string, pageId: string) => {
     const m = DATA_IMAGE.exec(src);
-    if (m) {
-      const bytes = Buffer.from(m[2]!, 'base64');
-      const mime = sniffMime(bytes.subarray(0, 64));
-      // Un SVG (ou tout ce qui n'est pas une image raster reconnue) n'est jamais copié dans l'archive.
-      if (INLINE_MIMES.has(mime) && bytes.length > 0) {
-        inlineBytes += bytes.length;
-        if (inlineBytes > INLINE_IMAGES_MAX_BYTES) throw new HttpError(413, 'Trop d’images intégrées aux pages (256 Mo au plus) : convertissez-les d’abord en pièces jointes');
-        const path = `${FILES_DIR}/${reserve(usedFiles, `image-${++inlineCount}`, EXT[mime]!, false)}${EXT[mime]!}`;
-        const size = bytes.length;
-        // Les octets sont redécodés au moment de l'écriture : rien n'est gardé en mémoire d'ici là, hors la chaîne de la page.
-        out = { path, entry: { name: path, size, mtime: Date.now(), store: true, body: () => Buffer.from(m[2]!, 'base64') } };
+    if (!m) { const id = IMAGE_SRC.exec(src)?.[1]; return id ? fileFor(id) : null; }
+    const key = sha(src);
+    if (images.has(key) || frozen) return images.get(key) ?? null;
+    let out: { path: string; entry: ZipEntry } | null = null;
+    const bytes = Buffer.from(m[2]!, 'base64');
+    const mime = sniffMime(bytes.subarray(0, 64));
+    // Un SVG (ou tout ce qui n'est pas une image raster reconnue) n'est jamais copié dans l'archive.
+    if (INLINE_MIMES.has(mime) && bytes.length > 0) {
+      inlineBytes += bytes.length;
+      if (inlineBytes > opts.limits.inlineBytes) {
+        throw new HttpError(413, `Trop d’images intégrées aux pages (${Math.round(opts.limits.inlineBytes / MB)} Mo au plus) : convertissez-les d’abord en pièces jointes`);
       }
-    } else {
-      const id = IMAGE_SRC.exec(src)?.[1];
-      if (id) out = fileFor(id);
+      const path = `${FILES_DIR}/${reserve(usedFiles, `image-${++inlineCount}`, FILE_EXT[mime]!, false)}${FILE_EXT[mime]!}`;
+      // Redécodée au moment de l'écriture, depuis la page relue : une seule image en mémoire à la fois.
+      const body = () => {
+        const found = findDataImage(JSON.parse((content.get(pageId) as { content: string } | undefined)?.content ?? '{}') as DocNode, key);
+        if (!found) throw new Error('image modifiée pendant l’export');
+        return Buffer.from(found, 'base64');
+      };
+      out = { path, entry: { name: path, size: bytes.length, mtime: Date.now(), store: true, body } };
     }
-    images.set(src, out);
+    images.set(key, out);
     return out;
   };
 
@@ -195,36 +211,49 @@ export function buildExport(db: DB, req: FastifyRequest, opts: {
     return t;
   };
 
-  const content = db.prepare('SELECT content FROM pages WHERE id = ?');
-  const pageEntries: ZipEntry[] = [];
-  for (const n of all) {
-    let text: string;
+  // Texte d'une page, produit à la préparation (taille estimée, fichiers inscrits) puis de nouveau pendant le flux.
+  const render = (n: Node): Buffer => {
     if (n.kind === 'base') {
       const props = propertiesOf(db, n.id);
-      text = toCsv(props, presentRows({ db, auth: req.auth, spaces: visible, baseId: n.id }, props, !!req.auth));
-    } else {
-      const doc = JSON.parse((content.get(n.id) as { content: string }).content) as DocNode;
-      const names = new Map(readersAmong(db, n.id, mentionIds(doc), 200).map((u) => [u.id, u.name]));
-      const links: ExportLinks = {
-        page: (id) => (fileOfPage.has(id) ? relative(n.file, fileOfPage.get(id)!) : null),
-        file: (id) => { const f = ATTACHMENT_ID.test(id) ? fileFor(id) : null; return f ? relative(n.file, f.path) : null; },
-        image: (src) => { const f = imageFor(src); return f ? relative(n.file, f.path) : null; },
-      };
-      const title = `${n.icon ? `${n.icon} ` : ''}${n.title || 'Sans titre'}`;
-      text = opts.format === 'html'
-        ? htmlPage(title, renderHtml(doc, titleOf, (id) => names.get(id) ?? null, links))
-        : toMarkdown(n.title, n.icon, doc, titleOf, (id) => names.get(id) ?? null, links);
+      return Buffer.from(toCsv(props, presentRows({ db, auth: req.auth, spaces: visible, baseId: n.id }, props, !!req.auth)), 'utf8');
     }
-    const buf = Buffer.from(text, 'utf8');
-    pageEntries.push({ name: n.file, size: buf.length, mtime: n.updated_at, body: () => buf });
-  }
+    const doc = JSON.parse((content.get(n.id) as { content: string } | undefined)?.content ?? '{"type":"doc","content":[]}') as DocNode;
+    const names = new Map(readersAmong(db, n.id, mentionIds(doc), 200).map((u) => [u.id, u.name]));
+    const links: ExportLinks = {
+      page: (id) => (fileOfPage.has(id) ? relative(n.file, fileOfPage.get(id)!) : null),
+      file: (id) => { const f = ATTACHMENT_ID.test(id) ? fileFor(id) : null; return f ? relative(n.file, f.path) : null; },
+      image: (src) => { const f = imageFor(src, n.id); return f ? relative(n.file, f.path) : null; },
+    };
+    const title = `${n.icon ? `${n.icon} ` : ''}${n.title || 'Sans titre'}`;
+    return Buffer.from(opts.format === 'html'
+      ? htmlPage(title, renderHtml(doc, titleOf, (id) => names.get(id) ?? null, links))
+      : toMarkdown(n.title, n.icon, doc, titleOf, (id) => names.get(id) ?? null, links), 'utf8');
+  };
 
+  // Préparation par lots : la boucle d'événements reprend la main entre deux lots.
+  const sizes = new Map<string, number>();
+  for (let i = 0; i < all.length; i += PREPARE_BATCH) {
+    await new Promise((done) => setImmediate(done));
+    for (const n of all.slice(i, i + PREPARE_BATCH)) sizes.set(n.id, render(n).length);
+  }
+  frozen = true;
+
+  const pageEntries: ZipEntry[] = all.map((n) => ({ name: n.file, size: sizes.get(n.id)!, exact: false, mtime: n.updated_at, body: () => render(n) }));
   const fileEntries = [...new Map([...files.values(), ...images.values()].filter((f): f is { path: string; entry: ZipEntry } => !!f).map((f) => [f.path, f.entry])).values()];
   const entries = [...pageEntries, ...fileEntries];
   const bytes = entries.reduce((s, e) => s + e.size, 0);
   if (bytes > opts.limits.maxBytes) throw new HttpError(413, `Export trop volumineux (${Math.round(opts.limits.maxBytes / MB)} Mo au plus) : exportez une partie de l’arborescence`);
   return {
     stream: zipStream(entries),
-    summary: { pages: all.length, files: [...files.values()].filter(Boolean).length, images: [...images.entries()].filter(([s, f]) => f && s.startsWith('data:')).length, missing, bytes },
+    summary: { pages: all.length, files: [...files.values()].filter(Boolean).length, images: [...images.values()].filter(Boolean).length, missing, bytes },
   };
+
+}
+
+// Chaîne base64 de l'image `data:` dont l'adresse a l'empreinte `key`, ou null.
+function findDataImage(doc: DocNode, key: string): string | null {
+  const src = doc.type === 'image' ? doc.attrs?.src : undefined;
+  if (typeof src === 'string' && src.startsWith('data:') && sha(src) === key) return DATA_IMAGE.exec(src)?.[2] ?? null;
+  for (const c of doc.content ?? []) { const r = findDataImage(c, key); if (r) return r; }
+  return null;
 }

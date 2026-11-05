@@ -516,8 +516,9 @@ export const MIGRATIONS: string[] = [
   // est en cours à la fois (index unique partiel, valable aussi entre la commande en ligne et le serveur) ; `pages` garde, page par
   // page, ce qui a été fait ou ignoré et pourquoi ; `items` garde de quoi rétablir chaque image à l'identique (préfixe d'origine,
   // empreinte, et la chaîne d'origine seulement si son base64 n'était pas canonique). Pas de clé étrangère vers les pages : le
-  // journal survit à leur suppression (le retour arrière les ignore alors).
-  // Retour arrière : DROP TABLE image_migration_items; DROP TABLE image_migration_pages; DROP TABLE image_migration_runs;
+  // journal survit à leur suppression (le retour arrière les ignore alors). `server_presence` : signe de vie du serveur, pour que
+  // la commande en ligne refuse de convertir pendant qu'il tourne (elle ne voit ni ses salles de co-édition ni ses écritures).
+  // Retour arrière : DROP TABLE image_migration_items; DROP TABLE image_migration_pages; DROP TABLE image_migration_runs; DROP TABLE server_presence;
   `
   CREATE TABLE image_migration_runs (
     id           TEXT PRIMARY KEY,
@@ -559,6 +560,13 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (run_id, page_id, attachment_id)
   );
   CREATE INDEX image_migration_items_attachment ON image_migration_items(attachment_id);
+
+  CREATE TABLE server_presence (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    pid        INTEGER NOT NULL,
+    started_at INTEGER NOT NULL,
+    seen_at    INTEGER NOT NULL
+  );
   `,
 ];
 

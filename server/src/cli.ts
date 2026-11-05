@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { attachmentsDir } from './lib/attachments.js';
 import { audit } from './lib/audit.js';
-import { dryRun, type MigrationLimits, migrationStatus, recentlyCoEdited, REASON_LABELS, startConversion, startRevert, type SkipReason } from './lib/image-migration.js';
+import { dryRun, type MigrationLimits, migrationStatus, recentlyCoEdited, REASON_LABELS, serverRunning, startConversion, startRevert, type SkipReason } from './lib/image-migration.js';
 import { newId } from './lib/http.js';
 import { hashPassword, passwordProblem } from './lib/password.js';
 import { openDb, type DB } from './db.js';
@@ -55,8 +55,8 @@ const describe = (reasons: Partial<Record<SkipReason, number>>) =>
 
 /**
  * Conversion des images base64 en pièces jointes (voir lib/image-migration.ts). `--dry-run` : estimation, rien n'est écrit ;
- * `--revert <exécution>` : défait une conversion ; `--status` : dernières exécutions. Une page récemment co-éditée (moins de
- * dix minutes) est ignorée : la commande ne voit pas les salles du serveur en cours.
+ * `--revert <exécution>` : défait une conversion ; `--status` : dernières exécutions. Convertir ou défaire exige que le serveur
+ * soit arrêté (signe de vie récent en base : refus). Par prudence, une page co-éditée il y a moins de dix minutes est ignorée.
  */
 export async function migrateImages(db: DB, args: string[], opts: { dataDir: string; limits: MigrationLimits; log?: (line: string) => void }): Promise<number> {
   const log = opts.log ?? ((l: string) => console.log(l));
@@ -71,15 +71,19 @@ export async function migrateImages(db: DB, args: string[], opts: { dataDir: str
     return 0;
   }
   if (args.includes('--dry-run')) {
-    const r = dryRun(ctx);
+    const r = await dryRun(ctx, null);
     log(`Estimation (rien n'est modifié) : ${r.pages} page(s), ${r.images} image(s), ${(r.bytes / MB).toFixed(1)} Mo à convertir.`);
     if (Object.keys(r.reasons).length) log(`Laissées en place ou ignorées :\n${describe(r.reasons)}`);
-    for (const p of r.skipped) log(`  - ${p.pageId}  ${p.title || 'Sans titre'}  (${p.reasons.join(', ')})`);
+    for (const p of r.skipped) log(`  - ${p.pageId}  ${p.hidden ? '(espace personnel)' : p.title || 'Sans titre'}  (${p.reasons.join(', ')})`);
     return 0;
   }
   const at = args.indexOf('--revert');
   const revertOf = at >= 0 ? args[at + 1] : undefined;
   if (at >= 0 && (!revertOf || !/^[A-Za-z0-9_-]{1,64}$/.test(revertOf))) throw new Error('Usage : migrate-images --revert <identifiant de l’exécution> (voir --status)');
+  // Le serveur en marche écrit dans les mêmes pages (co-édition, enregistrements) sans que la commande le voie : arrêt exigé.
+  if (serverRunning(db)) {
+    throw new Error('Le serveur BeNote est en marche : arrêtez-le d’abord (docker compose stop notabene, puis docker compose run --rm --no-deps notabene node dist/server/cli.js migrate-images), ou lancez la conversion depuis l’administration.');
+  }
   const started = revertOf ? startRevert(ctx, revertOf) : startConversion(ctx);
   audit(db, null, revertOf ? 'cli.images.migration.revert' : 'cli.images.migration.start', started.id, revertOf ? { reverts: revertOf } : undefined);
   log(`Exécution ${started.id} : ${revertOf ? `retour arrière de ${revertOf}` : 'conversion'} en cours…`);

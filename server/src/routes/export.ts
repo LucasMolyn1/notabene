@@ -8,42 +8,56 @@ import { requireScope } from '../auth/context.js';
 import { loadReadablePage, requireSpaceRole } from '../lib/access.js';
 import { attachmentsDir } from '../lib/attachments.js';
 import { audit } from '../lib/audit.js';
-import { buildExport, type ExportFormat } from '../lib/export-zip.js';
+import { buildExport, type ExportFormat, INLINE_IMAGES_MAX_BYTES } from '../lib/export-zip.js';
 import { HttpError, idParams } from '../lib/http.js';
 
 const pageQuery = z.object({ format: z.enum(['md', 'html']).default('md'), subpages: z.enum(['true', 'false']).default('false') });
 const spaceQuery = z.object({ format: z.enum(['md', 'html']).default('md') });
 
-// Exports en cours sur l'instance : chacun lit la base et des fichiers, on en borne le nombre.
+// Exports en cours : au plus un par personne et trois sur l'instance (chacun lit la base et des fichiers).
 export const MAX_CONCURRENT_EXPORTS = 3;
+// Client muet plus longtemps que ce délai (lecture arrêtée sans fermer) : la connexion est coupée et le créneau rendu.
+export const EXPORT_IDLE_MS = 60_000;
 
 // Nom du fichier proposé au téléchargement : ASCII sûr (le titre n'y entre pas tel quel).
 const downloadName = (title: string) => (title || 'export').normalize('NFKD').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'export';
+
+type Built = Awaited<ReturnType<typeof buildExport>>;
 
 export default async function exportRoutes(app: FastifyInstance) {
   const { db, config } = app;
   const tags = ['export'];
   const filesDir = attachmentsDir(config.DATA_DIR);
-  const limits = { maxPages: config.EXPORT_MAX_PAGES, maxBytes: config.EXPORT_MAX_MB * 1024 * 1024 };
-  let running = 0;
+  const limits = { maxPages: config.EXPORT_MAX_PAGES, maxBytes: config.EXPORT_MAX_MB * 1024 * 1024, inlineBytes: INLINE_IMAGES_MAX_BYTES };
+  const running = new Set<string>();
 
-  const send = (req: FastifyRequest, reply: FastifyReply, name: string, build: () => ReturnType<typeof buildExport>, log: (s: ReturnType<typeof buildExport>['summary']) => void) => {
-    if (running >= MAX_CONCURRENT_EXPORTS) throw new HttpError(429, 'Trop d’exports en cours : réessayez dans un instant');
-    // Archive préparée avant les en-têtes : un plafond dépassé est une vraie réponse 413.
-    const { stream, summary } = build();
-    log(summary);
-    running++;
+  const send = async (req: FastifyRequest, reply: FastifyReply, name: string, build: () => Promise<Built>, log: (s: Built['summary']) => void) => {
+    const userId = requireScope(req, 'read').user.id;
+    if (running.has(userId)) throw new HttpError(429, 'Un export est déjà en cours pour votre compte : attendez sa fin');
+    if (running.size >= MAX_CONCURRENT_EXPORTS) throw new HttpError(429, 'Trop d’exports en cours : réessayez dans un instant');
+    // Créneau pris dès le début (préparation comprise) et rendu une seule fois : fin du flux, erreur ou connexion coupée.
+    running.add(userId);
     let released = false;
-    const release = () => { if (!released) { released = true; running--; } };
-    reply.raw.once('close', release);
-    const body = Readable.from(stream);
-    body.once('close', release);
-    return reply
-      .header('content-type', 'application/zip')
-      .header('content-disposition', `attachment; filename="${name}.zip"`)
-      .header('cache-control', 'private, no-store')
-      .header('x-content-type-options', 'nosniff')
-      .send(body);
+    const release = () => { if (!released) { released = true; running.delete(userId); } };
+    try {
+      // Archive préparée avant les en-têtes : un plafond dépassé est une vraie réponse 413.
+      const { stream, summary } = await build();
+      log(summary);
+      const body = Readable.from(stream);
+      body.once('close', release);
+      body.once('error', release);
+      reply.raw.once('close', release);
+      try { reply.raw.setTimeout(EXPORT_IDLE_MS, () => { body.destroy(); reply.raw.destroy(); release(); }); } catch { /* transport sans délai (tests) */ }
+      return reply
+        .header('content-type', 'application/zip')
+        .header('content-disposition', `attachment; filename="${name}.zip"`)
+        .header('cache-control', 'private, no-store')
+        .header('x-content-type-options', 'nosniff')
+        .send(body);
+    } catch (err) {
+      release();
+      throw err;
+    }
   };
 
   app.get('/pages/:id/export/zip', {

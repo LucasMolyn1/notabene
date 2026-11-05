@@ -14,7 +14,7 @@ import { loadConfig } from '../src/config.js';
 import { type DB, MIGRATIONS, openDb } from '../src/db.js';
 import { attachmentsDir } from '../src/lib/attachments.js';
 import {
-  dryRun, type MigrationContext, migrationStatus, recentlyCoEdited, runDetail, scanDoc, startConversion, startRevert,
+  dryRun, markServerAlive, type MigrationContext, migrationStatus, recentlyCoEdited, runDetail, scanDoc, serverRunning, startConversion, startRevert,
 } from '../src/lib/image-migration.js';
 import { hashPassword } from '../src/lib/password.js';
 import { oldDb } from './migrations.js';
@@ -187,12 +187,12 @@ describe('conversion et retour arrière', () => {
     expect(content('p1')).toBe(original);
   });
 
-  it('estimation : rien n’est écrit', () => {
+  it('estimation : rien n’est écrit', async () => {
     page('p1', docOf(img(data('image/png', png())), img(data('image/svg+xml', SVG))));
     const before = content('p1');
-    const r = dryRun(ctx());
+    const r = await dryRun(ctx());
     expect(r).toMatchObject({ pages: 1, images: 1, reasons: { svg: 1 } });
-    expect(r.skipped).toEqual([{ pageId: 'p1', title: 'Titre p1', reasons: ['svg'] }]);
+    expect(r.skipped).toEqual([{ pageId: 'p1', title: 'Titre p1', hidden: false, reasons: ['svg'] }]);
     expect(content('p1')).toBe(before);
     expect(db.prepare('SELECT COUNT(*) AS n FROM attachments').get()).toEqual({ n: 0 });
     expect(db.prepare('SELECT COUNT(*) AS n FROM image_migration_runs').get()).toEqual({ n: 0 });
@@ -211,6 +211,42 @@ describe('conversion et retour arrière', () => {
     expect(migrationStatus(db).runs.find((r) => r.id === first.id)?.status).toBe('interrupted');
     expect(await second.run()).toMatchObject({ converted: 1 });
     expect(() => startRevert(ctx(), 'inconnu')).toThrow(/introuvable/);
+  });
+
+  it('titres des pages d’un espace personnel d’un autre compte jamais montrés', async () => {
+    db.prepare("INSERT INTO users (id, sub, name, role, created_at) VALUES ('ed2', 'local:ed2', 'Ed2', 'editor', 0)").run();
+    db.prepare("INSERT INTO spaces (id, name, kind, owner_id, created_at, updated_at) VALUES ('perso', 'Perso', 'personal', 'ed2', 0, 0)").run();
+    db.prepare("INSERT INTO pages (id, space_id, title, content, text, created_at, updated_at, created_by) VALUES ('intime', 'perso', 'Mon diagnostic', ?, '', 1, 1, 'ed2')")
+      .run(docOf(img(data('image/svg+xml', SVG))));
+    page('p1', docOf(img(data('image/svg+xml', SVG))));
+    const r = await dryRun(ctx(), 'admin');
+    expect(r.skipped).toEqual([
+      { pageId: 'intime', title: null, hidden: true, reasons: ['svg'] },
+      { pageId: 'p1', title: 'Titre p1', hidden: false, reasons: ['svg'] },
+    ]);
+    expect((await dryRun(ctx(), 'ed2')).skipped[0]).toMatchObject({ title: 'Mon diagnostic', hidden: false });
+    expect((await dryRun(ctx(), null)).skipped[0]).toMatchObject({ title: null, hidden: true }); // commande en ligne
+    const run = startConversion(ctx());
+    await run.run();
+    expect(runDetail(db, run.id, 'admin').pages.find((p) => p.pageId === 'intime')).toMatchObject({ title: null, hidden: true });
+    expect(runDetail(db, run.id, 'ed2').pages.find((p) => p.pageId === 'intime')).toMatchObject({ title: 'Mon diagnostic' });
+  });
+
+  it('exécution déclarée abandonnée : elle s’arrête et n’écrase pas l’état de celle qui l’a remplacée', async () => {
+    for (let i = 0; i < 4; i++) page(`p${i}`, docOf(img(data('image/png', png()))));
+    let other: string | null = null;
+    const first = startConversion(ctx({
+      batchSize: 1,
+      yieldBetweenBatches: async () => {
+        if (other) return;
+        db.prepare('UPDATE image_migration_runs SET heartbeat_at = 0 WHERE id = ?').run(first.id);
+        other = startConversion(ctx()).id; // la marque interrompue et prend le verrou
+      },
+    }));
+    await expect(first.run()).rejects.toThrow(/abandonnée/);
+    const rows = migrationStatus(db).runs;
+    expect(rows.find((r) => r.id === first.id)).toMatchObject({ status: 'interrupted' });
+    expect(rows.find((r) => r.id === other)).toMatchObject({ status: 'running' });
   });
 
   it('arrêt demandé : interrompue entre deux lots, relançable sans rien refaire', async () => {
@@ -253,6 +289,24 @@ describe('commande en ligne', () => {
     expect(actions).toEqual(['cli.images.migration.start', 'cli.images.migration.end', 'cli.images.migration.revert', 'cli.images.migration.end']);
   });
 
+  it('conversion et retour arrière refusés pendant que le serveur tourne ; estimation et état permis', async () => {
+    page('p1', docOf(img(data('image/png', png()))));
+    const original = content('p1');
+    markServerAlive(db, Date.now());
+    const lines: string[] = [];
+    const opts = { dataDir, limits: migrationLimits({}), log: (l: string) => lines.push(l) };
+    await expect(migrateImages(db, [], opts)).rejects.toThrow(/serveur BeNote est en marche/);
+    await expect(migrateImages(db, ['--revert', 'abc'], opts)).rejects.toThrow(/serveur BeNote est en marche/);
+    expect(content('p1')).toBe(original);
+    expect(await migrateImages(db, ['--dry-run'], opts)).toBe(0);
+    expect(await migrateImages(db, ['--status'], opts)).toBe(0);
+    // Signe de vie ancien (arrêt brutal) : la commande reprend la main.
+    db.prepare('UPDATE server_presence SET seen_at = ?').run(Date.now() - 2 * 60_000);
+    expect(serverRunning(db)).toBe(false);
+    await migrateImages(db, [], opts);
+    expect(content('p1')).not.toBe(original);
+  });
+
   it('plafonds lus dans l’environnement, avec les mêmes valeurs par défaut que le serveur', () => {
     expect(migrationLimits({})).toEqual({ fileBytes: 25 * MB, totalBytes: 5120 * MB, userBytes: 1024 * MB });
     expect(migrationLimits({ ATTACHMENT_MAX_MB: '3' }).fileBytes).toBe(3 * MB);
@@ -270,7 +324,7 @@ describe('migration v22', () => {
     up.close();
     // Retour arrière documenté : les trois tables se suppriment sans rien laisser.
     const raw = new Database(file);
-    raw.exec('DROP TABLE image_migration_items; DROP TABLE image_migration_pages; DROP TABLE image_migration_runs;');
+    raw.exec('DROP TABLE image_migration_items; DROP TABLE image_migration_pages; DROP TABLE image_migration_runs; DROP TABLE server_presence;');
     expect(raw.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'image_migration%'").get()).toEqual({ n: 0 });
     raw.close();
   });
@@ -366,6 +420,10 @@ describe('routes d’administration', () => {
     const env = { NODE_ENV: 'test', PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), AUTH_LOCAL: 'true', SEED_DEMO: 'false', DATA_DIR: dataDir };
     app = await buildApp({ config: loadConfig(env), db, clientDir: '/nonexistent' });
     expect(db.prepare("SELECT status FROM image_migration_runs WHERE id = 'old'").get()).toEqual({ status: 'interrupted' });
+    expect(serverRunning(db)).toBe(true);
+    await app.close();
+    expect(serverRunning(db)).toBe(false);
+    app = await buildApp({ config: loadConfig(env), db, clientDir: '/nonexistent' });
     expect(existsSync(attachmentsDir(dataDir))).toBe(false);
   });
 });
