@@ -35,7 +35,9 @@ export interface ImportSummary {
   pages: number; bases: number; tables: number; folders: number; attachments: number; skipped: number;
   links: { resolved: number; unresolved: number };
 }
-export interface ImportReport { summary: ImportSummary; items: ReportItem[] }
+export interface ImportReport { summary: ImportSummary; items: ReportItem[]; /** Lignes du rapport non listées (au-delà de REPORT_MAX_ITEMS). */ truncated?: number }
+const REPORT_MAX_ITEMS = 5000;
+const TEXT_TOTAL_BYTES = 50_000_000;
 
 export interface NotionImportInput {
   zip: ZipArchive;
@@ -154,10 +156,13 @@ export function importNotion(db: DB, input: NotionImportInput): ImportReport {
   // Parents avant enfants ; au-delà du plafond de pages, les plus profondes sont écartées.
   candidates.sort((a, b) => a.path.split('/').length - b.path.split('/').length || a.path.localeCompare(b.path));
   const nodes: Node[] = [];
+  let textBytes = 0;
   for (const c of candidates) {
     const size = sizes.get(c.path)!;
     if (nodes.length >= IMPORT_LIMITS.files) { skip(c.path, c.kind, `trop de pages (${IMPORT_LIMITS.files} au plus par import)`); continue; }
     if (size > IMPORT_LIMITS.fileBytes) { skip(c.path, c.kind, `plus de ${IMPORT_LIMITS.fileBytes / 1_000_000} Mo : découpez la page`); continue; }
+    if (textBytes + size > TEXT_TOTAL_BYTES) { skip(c.path, c.kind, `plus de ${TEXT_TOTAL_BYTES / 1_000_000} Mo de texte au total : importez en plusieurs fois`); continue; }
+    textBytes += size;
     const { stem, id } = notionName(c.path);
     const text = noBom(zip.read(c.path).toString('utf8'));
     const item: ReportItem = { path: c.path.slice(0, 300), status: 'imported', kind: c.kind };
@@ -330,7 +335,8 @@ export function importNotion(db: DB, input: NotionImportInput): ImportReport {
         skipped: items.filter((i) => i.status === 'skipped').length,
         links: stats.links,
       },
-      items,
+      items: items.slice(0, REPORT_MAX_ITEMS),
+      ...(items.length > REPORT_MAX_ITEMS ? { truncated: items.length - REPORT_MAX_ITEMS } : {}),
     };
     if (input.dryRun) throw new DryRun(report);
     return report;
@@ -398,7 +404,7 @@ function fillBase(db: DB, n: Node, children: Node[], auth: Auth | null, spaceId:
 // Repli : la base devient une page contenant un tableau (lignes au-delà de TABLE_MAX_ROWS non reprises, signalé).
 function fillTable(db: DB, n: Node, userId: string | null) {
   const [header = [], ...data] = n.rows!;
-  const width = Math.min(Math.max(header.length, ...data.map((r) => r.length), 1), 60);
+  const width = Math.min(data.reduce((m, r) => Math.max(m, r.length), Math.max(header.length, 1)), 60);
   const cell = (type: string, v: string): DocNode => ({ type, content: [v ? { type: 'paragraph', content: [{ type: 'text', text: v.slice(0, MAX_TEXT) }] } : { type: 'paragraph' }] });
   const row = (r: string[], type: string): DocNode => ({ type: 'tableRow', content: Array.from({ length: width }, (_, i) => cell(type, (r[i] ?? '').trim())) });
   const notes = [...(n.item.notes ?? []), n.asTable!];

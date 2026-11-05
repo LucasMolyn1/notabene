@@ -253,6 +253,7 @@ export class AttachmentCloner {
   private copy(row: AttachmentRef, pageId: string | null, templateId: string | null): string | null {
     const refuse = (message: string) => { if (this.opts.soft) return null; throw new HttpError(413, message); };
     if (this.bytes + row.size > this.limits.operationBytes) return refuse(`Trop de pièces jointes à copier en une fois (${Math.round(this.limits.operationBytes / 1024 / 1024)} Mo au plus)`);
+    // Les lignes déjà insérées par cet import (même transaction) sont comptées par usedBytes : rien à ajouter.
     if (usedBytes(this.db) + reservations(this.db).total + row.size > this.limits.totalBytes) return refuse('Espace de stockage des pièces jointes plein');
     if (this.userId && userBytes(this.db, this.userId) + (reservations(this.db).byUser.get(this.userId)?.bytes ?? 0) + row.size > this.limits.userBytes) {
       return refuse('Quota personnel de pièces jointes atteint');
@@ -307,14 +308,13 @@ export class AttachmentWriter {
     const mb = (n: number) => Math.round(n / 1024 / 1024);
     if (data.length === 0) throw new HttpError(400, 'Fichier vide');
     if (data.length > this.limits.fileBytes) throw new HttpError(413, `Fichier trop lourd (${mb(this.limits.fileBytes)} Mo au plus)`);
-    if (usedBytes(this.db) + reservations(this.db).total + this.bytes + data.length > this.limits.totalBytes) throw new HttpError(413, 'Espace de stockage des pièces jointes plein');
-    if (this.userId && userBytes(this.db, this.userId) + (reservations(this.db).byUser.get(this.userId)?.bytes ?? 0) + this.bytes + data.length > this.limits.userBytes) {
+    if (usedBytes(this.db) + reservations(this.db).total + data.length > this.limits.totalBytes) throw new HttpError(413, 'Espace de stockage des pièces jointes plein');
+    if (this.userId && userBytes(this.db, this.userId) + (reservations(this.db).byUser.get(this.userId)?.bytes ?? 0) + data.length > this.limits.userBytes) {
       throw new HttpError(413, `Quota personnel de pièces jointes atteint (${mb(this.limits.userBytes)} Mo)`);
     }
     const id = newAttachmentId();
     const name = sanitizeFilename(rawName);
     const mime = sniffMime(data.subarray(0, SNIFF_BYTES));
-    this.bytes += data.length;
     if (!this.dryRun) {
       mkdirSync(this.dir, { recursive: true, mode: 0o700 });
       const tmp = join(this.dir, tempName());

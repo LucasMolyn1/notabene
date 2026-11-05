@@ -132,6 +132,7 @@ export class ZipArchive {
     if (this.entries > this.limits.maxEntries) throw new ZipError(413, `Archive refusée : plus de ${this.limits.maxEntries} fichiers`);
 
     let p = cdOffset;
+    const ranges: [number, number][] = [];
     for (let n = 0; n < count; n++) {
       if (p + 46 > cdOffset + cdSize || buf.readUInt32LE(p) !== CEN) bad('répertoire central incohérent');
       const madeBy = buf.readUInt16LE(p + 4);
@@ -173,6 +174,7 @@ export class ZipArchive {
       if (local + 30 > buf.length || buf.readUInt32LE(local) !== LOC) bad(`en-tête local introuvable pour « ${shown} »`);
       const dataStart = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
       if (dataStart + compressed > buf.length) bad(`données hors de l’archive pour « ${shown} »`);
+      ranges.push([dataStart, dataStart + compressed]);
       const entry: Raw = { path: name, size, nested, method, crc, compressed, dataStart, src: buf };
 
       // Archive imbriquée (Notion découpe un gros export en « …-Part-1.zip ») : un seul niveau, à la racine, mêmes plafonds.
@@ -185,5 +187,8 @@ export class ZipArchive {
       this.raw.set(name, entry);
       this.items.push({ path: name, size, nested });
     }
+    // Deux entrées dont les données se chevauchent : technique de bombe (un même bloc compté plusieurs fois).
+    ranges.sort((a, b) => a[0] - b[0]);
+    for (let k = 1; k < ranges.length; k++) if (ranges[k]![0] < ranges[k - 1]![1]) bad('entrées qui se chevauchent');
   }
 }
