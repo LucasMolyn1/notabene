@@ -4,6 +4,14 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## Non publié
+
+### Ajouté
+- **Recherche dans les pièces jointes** : la recherche (palette de commandes, `GET /api/v3/search`) trouve aussi les mots contenus dans les PDF, documents Word (.docx) et fichiers texte joints aux pages, et le nom des fichiers. Le texte est extrait en tâche de fond, une pièce jointe à la fois, avec le même processus isolé que l'import de documents ; un fichier illisible, protégé ou trop gros est simplement ignoré. Index distinct (`attachments_fts`). Un résultat n'est montré qu'aux personnes qui lisent la page porteuse (droits d'espace et de page, corbeille exclue) ; le texte extrait n'est jamais renvoyé, seulement un extrait balisé et le nom du fichier. Les pièces jointes déjà présentes sont rattrapées au premier démarrage. `ATTACHMENT_INDEX=false` désactive l'extraction. Migration v25. Voir `docs/RGPD.md` (texte dérivé gardé en base).
+
+### Attention à la mise à jour
+- Migration v25 (automatique) : nouvelles tables du texte des pièces jointes ; l'extraction des fichiers existants se fait ensuite en tâche de fond. Elle ne se défait pas : en cas de retour arrière, restaurez la sauvegarde prise avant la mise à jour.
+
 ## [3.11.1] - 2026-11-05
 
 La 3.11.0 n'a pas été publiée (son tag avait été posé sur un commit antérieur au changement de version) : cette version en reprend tout le contenu.

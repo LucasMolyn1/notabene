@@ -602,6 +602,54 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE import_reports_new RENAME TO import_reports;
   CREATE INDEX import_reports_user ON import_reports(user_id, created_at);
   `,
+  // 25 : texte des pièces jointes pour la recherche. Une ligne par pièce jointe de page (PDF, document Word, texte) : état de
+  // l'extraction (`pending` à traiter, `done`, `none` rien d'exploitable, `failed` après deux essais), nom copié et texte extrait.
+  // Le texte est dérivé du fichier, il n'est jamais servi tel quel : seule la recherche le lit, et un résultat n'est montré que si
+  // la page porteuse est lisible. Supprimé avec la pièce jointe (ON DELETE CASCADE). `attachments_fts` : index à contenu externe,
+  // tenu à jour par les déclencheurs. Retour arrière : DROP TABLE attachments_fts; DROP TABLE attachment_text; et les déclencheurs
+  // attachment_text_enqueue et attachment_text_* (le reste est inchangé).
+  `
+  CREATE TABLE attachment_text (
+    seq           INTEGER PRIMARY KEY AUTOINCREMENT,
+    attachment_id TEXT NOT NULL UNIQUE REFERENCES attachments(id) ON DELETE CASCADE,
+    status        TEXT NOT NULL CHECK (status IN ('pending', 'done', 'none', 'failed')),
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    name          TEXT NOT NULL,
+    text          TEXT NOT NULL DEFAULT '',
+    updated_at    INTEGER NOT NULL
+  );
+  CREATE INDEX attachment_text_pending ON attachment_text(seq) WHERE status = 'pending';
+  CREATE VIRTUAL TABLE attachments_fts USING fts5(
+    name, text, content='attachment_text', content_rowid='seq', tokenize='unicode61 remove_diacritics 2'
+  );
+  CREATE TRIGGER attachment_text_ai AFTER INSERT ON attachment_text BEGIN
+    INSERT INTO attachments_fts(rowid, name, text) VALUES (new.seq, new.name, new.text);
+  END;
+  CREATE TRIGGER attachment_text_ad AFTER DELETE ON attachment_text BEGIN
+    INSERT INTO attachments_fts(attachments_fts, rowid, name, text) VALUES ('delete', old.seq, old.name, old.text);
+  END;
+  CREATE TRIGGER attachment_text_au AFTER UPDATE OF name, text ON attachment_text BEGIN
+    INSERT INTO attachments_fts(attachments_fts, rowid, name, text) VALUES ('delete', old.seq, old.name, old.text);
+    INSERT INTO attachments_fts(rowid, name, text) VALUES (new.seq, new.name, new.text);
+  END;
+  CREATE TRIGGER attachment_text_enqueue AFTER INSERT ON attachments
+    WHEN new.page_id IS NOT NULL AND (new.mime = 'application/pdf'
+      OR (new.mime = 'application/zip' AND lower(new.name) LIKE '%.docx')
+      OR (new.mime = 'application/octet-stream' AND (lower(new.name) LIKE '%.txt' OR lower(new.name) LIKE '%.md' OR lower(new.name) LIKE '%.markdown'
+        OR lower(new.name) LIKE '%.csv' OR lower(new.name) LIKE '%.tsv' OR lower(new.name) LIKE '%.log' OR lower(new.name) LIKE '%.json'
+        OR lower(new.name) LIKE '%.xml' OR lower(new.name) LIKE '%.yaml' OR lower(new.name) LIKE '%.yml' OR lower(new.name) LIKE '%.html'
+        OR lower(new.name) LIKE '%.htm' OR lower(new.name) LIKE '%.ini' OR lower(new.name) LIKE '%.conf'))) BEGIN
+    INSERT OR IGNORE INTO attachment_text (attachment_id, status, name, updated_at) VALUES (new.id, 'pending', new.name, new.created_at);
+  END;
+  INSERT OR IGNORE INTO attachment_text (attachment_id, status, name, updated_at)
+    SELECT id, 'pending', name, created_at FROM attachments new
+    WHERE page_id IS NOT NULL AND (new.mime = 'application/pdf'
+      OR (new.mime = 'application/zip' AND lower(new.name) LIKE '%.docx')
+      OR (new.mime = 'application/octet-stream' AND (lower(new.name) LIKE '%.txt' OR lower(new.name) LIKE '%.md' OR lower(new.name) LIKE '%.markdown'
+        OR lower(new.name) LIKE '%.csv' OR lower(new.name) LIKE '%.tsv' OR lower(new.name) LIKE '%.log' OR lower(new.name) LIKE '%.json'
+        OR lower(new.name) LIKE '%.xml' OR lower(new.name) LIKE '%.yaml' OR lower(new.name) LIKE '%.yml' OR lower(new.name) LIKE '%.html'
+        OR lower(new.name) LIKE '%.htm' OR lower(new.name) LIKE '%.ini' OR lower(new.name) LIKE '%.conf'))) ORDER BY rowid;
+  `,
 ];
 
 export function openDb(file: string): DB {

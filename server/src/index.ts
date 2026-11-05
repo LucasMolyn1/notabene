@@ -5,6 +5,7 @@ import { loadConfig } from './config.js';
 import { cleanup, openDb } from './db.js';
 import { seedDemo } from './seed.js';
 import { attachmentsDir, drainAttachmentGc, quarantineDir, sweepAttachments, sweepUnreferenced } from './lib/attachments.js';
+import { indexAll } from './lib/attachment-text.js';
 
 let config;
 try {
@@ -44,6 +45,22 @@ setInterval(() => {
   try { sweepUnreferenced(db); } catch (err) { console.warn(`Pièces jointes non citées : ${(err as Error).message}`); }
   void drainAttachmentGc(db, filesDir).catch(() => {});
 }, 3_600_000).unref();
+
+// Texte des pièces jointes pour la recherche : extrait en tâche de fond, une pièce jointe à la fois (désactivable : ATTACHMENT_INDEX=false).
+if (config.ATTACHMENT_INDEX) {
+  const limits = {
+    maxBytes: config.DOC_IMPORT_MAX_MB * 1024 * 1024, timeoutMs: config.DOC_IMPORT_TIMEOUT_SECONDS * 1000, maxPages: config.DOC_IMPORT_MAX_PAGES,
+    zipEntries: config.IMPORT_ZIP_MAX_ENTRIES, zipUncompressedBytes: config.IMPORT_ZIP_UNCOMPRESSED_MB * 1024 * 1024, zipRatio: config.IMPORT_ZIP_MAX_RATIO,
+  };
+  let busy = false;
+  const tick = () => {
+    if (busy) return;
+    busy = true;
+    void indexAll(db, filesDir, limits).catch(() => {}).finally(() => { busy = false; });
+  };
+  setInterval(tick, 10_000).unref();
+  setTimeout(tick, 5_000).unref();
+}
 
 const app = await buildApp({
   config,
