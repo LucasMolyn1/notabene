@@ -186,3 +186,14 @@ test('import d’un document Word : simulation puis import, page créée avec le
   await dialog.getByRole('button', { name: 'Simuler' }).click();
   await expect(dialog.getByRole('alert')).toContainText('.docx et .pdf');
 });
+
+test('paramètres, Import : les imports Notion et document s’ouvrent pour l’espace choisi', async ({ page }) => {
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto('/settings/import');
+  await expect(page.getByRole('heading', { name: 'Importer depuis Notion ou un document' })).toBeVisible();
+  await page.getByRole('button', { name: 'Importer un document (Word, PDF)' }).click();
+  await expect(page.getByRole('dialog', { name: /Importer un document/ })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Importer un export Notion' }).click();
+  await expect(page.getByRole('dialog', { name: /Importer depuis Notion/ })).toBeVisible();
+});

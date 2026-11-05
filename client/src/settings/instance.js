@@ -6,6 +6,7 @@ import { store } from '../store.js';
 import { session } from '../session.js';
 import { toast } from '../ui.js';
 import * as A from '../actions.js';
+import { openDocumentImport, openNotionImport } from '../notion-import.js';
 import { REPO_URL } from './account.js';
 import { card, copyable, kv, loadingEl, pill, status } from './ui.js';
 
@@ -89,7 +90,20 @@ export function renderImport(el) {
     }
   });
 
+  // Import Notion et documents : la fenêtre s'ouvre pour l'espace choisi (même fenêtre que le menu de l'espace, dans la barre latérale).
+  const writable = store.spaces.filter((sp) => store.canWriteIn(sp.id));
+  const destSel = h('select', { class: 'input', id: 'imp-dest' }, writable.map((sp) => h('option', { value: sp.id }, sp.name)));
+  const dest = () => destSel.value;
+  const importCards = writable.length === 0
+    ? card('Importer depuis Notion ou un document', null, h('p', { class: 'muted' }, 'Aucun espace où vous pouvez écrire.'))
+    : card('Importer depuis Notion ou un document', 'Un export Notion (ZIP « Markdown & CSV ») ou un fichier Word (.docx) ou PDF devient des pages de l’espace choisi. Chaque import commence par une simulation qui n’écrit rien. Ces mêmes imports sont aussi proposés, à toute personne qui peut écrire, dans le menu de l’espace (clic sur le nom de l’espace, en haut de la barre latérale).', h('div', { class: 'stack' },
+      h('label', { class: 'field' }, h('span', null, 'Espace de destination'), destSel),
+      h('div', { class: 'row wrap' },
+        h('button', { class: 'btn btn-primary btn-sm', type: 'button', onClick: () => openNotionImport(dest()) }, icon('upload', 14), 'Importer un export Notion'),
+        h('button', { class: 'btn btn-primary btn-sm', type: 'button', onClick: () => openDocumentImport(dest()) }, icon('upload', 14), 'Importer un document (Word, PDF)'))));
+
   el.replaceChildren(
+    importCards,
     card('Importer du Markdown', 'Pour migrer depuis Wiki.js : activez le stockage « Local File System » ou « Git » (Administration > Stockage), lancez une synchronisation, puis sélectionnez ici le dossier obtenu. La hiérarchie, les titres (en-tête YAML), les tableaux, listes, blocs de code, diagrammes Mermaid / PlantUML, encadrés et liens internes sont conservés.', h('div', { class: 'stack' },
       h('label', { class: 'field' }, h('span', null, 'Espace de destination'), spaceSel), newName,
       h('label', { class: 'field' }, h('span', null, 'Dossier (ses sous-dossiers sont lus)'), folder),

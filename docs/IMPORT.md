@@ -1,11 +1,17 @@
 # Importer des pages
 
-BeNote importe deux formats :
+BeNote importe trois formats :
 
 - **Notion** : archive ZIP exportée depuis Notion au format « Markdown & CSV ». Toute personne qui peut modifier un espace peut y importer.
+- **Word et PDF** : un fichier `.docx` ou `.pdf` devient une page (voir plus bas).
 - **Markdown** (export Wiki.js, dossier de notes) : réservé aux administrateurs, route `POST /api/v3/admin/import/markdown`.
 
 Confluence n'est pas pris en charge : aucun export réel n'a servi à le tester.
+
+## Où trouver les imports
+
+- **Menu de l'espace** : dans la barre latérale, cliquez sur le nom de l'espace (en haut) : « Importer depuis Notion » et « Importer un document (Word, PDF) ». Proposés à toute personne qui peut écrire dans l'espace.
+- **Paramètres, Administration, Import** (administrateurs) : les mêmes imports avec choix de l'espace, et l'import Markdown de Wiki.js (dossier ou fichiers `.md`).
 
 ## Notion
 
