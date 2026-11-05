@@ -4,7 +4,9 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
-## [3.11.0] - 2026-11-05
+## [3.11.1] - 2026-11-05
+
+La 3.11.0 n'a pas été publiée (son tag avait été posé sur un commit antérieur au changement de version) : cette version en reprend tout le contenu.
 
 ### Ajouté
 - **Pièces jointes** : un fichier quelconque se joint à une page (un seul par envoi). Il est rangé sur le disque sous un identifiant aléatoire (`DATA_DIR/attachments`), son type est reconnu sur ses octets (jamais d'après le nom ni le type annoncé), son nom d'origine est assaini. Seules les images raster s'affichent dans le navigateur ; tout le reste est proposé au téléchargement, sans exécution possible (`nosniff`, CSP `sandbox`). Le droit de lecture de la page est revérifié à chaque téléchargement ; un lien de partage public couvre les pièces jointes des pages qu'il partage. Requêtes partielles (`Range`, réponses 206 et 416) pour la lecture vidéo et audio. Plafonds réglables : `ATTACHMENT_MAX_MB` (25), `ATTACHMENTS_TOTAL_MB` (5120), `ATTACHMENT_USER_MB` (1024), `ATTACHMENT_UPLOAD_IDLE_SECONDS` (30). Fichiers effacés du disque avec la pièce jointe, la page ou l'espace. Migration v19. Nouvelles routes `/api/v3/pages/:id/attachments`, `/api/v3/attachments/:id`, `/api/v3/public/shares/:token/attachments/:id`.
