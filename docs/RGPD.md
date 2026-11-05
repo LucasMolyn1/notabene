@@ -12,6 +12,7 @@ Ce document aide la personne ou l'organisation qui **déploie** BeNote à respec
 | Texte des pièces jointes (recherche) | texte extrait des PDF, documents Word (.docx) et fichiers texte joints, pour la recherche ; copie dérivée du fichier, jamais servie telle quelle (seuls les extraits d'une recherche sont montrés, aux personnes qui lisent la page) | base de données (tables `attachment_text` et `attachments_fts`), effacé avec la pièce jointe ; désactivable par `ATTACHMENT_INDEX=false` |
 | Photo de profil (facultative) | une image réduite à 256 px, envoyée par la personne elle-même ; visible des personnes connectées ; métadonnées retirées par le navigateur ; supprimée avec le compte, ou par la personne, ou par un administrateur | base SQLite |
 | Rapports d'import (Notion) | chemins des fichiers de l'archive importée, titres, motifs d'écart, auteur, espace, date ; lisibles de leur seul auteur ; l'archive elle-même n'est pas conservée | base SQLite |
+| Conversations du chat IA | titre (début du premier message), messages de la personne et réponses de l'assistant, pages citées en source, page d'origine, dates ; lisibles de leur seule propriétaire (ni les autres comptes ni les administrateurs ne les lisent dans l'interface ou l'API) | base SQLite (tables `ai_conversations` et `ai_messages`) |
 | Sessions et jetons | hash de l'identifiant de session, hash des jetons d'API, dates | base SQLite |
 | Journal d'audit | action, date, identifiant de l'utilisateur, **adresse IP** | base SQLite |
 | Notifications | type, page concernée, auteur, état de lecture ; l'e-mail ne contient que le titre, le nom et un lien | base SQLite, serveur SMTP |
@@ -32,6 +33,7 @@ Des purges automatiques tournent toutes les heures. Les valeurs sont en jours, `
 | Entrées du journal d'audit | `AUDIT_RETENTION_DAYS` | 365 |
 | Sessions, jetons de connexion et de réinitialisation expirés | non réglable | à l'expiration |
 | Rapports d'import (les 20 derniers par personne, supprimés avec le compte ou l'espace) | non réglable | 20 rapports |
+| Conversations du chat IA sans activité (avec leurs messages ; 100 conversations au plus par personne, la plus ancienne supprimée au-delà) | `AI_CHAT_RETENTION_DAYS` (1 à 3650, pas de désactivation) | 90 |
 
 Adaptez ces durées à votre finalité et documentez-les dans votre registre des traitements.
 
@@ -39,15 +41,15 @@ Adaptez ces durées à votre finalité et documentez-les dans votre registre des
 
 | Droit | Comment l'exercer |
 |---|---|
-| Accès et portabilité | La personne télécharge ses données dans **Paramètres, Profil et sessions, Télécharger mes données** (JSON, sans aucun secret). Un administrateur peut produire la même copie depuis **Utilisateurs, Données**. Les pièces jointes qu'elle a envoyées y sont listées ; l'archive ZIP (`/api/v3/me/export/archive`, ou `/api/v3/admin/users/<id>/export/archive` pour un administrateur) contient en plus leurs fichiers, sous `pieces-jointes/` (les fichiers déjà compressés y sont stockés tels quels ; 4 Go au plus par archive). Comme pour les pages, seules celles de pages qu'elle peut encore lire sont détaillées (le nombre total figure dans `contributions.attachmentsUploaded`). |
-| Effacement | Un administrateur utilise **Utilisateurs, Supprimer** (mot de passe demandé). Voir « Effacement » ci-dessous. |
+| Accès et portabilité | La personne télécharge ses données dans **Paramètres, Profil et sessions, Télécharger mes données** (JSON, sans aucun secret). Un administrateur peut produire la même copie depuis **Utilisateurs, Données**. Les pièces jointes qu'elle a envoyées y sont listées ; l'archive ZIP (`/api/v3/me/export/archive`, ou `/api/v3/admin/users/<id>/export/archive` pour un administrateur) contient en plus leurs fichiers, sous `pieces-jointes/` (les fichiers déjà compressés y sont stockés tels quels ; 4 Go au plus par archive). Comme pour les pages, seules celles de pages qu'elle peut encore lire sont détaillées (le nombre total figure dans `contributions.attachmentsUploaded`). Les conversations du chat IA figurent sous `aiConversations` (titre, dates, messages ; sources limitées aux pages encore lisibles). Dans la copie produite par un administrateur, elles sont réduites à leurs dates et à leur nombre de messages, car les messages peuvent reprendre des pages qu'il ne lit pas : la personne obtient le contenu par son propre export. |
+| Effacement | Un administrateur utilise **Utilisateurs, Supprimer** (mot de passe demandé). Voir « Effacement » ci-dessous. La personne supprime elle-même ses conversations du chat IA, une par une ou toutes à la fois (`DELETE /api/v3/ai/conversations`). |
 | Rectification | Compte fédéré : à modifier chez le fournisseur d'identité, la correction est reprise à la connexion suivante. Compte local : nom et e-mail modifiables par un administrateur. |
 | Limitation | **Utilisateurs, Désactiver** : le compte ne peut plus se connecter mais ses données restent. |
 | Opposition | Les notifications par e-mail se règlent dans **Profil**. |
 
 ### Effacement
 
-La suppression est une **anonymisation** : le compte et ce qui lui est propre disparaissent (sessions, jetons, favoris, suivis, notifications, permissions, préférences). Les pages, versions, commentaires, libellés et modèles restent, **sans nom d'auteur**, pour que le wiki reste cohérent. Les adresses IP et la cible des entrées du journal qui le concernent sont effacées. L'effacement lui-même est journalisé, sans l'identité de la personne.
+La suppression est une **anonymisation** : le compte et ce qui lui est propre disparaissent (sessions, jetons, favoris, suivis, notifications, permissions, préférences, conversations du chat IA). Les pages, versions, commentaires, libellés et modèles restent, **sans nom d'auteur**, pour que le wiki reste cohérent. Les adresses IP et la cible des entrées du journal qui le concernent sont effacées. L'effacement lui-même est journalisé, sans l'identité de la personne.
 
 - **Pièces jointes** : les fichiers envoyés par la personne **restent rattachés à leur page**, comme le texte qu'elle a écrit, et l'envoyeur est retiré (affiché sans nom). Ils ne comptent plus dans aucun quota personnel. Le nom d'origine du fichier et son contenu sont conservés : si la demande porte sur un fichier précis (une photo, un document personnel), un rédacteur de la page ou un administrateur le supprime à part ; le fichier est alors effacé du disque.
 - **Mentions** : une mention dans une page ne conserve que l'identifiant de la personne, jamais son nom, et une mention dans un commentaire est supprimée avec le compte. Le texte d'un commentaire est en revanche un texte libre : si quelqu'un y a tapé le nom de la personne, ce texte reste (comme tout texte écrit par un tiers) ; un administrateur peut supprimer le commentaire.
@@ -60,7 +62,7 @@ La suppression est une **anonymisation** : le compte et ce qui lui est propre di
 
 - **Fournisseur d'identité** (Authentik, annuaire LDAP, SAML) : il fournit nom, e-mail et groupes.
 - **Serveur SMTP** : reçoit l'adresse du destinataire et le titre de la page.
-- **Fournisseur d'IA** (recherche IA) : reçoit la question et des **extraits des pages lisibles par la personne**. Avec un service externe (Anthropic, OpenAI, Mistral…), c'est un sous-traitant : contrat de sous-traitance et, hors UE, garanties de transfert. Un modèle local (`AI_ALLOW_PRIVATE=true`, Ollama) garde tout chez vous.
+- **Fournisseur d'IA** (recherche IA, assistant de rédaction, chat), choisi par l'administrateur : reçoit la question et des **extraits des pages lisibles par la personne** ; pour le chat, aussi le **texte de la page ouverte** (8000 caractères au plus) et les **derniers messages de la conversation** (12 messages, 24 000 caractères au plus), à chaque envoi. BeNote ne maîtrise pas la conservation chez le fournisseur : reportez-vous à son contrat. Avec un service externe (Anthropic, OpenAI, Mistral…), c'est un sous-traitant : contrat de sous-traitance et, hors UE, garanties de transfert. Un modèle local (`AI_ALLOW_PRIVATE=true`, Ollama) garde tout chez vous.
 - **Webhooks** : reçoivent des identifiants de pages et d'utilisateurs, jamais le contenu.
 - **Draw.io** (si activé) : à héberger vous-même, comme dans le `docker-compose.yml`.
 
@@ -77,6 +79,8 @@ Les mesures techniques sont décrites dans [SECURITY.md](../SECURITY.md). En cas
 - [ ] Inscrire BeNote au registre des traitements.
 - [ ] Choisir les durées de conservation et les noter dans le registre.
 - [ ] Informer les utilisateurs (mention ci-dessus).
-- [ ] Si la recherche IA utilise un service externe : contrat de sous-traitance et transferts.
+- [ ] Si la recherche IA utilise un service externe : contrat de sous-traitance et transferts (le chat lui envoie aussi l'historique de la conversation).
+- [ ] Choisir la conservation des conversations du chat IA (`AI_CHAT_RETENTION_DAYS`).
+- [ ] Savoir qu'une conversation du chat IA reste lisible par son auteur, et son historique est renvoyé au fournisseur d'IA à chaque message, même si l'auteur a perdu depuis le droit de lire une page qu'elle citait : ce sont ses propres données, mais la réponse peut reprendre un contenu qu'il ne lit plus. Les pages citées en source, elles, ne s'affichent plus (relues avec les droits actuels). La personne peut supprimer la conversation à tout moment.
 - [ ] Documenter la durée de rotation des sauvegardes (`BACKUP_KEEP`) et chiffrer les sauvegardes (`BACKUP_AGE_RECIPIENT`).
 - [ ] Définir qui traite les demandes d'accès et d'effacement, et sous quel délai (un mois).

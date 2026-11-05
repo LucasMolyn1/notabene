@@ -93,6 +93,8 @@ const schema = z
     NOTIFICATION_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(90),
     AUDIT_IP_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(90),
     AUDIT_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(365),
+    // Conversations du chat IA sans activité depuis ce nombre de jours : supprimées (pas de désactivation possible).
+    AI_CHAT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
     SESSION_IDLE_MINUTES: z.coerce.number().min(5).max(24 * 60).default(120),
     // Documentation interactive de l'API : auth (connectés seulement, défaut), public, off.
     API_DOCS: z.enum(['auth', 'public', 'off']).default('auth'),

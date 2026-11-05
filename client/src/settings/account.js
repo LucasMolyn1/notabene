@@ -81,7 +81,7 @@ export function renderAppearance(el) {
     card('Lecture et navigation', null,
       session.can('write') && toggle('Ouvrir les pages en mode lecture', 'Évite les modifications accidentelles ; le bouton « Éditer » reste disponible sur chaque page.', prefs.readOnly, (v) => { prefs.readOnly = v; savePrefs(); }),
       toggle('Barre latérale repliée', `Raccourci : ${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} \\`, !prefs.sidebar, (v) => { prefs.sidebar = !v; savePrefs(); document.body.classList.toggle('sb-collapsed', v); })),
-    card('Raccourcis clavier', null, kv([['⌘K / Ctrl K', 'Rechercher, puis Tab pour demander à l’IA'], ['⌥N / Alt N', 'Nouvelle page'], ['⌘\\ / Ctrl \\', 'Afficher ou masquer la barre latérale'], ['/', 'Menu d’insertion dans l’éditeur']])));
+    card('Raccourcis clavier', null, kv([['⌘K / Ctrl K', 'Rechercher, puis Tab pour demander à l’IA'], ['⌥N / Alt N', 'Nouvelle page'], ...(session.can('ai') ? [['⌥I / Alt I', 'Ouvrir ou fermer l’assistant']] : []), ['⌘\\ / Ctrl \\', 'Afficher ou masquer la barre latérale'], ['/', 'Menu d’insertion dans l’éditeur']])));
 }
 
 const SCOPE_LABELS = {

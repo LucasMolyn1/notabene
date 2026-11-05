@@ -650,6 +650,33 @@ export const MIGRATIONS: string[] = [
         OR lower(new.name) LIKE '%.xml' OR lower(new.name) LIKE '%.yaml' OR lower(new.name) LIKE '%.yml' OR lower(new.name) LIKE '%.html'
         OR lower(new.name) LIKE '%.htm' OR lower(new.name) LIKE '%.ini' OR lower(new.name) LIKE '%.conf'))) ORDER BY rowid;
   `,
+  // 26 : conversations du chat IA, propres à chaque personne (jamais partagées). Supprimées avec le compte (ON DELETE CASCADE),
+  // à la demande de la personne, ou par la purge de conservation (AI_CHAT_RETENTION_DAYS, d'après `updated_at`). `page_id` :
+  // page depuis laquelle la conversation a été ouverte, remise à NULL si la page est supprimée définitivement. `sources` : JSON
+  // des pages citées par une réponse de l'assistant. Retour arrière : DROP TABLE ai_messages; DROP TABLE ai_conversations;
+  `
+  CREATE TABLE ai_conversations (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title      TEXT NOT NULL,
+    page_id    TEXT REFERENCES pages(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX ai_conversations_user ON ai_conversations(user_id, updated_at);
+  CREATE INDEX ai_conversations_updated ON ai_conversations(updated_at);
+  CREATE INDEX ai_conversations_page ON ai_conversations(page_id) WHERE page_id IS NOT NULL;
+  CREATE TABLE ai_messages (
+    seq             INTEGER PRIMARY KEY AUTOINCREMENT,
+    id              TEXT NOT NULL UNIQUE,
+    conversation_id TEXT NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+    role            TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+    content         TEXT NOT NULL,
+    sources         TEXT,
+    created_at      INTEGER NOT NULL
+  );
+  CREATE INDEX ai_messages_conversation ON ai_messages(conversation_id, seq);
+  `,
 ];
 
 export function openDb(file: string): DB {
@@ -677,8 +704,9 @@ function migrate(db: DB) {
   }
 }
 
-export interface Retention { trashDays: number; notificationDays: number; auditIpDays: number; auditDays: number }
-export const DEFAULT_RETENTION: Retention = { trashDays: 30, notificationDays: 90, auditIpDays: 90, auditDays: 365 };
+// `aiChatDays` : conversations du chat IA sans activité depuis ce nombre de jours (toujours purgées, 90 jours par défaut).
+export interface Retention { trashDays: number; notificationDays: number; auditIpDays: number; auditDays: number; aiChatDays?: number }
+export const DEFAULT_RETENTION: Retention = { trashDays: 30, notificationDays: 90, auditIpDays: 90, auditDays: 365, aiChatDays: 90 };
 
 // Purge périodique : données expirées, puis limitation de la conservation (0 jour = jamais purgé).
 export function cleanup(db: DB, retention: Retention = DEFAULT_RETENTION) {
@@ -690,6 +718,8 @@ export function cleanup(db: DB, retention: Retention = DEFAULT_RETENTION) {
   if (retention.auditDays > 0) db.prepare('DELETE FROM audit_log WHERE at < ?').run(before(retention.auditDays));
   if (retention.auditIpDays > 0) db.prepare('UPDATE audit_log SET ip = NULL WHERE ip IS NOT NULL AND at < ?').run(before(retention.auditIpDays));
   if (retention.notificationDays > 0) db.prepare('DELETE FROM notifications WHERE read_at IS NOT NULL AND read_at < ?').run(before(retention.notificationDays));
+  // Pas de « jamais » pour le chat : au moins un jour (les messages suivent par ON DELETE CASCADE).
+  db.prepare('DELETE FROM ai_conversations WHERE updated_at < ?').run(before(Math.max(1, retention.aiChatDays ?? DEFAULT_RETENTION.aiChatDays!)));
   if (retention.trashDays > 0) {
     // Racines de corbeille seulement : leurs sous-pages suivent (ON DELETE CASCADE).
     const { changes } = db.prepare('DELETE FROM pages WHERE trash_root = id AND deleted_at < ?').run(before(retention.trashDays));

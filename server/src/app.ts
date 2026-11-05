@@ -36,6 +36,7 @@ import { HttpError } from './lib/http.js';
 import { problem, usesProblemFormat } from './lib/problem.js';
 import adminRoutes from './routes/admin.js';
 import aiRoutes from './routes/ai.js';
+import aiChatRoutes from './routes/ai-chat.js';
 import authRoutes from './routes/auth.js';
 import websocket from '@fastify/websocket';
 import collabRoutes from './routes/collab.js';
@@ -286,6 +287,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(templateRoutes);
     await scope.register(tokenRoutes);
     await scope.register(aiRoutes);
+    await scope.register(aiChatRoutes);
     await scope.register(adminRoutes);
     await scope.register(settingsRoutes, { ldapFactory });
     await scope.register(webhookRoutes);

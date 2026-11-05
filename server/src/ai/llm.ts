@@ -15,10 +15,30 @@ export class LlmError extends Error {
   }
 }
 
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface Prompt {
   system: string;
   user: string;
   maxTokens?: number;
+  /** Tours précédents d'une conversation (du plus ancien au plus récent), envoyés avant `user`. */
+  history?: ChatTurn[];
+}
+
+// Messages envoyés au fournisseur : l'historique puis le message courant. La conversation commence toujours par la personne,
+// et deux tours consécutifs du même rôle (réponse précédente perdue) sont fusionnés : certains fournisseurs exigent l'alternance.
+export function promptMessages(prompt: Prompt): ChatTurn[] {
+  const out: ChatTurn[] = [];
+  for (const turn of [...(prompt.history ?? []), { role: 'user' as const, content: prompt.user }]) {
+    if (!out.length && turn.role !== 'user') continue;
+    const last = out[out.length - 1];
+    if (last && last.role === turn.role) last.content += `\n\n${turn.content}`;
+    else out.push({ role: turn.role, content: turn.content });
+  }
+  return out;
 }
 
 // Modèles Claude acceptant le repli serveur automatique en cas de refus.
@@ -39,7 +59,7 @@ async function* streamAnthropic(s: AiSettings, prompt: Prompt, signal: AbortSign
     model: s.model,
     max_tokens: prompt.maxTokens ?? 16_000,
     system: prompt.system,
-    messages: [{ role: 'user' as const, content: prompt.user }],
+    messages: promptMessages(prompt),
     ...(EFFORT_MODELS.test(s.model) ? { output_config: { effort: 'medium' as const } } : {}),
   };
 
@@ -81,7 +101,7 @@ async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: Ab
         model: s.model,
         stream: true,
         max_tokens: prompt.maxTokens ?? 4000,
-        messages: [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }],
+        messages: [{ role: 'system', content: prompt.system }, ...promptMessages(prompt)],
       }),
     }, s.allowPrivate) as unknown as Response;
   } catch {

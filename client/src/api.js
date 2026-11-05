@@ -134,8 +134,11 @@ export function openEvents(onEvent) {
 // Réponse de l'IA diffusée en SSE sur une requête POST (questions, assistant de rédaction).
 export const streamAsk = (question, handlers) => streamSse('/ai/ask', { question }, handlers);
 export const streamAssist = (body, handlers) => streamSse('/ai/assist', body, handlers);
+// Assistant conversationnel : { message, conversationId?, pageId? }.
+export const streamChat = (body, handlers) => streamSse('/ai/chat', body, handlers);
 
-async function streamSse(path, body, { onSources, onDelta, onNotice, onError, onDone, signal }) {
+// onError reçoit le message et le statut HTTP (0 : coupure réseau ou erreur annoncée dans le flux).
+async function streamSse(path, body, { onConversation = undefined, onSources, onDelta, onNotice = undefined, onError, onDone, signal }) {
   let res;
   try {
     res = await fetch(v3(path), {
@@ -146,12 +149,12 @@ async function streamSse(path, body, { onSources, onDelta, onNotice, onError, on
       body: JSON.stringify(body),
     });
   } catch {
-    if (!signal?.aborted) onError?.('Connexion impossible');
+    if (!signal?.aborted) onError?.('Connexion impossible', 0);
     return;
   }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    onError?.(data.detail || data.message || `Erreur ${res.status}`);
+    onError?.(data.detail || data.message || `Erreur ${res.status}`, res.status);
     return;
   }
   const reader = res.body.getReader();
@@ -170,14 +173,15 @@ async function streamSse(path, body, { onSources, onDelta, onNotice, onError, on
         const data = /^data: (.+)$/m.exec(block)?.[1];
         if (!event || !data) continue;
         const payload = JSON.parse(data);
-        if (event === 'sources') onSources?.(payload);
+        if (event === 'conversation') onConversation?.(payload);
+        else if (event === 'sources') onSources?.(payload);
         else if (event === 'delta') onDelta?.(payload.text);
         else if (event === 'notice') onNotice?.(payload.message);
-        else if (event === 'error') onError?.(payload.message);
+        else if (event === 'error') onError?.(payload.message, 0);
         else if (event === 'done') onDone?.();
       }
     }
   } catch {
-    if (!signal?.aborted) onError?.('Flux interrompu');
+    if (!signal?.aborted) onError?.('Flux interrompu', 0);
   }
 }

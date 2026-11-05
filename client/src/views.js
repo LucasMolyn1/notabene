@@ -15,6 +15,7 @@ import { forgotPasswordForm, ldapLoginForm, localLoginForm } from './local-auth.
 import { bellButton, watchButton } from './notifications.js';
 import { bindAnchors, commentsButton, openComments } from './comments.js';
 import { openAssistant } from './assistant.js';
+import { assistantButton } from './ai-chat.js';
 import { rememberMentionNames } from './editor/mention.js';
 import { labelBar } from './labels.js';
 import { api, listAll } from './api.js';
@@ -47,7 +48,7 @@ export function topbar(left, right = []) {
   return h('header', { class: 'topbar' },
     !app.embed && h('button', { class: 'icon-btn sb-open', title: `Barre latérale (${modKey}\\)`, onClick: A.toggleSidebar }, icon('panel')),
     left,
-    h('div', { class: 'topbar-right' }, right, !app.embed && bellButton()));
+    h('div', { class: 'topbar-right' }, right, assistantButton(), !app.embed && bellButton()));
 }
 
 export function crumbsFor(page) {
