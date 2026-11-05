@@ -168,6 +168,9 @@ const schema = z
     IMPORT_ZIP_UNCOMPRESSED_MB: z.coerce.number().int().min(1).max(20_480).default(1024),
     IMPORT_ZIP_MAX_ENTRIES: z.coerce.number().int().min(1).max(100_000).default(10_000),
     IMPORT_ZIP_MAX_RATIO: z.coerce.number().int().min(2).max(10_000).default(100),
+    DOC_IMPORT_MAX_MB: z.coerce.number().int().min(1).max(200).default(30),
+    DOC_IMPORT_TIMEOUT_SECONDS: z.coerce.number().int().min(5).max(300).default(30),
+    DOC_IMPORT_MAX_PAGES: z.coerce.number().int().min(1).max(5000).default(500),
     // Export ZIP d'une page et de ses sous-pages ou d'un espace : nombre de pages et volume total (Mo) au plus.
     EXPORT_MAX_PAGES: z.coerce.number().int().min(1).max(100_000).default(5000),
     EXPORT_MAX_MB: z.coerce.number().int().min(1).max(4000).default(2048),

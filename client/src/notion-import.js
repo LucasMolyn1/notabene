@@ -1,4 +1,4 @@
-// Import d'un export Notion (ZIP « Markdown & CSV ») dans un espace : simulation, puis import, avec rapport fichier par fichier.
+// Import d'un export Notion (ZIP « Markdown & CSV ») ou d'un document Word / PDF dans un espace : simulation, puis import, avec rapport.
 // Tout le texte du rapport (chemins, titres, motifs) vient de l'archive : il est inséré en texte, jamais en HTML.
 import { h, fullDate } from './util.js';
 import { icon } from './icons.js';
@@ -14,15 +14,15 @@ const PAGE_KINDS = new Set(['page', 'base', 'table', 'folder']);
 const MAX_ROWS = 1000;
 
 /** Message d'erreur lisible pour un refus du serveur lors de l'envoi de l'archive. */
-function errorMessage(err) {
+function errorMessage(err, mode) {
   const detail = typeof err?.message === 'string' ? err.message : '';
   switch (err?.status) {
     case 0: return err?.data?.aborted ? 'Envoi annulé.' : 'Connexion interrompue pendant l’envoi. L’archive dépasse peut-être la taille admise par le serveur.';
     case 413: return /body is too large/i.test(detail) || !detail
-      ? 'Archive trop volumineuse pour cette instance (réglage IMPORT_ZIP_MAX_MB).'
-      : `Archive refusée : ${detail}`;
-    case 415: return 'Le fichier choisi n’est pas une archive ZIP.';
-    case 422: return detail || 'Aucune page Notion trouvée dans l’archive (format attendu : « Markdown & CSV »).';
+      ? `${mode.big} trop volumineu${mode.bigF ? 'se' : 'x'} pour cette instance (réglage ${mode.limit}).`
+      : `${mode.big} refus${mode.bigF ? 'ée' : 'é'} : ${detail}`;
+    case 415: return detail || mode.badType;
+    case 422: return detail || mode.empty;
     case 429: return 'Trop d’imports en peu de temps : réessayez dans une heure.';
     case 503: return detail || 'Un import est déjà en cours sur cette instance : réessayez dans quelques minutes.';
     default: return detail || 'Import impossible.';
@@ -125,13 +125,39 @@ function reportEl(report, close) {
       : h('p', { class: 'muted' }, 'Aucun fichier listé dans ce rapport.'));
 }
 
+const DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const MODES = {
+  notion: {
+    endpoint: 'notion', accept: '.zip,application/zip', test: /\.zip$/i, contentType: () => 'application/zip',
+    title: 'Importer depuis Notion', fileLabel: 'Archive ZIP Notion', big: 'Archive', bigF: true, limit: 'IMPORT_ZIP_MAX_MB',
+    noFile: 'Choisissez d’abord l’archive ZIP exportée depuis Notion.', wrongFile: 'Le fichier choisi n’est pas une archive .zip.',
+    badType: 'Le fichier choisi n’est pas une archive ZIP.', empty: 'Aucune page Notion trouvée dans l’archive (format attendu : « Markdown & CSV »).',
+    help: 'Dans Notion : menu de la page ou de l’espace de travail, « Exporter », format « Markdown & CSV », avec les sous-pages. Choisissez ensuite l’archive obtenue.',
+    sending: 'l’archive', done: 'Import Notion terminé.',
+  },
+  document: {
+    endpoint: 'document', accept: '.docx,.pdf,application/pdf,' + DOCX_TYPE, test: /\.(docx|pdf)$/i,
+    contentType: (file) => (/\.pdf$/i.test(file.name) ? 'application/pdf' : DOCX_TYPE),
+    title: 'Importer un document', fileLabel: 'Document Word (.docx) ou PDF', big: 'Document', limit: 'DOC_IMPORT_MAX_MB',
+    noFile: 'Choisissez d’abord un document Word (.docx) ou un PDF.', wrongFile: 'Seuls les fichiers .docx et .pdf sont acceptés (pas les anciens .doc).',
+    badType: 'Format non pris en charge : seuls les fichiers .docx et .pdf sont acceptés.', empty: 'Document illisible ou vide.',
+    help: 'Un document Word devient une page (titres, listes, tableaux, gras, liens et images conservés). Un PDF devient une page de texte seulement : pas de mise en page, d’images ni de tableaux, et pas de reconnaissance de caractères pour un PDF numérisé.',
+    sending: 'le document', done: 'Import du document terminé.',
+  },
+};
+
+/** Fenêtre d'import Notion pour un espace où la personne peut écrire. */
+export const openNotionImport = (spaceId) => openImport(spaceId, MODES.notion);
+/** Fenêtre d'import d'un document Word ou PDF. */
+export const openDocumentImport = (spaceId) => openImport(spaceId, MODES.document);
+
 /**
- * Fenêtre d'import Notion pour un espace où la personne peut écrire.
  * @param {string} spaceId
+ * @param {any} mode
  */
-export function openNotionImport(spaceId) {
+function openImport(spaceId, mode) {
   const space = store.space(spaceId);
-  const fileInput = h('input', { type: 'file', accept: '.zip,application/zip', class: 'input', id: 'ni-file' });
+  const fileInput = h('input', { type: 'file', accept: mode.accept, class: 'input', id: 'ni-file' });
   const parentSel = h('select', { class: 'input', id: 'ni-parent' },
     h('option', { value: '' }, 'À la racine de l’espace'),
     store.pagesIn(spaceId)
@@ -162,13 +188,13 @@ export function openNotionImport(spaceId) {
     const file = fileInput.files?.[0];
     error.hidden = true;
     if (!file) {
-      error.textContent = 'Choisissez d’abord l’archive ZIP exportée depuis Notion.';
+      error.textContent = mode.noFile;
       error.hidden = false;
       fileInput.focus();
       return;
     }
-    if (!/\.zip$/i.test(file.name)) {
-      error.textContent = 'Le fichier choisi n’est pas une archive .zip.';
+    if (!mode.test.test(file.name)) {
+      error.textContent = mode.wrongFile;
       error.hidden = false;
       return;
     }
@@ -178,13 +204,14 @@ export function openNotionImport(spaceId) {
     progress.value = 0;
     progress.hidden = false;
     cancelBtn.hidden = false;
-    live.textContent = dryRun ? 'Envoi de l’archive pour simulation…' : 'Envoi de l’archive pour import…';
+    live.textContent = dryRun ? `Envoi de ${mode.sending} pour simulation…` : `Envoi de ${mode.sending} pour import…`;
     const params = new URLSearchParams({ dryRun: String(dryRun) });
     if (parentSel.value) params.set('parentId', parentSel.value);
+    if (mode.endpoint === 'document') params.set('filename', file.name);
     let lastPct = -1;
     try {
-      const report = await uploadRaw(`/spaces/${encodeURIComponent(spaceId)}/import/notion?${params}`, file, {
-        contentType: 'application/zip',
+      const report = await uploadRaw(`/spaces/${encodeURIComponent(spaceId)}/import/${mode.endpoint}?${params}`, file, {
+        contentType: mode.contentType(file),
         signal: controller.signal,
         onProgress: (ratio) => {
           const pct = Math.round(ratio * 100);
@@ -193,7 +220,7 @@ export function openNotionImport(spaceId) {
           if (Math.floor(pct / 25) !== Math.floor(lastPct / 25)) live.textContent = `Envoi : ${pct} %`;
           lastPct = pct;
         },
-        onSent: () => { cancelBtn.hidden = true; live.textContent = dryRun ? 'Archive reçue, simulation en cours…' : 'Archive reçue, import en cours…'; },
+        onSent: () => { cancelBtn.hidden = true; live.textContent = dryRun ? 'Fichier reçu, simulation en cours…' : 'Fichier reçu, import en cours…'; },
       });
       simulated = dryRun ? fileKey : null;
       live.textContent = dryRun ? 'Simulation terminée.' : 'Import terminé.';
@@ -201,13 +228,13 @@ export function openNotionImport(spaceId) {
       reportBox.focus();
       if (!dryRun) {
         fileInput.value = '';
-        toast('Import Notion terminé.');
+        toast(mode.done);
         store.load().catch(() => { /* l'arborescence se rafraîchira au prochain événement */ });
       }
       loadHistory();
     } catch (err) {
       live.textContent = '';
-      error.textContent = errorMessage(err);
+      error.textContent = errorMessage(err, mode);
       error.hidden = false;
     } finally {
       controller = null;
@@ -243,12 +270,12 @@ export function openNotionImport(spaceId) {
   }
 
   modal = openModal({
-    title: `Importer depuis Notion dans « ${space?.name || 'cet espace'} »`,
+    title: `${mode.title} dans « ${space?.name || 'cet espace'} »`,
     size: 'wide',
     body: h('div', { class: 'stack ni' },
-      h('p', { class: 'muted' }, 'Dans Notion : menu de la page ou de l’espace de travail, « Exporter », format « Markdown & CSV », avec les sous-pages. Choisissez ensuite l’archive obtenue.'),
-      h('p', { class: 'notice info' }, 'La simulation lit et convertit l’archive sans rien écrire dans l’espace : seul son rapport est conservé. L’import n’est proposé qu’après une simulation du même fichier.'),
-      h('div', { class: 'field' }, h('label', { for: 'ni-file' }, 'Archive ZIP Notion'), fileInput),
+      h('p', { class: 'muted' }, mode.help),
+      h('p', { class: 'notice info' }, 'La simulation lit et convertit le fichier sans rien écrire dans l’espace : seul son rapport est conservé. L’import n’est proposé qu’après une simulation du même fichier.'),
+      h('div', { class: 'field' }, h('label', { for: 'ni-file' }, mode.fileLabel), fileInput),
       h('div', { class: 'field' }, h('label', { for: 'ni-parent' }, 'Emplacement des pages importées'), parentSel),
       h('div', { class: 'row wrap' }, simulateBtn, importBtn, cancelBtn),
       progress, live, error,

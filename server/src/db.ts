@@ -584,6 +584,24 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX import_reports_user ON import_reports(user_id, created_at);
   `,
+  // 24 : les rapports d'import couvrent aussi les documents Word et PDF (source 'docx' et 'pdf'). SQLite ne modifie pas une
+  // contrainte CHECK : la table est reconstruite avec ses lignes. Retour arrière : restaurer la sauvegarde prise avant la mise à jour.
+  `
+  CREATE TABLE import_reports_new (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    space_id   TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    source     TEXT NOT NULL CHECK (source IN ('notion', 'docx', 'pdf')),
+    dry_run    INTEGER NOT NULL CHECK (dry_run IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    summary    TEXT NOT NULL,
+    items      TEXT NOT NULL
+  );
+  INSERT INTO import_reports_new SELECT id, user_id, space_id, source, dry_run, created_at, summary, items FROM import_reports;
+  DROP TABLE import_reports;
+  ALTER TABLE import_reports_new RENAME TO import_reports;
+  CREATE INDEX import_reports_user ON import_reports(user_id, created_at);
+  `,
 ];
 
 export function openDb(file: string): DB {

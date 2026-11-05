@@ -95,3 +95,33 @@ Réponse (200 en simulation, 201 à l'import) :
 `pageId` n'est présent qu'après un import réel. Erreurs : 400 (archive invalide, paramètre manquant), 403, 404, 413 (archive trop grosse ou piégée), 415 (pas `application/zip`), 422 (aucune page Notion), 429.
 
 `GET /api/v3/imports` : mes derniers rapports (sans `items`). `GET /api/v3/imports/:id` : un rapport complet ; 404 s'il n'est pas le mien ou si je ne lis plus l'espace.
+
+## Documents Word et PDF
+
+Menu de l'espace, « Importer un document (Word, PDF) » : un fichier `.docx` ou `.pdf` devient une page, dont le titre est le nom du fichier. Même parcours que Notion : simulation (rien n'est créé), puis import ; le rapport est conservé dans l'historique.
+
+| Format | Repris | Non repris |
+|---|---|---|
+| Word (`.docx`) | titres, paragraphes, gras et italique, listes, tableaux, liens `http(s)` et `mailto`, images (jointes à la page) | zones de texte, formes, notes de bas de page complexes, commentaires, modifications suivies, macros ; les anciens `.doc` ne sont pas pris en charge |
+| PDF | le texte, regroupé en paragraphes | mise en page, images, tableaux ; un PDF numérisé (images) n'a pas de texte : la reconnaissance de caractères n'est pas prise en charge ; un PDF protégé par mot de passe est refusé |
+
+### Défenses
+
+- Le type est reconnu sur les octets (`%PDF-`, archive ZIP), jamais sur le nom ni le type annoncé.
+- Un `.docx` est une archive ZIP : elle est contrôlée avant toute conversion avec les mêmes défenses que l'import Notion (taux de compression, volume décompressé, nombre d'entrées, chemins, taille réelle et somme de contrôle de chaque entrée, `word/document.xml` obligatoire).
+- La conversion tourne dans un fil d'exécution isolé (`worker_thread`) : mémoire plafonnée à 512 Mo, aucune variable d'environnement, délai maximal (`DOC_IMPORT_TIMEOUT_SECONDS`), arrêt forcé au-delà. Il n'a accès ni à la base ni aux fichiers de l'instance.
+- Le texte converti est protégé (caractères Markdown échappés) : un PDF contenant `# titre`, `<script>` ou `[x](javascript:…)` reste du texte. Seuls les liens `http(s)` et `mailto` sont gardés ; le résultat passe ensuite par l'assainissement habituel des pages.
+- Les images passent par le même chemin que les pièces jointes : type reconnu sur les octets, quotas de l'instance et de la personne, images non affichables (WMF, EMF) jointes comme fichiers.
+- Un seul import à la fois sur l'instance (verrou commun avec l'import Notion).
+
+| Réglage | Défaut | Rôle |
+|---|---|---|
+| `DOC_IMPORT_MAX_MB` | 30 | taille maximale du fichier |
+| `DOC_IMPORT_TIMEOUT_SECONDS` | 30 | durée maximale de la conversion |
+| `DOC_IMPORT_MAX_PAGES` | 500 | pages d'un PDF lues au plus |
+
+Derrière Nginx, réglez `client_max_body_size` au moins à `DOC_IMPORT_MAX_MB`.
+
+### API
+
+`POST /api/v3/spaces/:id/import/document?dryRun=true|false&filename=<nom>[&parentId=<page>]`, corps : le fichier brut, `Content-Type: application/pdf` ou `application/vnd.openxmlformats-officedocument.wordprocessingml.document`. Mêmes droits, même forme de réponse (`source` vaut `docx` ou `pdf`) et mêmes erreurs que l'import Notion ; 422 pour un document illisible, protégé ou trop long à convertir.
