@@ -106,3 +106,30 @@ Les pièces jointes sont restaurées **avant** la base, et **rien n'est écrasé
 S'il manque des fichiers dans la sauvegarde ou que certains sont altérés, **la base actuelle n'est pas remplacée** et la commande liste les identifiants concernés. Pour restaurer quand même (les pièces jointes manquantes seront introuvables) : ajoutez `--allow-missing`. Une sauvegarde antérieure aux pièces jointes (sans dossier `.attachments`) se restaure normalement.
 
 Les migrations de schéma s'appliquent automatiquement au démarrage si la sauvegarde est plus ancienne que la version du serveur. Une sauvegarde plus récente que le serveur ne doit pas être restaurée sur une version plus ancienne.
+
+## Conversion des images collées en pièces jointes
+
+Les images collées dans l'éditeur avant les pièces jointes sont stockées dans les pages, en base64. La conversion les range dans `/data/attachments` comme des pièces jointes ordinaires (pages plus légères, recherche et historique plus rapides, export ZIP avec les images). Elle touche toutes les pages concernées : **faites d'abord une sauvegarde complète et vérifiez-la** (et, sur Proxmox, un instantané du conteneur).
+
+```bash
+docker compose exec -T notabene node dist/server/backup.js backup
+docker compose exec -T notabene node dist/server/backup.js verify /data/backups/notabene-AAAAMMJJ-HHMMSS.db
+docker compose exec -T notabene node dist/server/cli.js migrate-images --dry-run   # estimation, rien n'est modifié (serveur en marche possible)
+docker compose stop notabene                                                        # la conversion exige le serveur arrêté
+docker compose run --rm --no-deps notabene node dist/server/cli.js migrate-images   # conversion
+docker compose run --rm --no-deps notabene node dist/server/cli.js migrate-images --status
+docker compose run --rm --no-deps notabene node dist/server/cli.js migrate-images --revert <exécution>
+docker compose start notabene
+```
+
+**La commande en ligne refuse de convertir ou de défaire tant que le serveur tourne** (il inscrit un signe de vie en base toutes les 30 secondes ; après un arrêt brutal, attendez 90 secondes) : elle ne voit ni les pages ouvertes en co-édition ni les enregistrements en cours. Sans arrêter le service, utilisez l'administration (`/api/v3/admin/images/migration`, session web d'un administrateur) : la conversion tourne alors en tâche de fond dans le serveur, qui sait quelles pages sont ouvertes.
+
+Ce que fait la conversion, page par page :
+
+- seules les images PNG, JPEG, GIF et WebP **reconnues sur leurs octets** sont converties ; un SVG, un contenu non reconnu ou une image plus lourde que `ATTACHMENT_MAX_MB` reste dans la page, qui est signalée ;
+- avant de modifier une page, son contenu d'origine est inscrit dans l'historique des versions, puis le résultat ; la date de modification de la page ne change pas, aucune notification ni webhook n'est envoyé ;
+- les fichiers comptent dans `ATTACHMENTS_TOTAL_MB` et dans le quota de l'auteur de la page (`ATTACHMENT_USER_MB`) : une page qui les dépasserait est laissée telle quelle et signalée ;
+- une page ouverte en co-édition n'est pas touchée (signalée, reprise à l'exécution suivante) ;
+- une seule exécution à la fois, commande en ligne et serveur confondus ; une exécution interrompue se relance sans rien refaire.
+
+**Retour arrière** : `--revert <exécution>` remet chaque image à l'identique (reconstruite depuis son fichier et vérifiée sur l'empreinte enregistrée) ; une page inchangée depuis retrouve exactement son contenu d'origine, une page modifiée depuis ne retrouve que ses images. Les fichiers créés restent, car l'historique des versions les cite. Le journal de chaque exécution est dans la base (tables `image_migration_*`) : il fait partie des sauvegardes.

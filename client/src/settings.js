@@ -10,6 +10,7 @@ import { renderAbout, renderApi, renderAppearance, renderProfile, renderTokens }
 import { renderAi } from './settings/ai.js';
 import { renderDiagrams, renderEmbed, renderEmbeds, renderTools, renderWebhooks } from './settings/features.js';
 import { renderImport, renderInstance } from './settings/instance.js';
+import { renderImages } from './settings/images.js';
 import { renderGroups } from './settings/groups.js';
 import { renderShares } from './settings/shares.js';
 import { store } from './store.js';
@@ -37,6 +38,7 @@ const SECTIONS = [
   { group: 'Administration', id: 'users', label: 'Utilisateurs', ico: 'users', admin: true, render: renderUsers },
   { group: 'Administration', id: 'audit', label: 'Journal d’audit', ico: 'file', admin: true, render: renderAudit },
   { group: 'Administration', id: 'instance', label: 'Instance', ico: 'settings', admin: true, render: renderInstance },
+  { group: 'Administration', id: 'images', label: 'Images des pages', ico: 'wand', admin: true, render: renderImages },
 ];
 
 export function showSettings(sectionId) {

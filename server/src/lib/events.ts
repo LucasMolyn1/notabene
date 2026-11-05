@@ -9,6 +9,8 @@ export interface AppEvent {
   by?: { id: string; name: string };
   /** Enregistrement qui regroupe les modifications de plusieurs personnes (co-édition) : `by` n'est alors que le dernier auteur. */
   shared?: boolean;
+  /** Changement technique fait par le serveur (conversion des images) : les écrans se rafraîchissent, ni notification ni webhook. */
+  quiet?: boolean;
   data?: unknown;
 }
 

@@ -39,6 +39,8 @@ import aiRoutes from './routes/ai.js';
 import authRoutes from './routes/auth.js';
 import websocket from '@fastify/websocket';
 import collabRoutes from './routes/collab.js';
+import exportRoutes from './routes/export.js';
+import imageMigrationRoutes from './routes/image-migration.js';
 import coreRoutes from './routes/core.js';
 import groupRoutes from './routes/groups.js';
 import personalSpaceRoutes from './routes/personal-spaces.js';
@@ -292,6 +294,8 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(aboutRoutes);
     await scope.register(avatarRoutes);
     await scope.register(attachmentRoutes);
+    await scope.register(exportRoutes);
+    await scope.register(imageMigrationRoutes);
   }, { prefix: '/api/v3' });
   await app.register(mcpRoutes);
   await app.register(versionRoutes);

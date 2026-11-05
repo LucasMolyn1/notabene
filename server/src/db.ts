@@ -512,6 +512,62 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE attachments ADD COLUMN copied_from TEXT;
   CREATE INDEX attachments_copied ON attachments(page_id, copied_from) WHERE copied_from IS NOT NULL;
   `,
+  // v22 : journal de la conversion des images base64 en pièces jointes (lib/image-migration.ts). Une exécution (`runs`) au plus
+  // est en cours à la fois (index unique partiel, valable aussi entre la commande en ligne et le serveur) ; `pages` garde, page par
+  // page, ce qui a été fait ou ignoré et pourquoi ; `items` garde de quoi rétablir chaque image à l'identique (préfixe d'origine,
+  // empreinte, et la chaîne d'origine seulement si son base64 n'était pas canonique). Pas de clé étrangère vers les pages : le
+  // journal survit à leur suppression (le retour arrière les ignore alors). `server_presence` : signe de vie du serveur, pour que
+  // la commande en ligne refuse de convertir pendant qu'il tourne (elle ne voit ni ses salles de co-édition ni ses écritures).
+  // Retour arrière : DROP TABLE image_migration_items; DROP TABLE image_migration_pages; DROP TABLE image_migration_runs; DROP TABLE server_presence;
+  `
+  CREATE TABLE image_migration_runs (
+    id           TEXT PRIMARY KEY,
+    kind         TEXT NOT NULL CHECK (kind IN ('convert', 'revert')),
+    reverts      TEXT REFERENCES image_migration_runs(id),
+    status       TEXT NOT NULL CHECK (status IN ('running', 'done', 'interrupted', 'failed')),
+    source       TEXT NOT NULL CHECK (source IN ('cli', 'api')),
+    started_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    started_at   INTEGER NOT NULL,
+    heartbeat_at INTEGER NOT NULL,
+    finished_at  INTEGER,
+    cursor       INTEGER NOT NULL DEFAULT 0,
+    stats        TEXT NOT NULL DEFAULT '{}',
+    error        TEXT
+  );
+  CREATE UNIQUE INDEX image_migration_one_running ON image_migration_runs(status) WHERE status = 'running';
+
+  CREATE TABLE image_migration_pages (
+    run_id     TEXT NOT NULL REFERENCES image_migration_runs(id) ON DELETE CASCADE,
+    page_id    TEXT NOT NULL,
+    status     TEXT NOT NULL CHECK (status IN ('converted', 'reverted', 'skipped')),
+    reason     TEXT,
+    images     INTEGER NOT NULL DEFAULT 0,
+    bytes      INTEGER NOT NULL DEFAULT 0,
+    before_sha TEXT,
+    after_sha  TEXT,
+    at         INTEGER NOT NULL,
+    PRIMARY KEY (run_id, page_id)
+  );
+
+  CREATE TABLE image_migration_items (
+    run_id        TEXT NOT NULL REFERENCES image_migration_runs(id) ON DELETE CASCADE,
+    page_id       TEXT NOT NULL,
+    attachment_id TEXT NOT NULL,
+    prefix        TEXT NOT NULL,
+    sha256        TEXT NOT NULL CHECK (length(sha256) = 64),
+    raw           TEXT,
+    reverted_at   INTEGER,
+    PRIMARY KEY (run_id, page_id, attachment_id)
+  );
+  CREATE INDEX image_migration_items_attachment ON image_migration_items(attachment_id);
+
+  CREATE TABLE server_presence (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    pid        INTEGER NOT NULL,
+    started_at INTEGER NOT NULL,
+    seen_at    INTEGER NOT NULL
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {
