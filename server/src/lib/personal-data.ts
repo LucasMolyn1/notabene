@@ -70,6 +70,10 @@ export function exportUserData(db: DB, userId: string, requesterId: string = use
     notifications: all<{ type: string; page_id: string; created_at: number; read_at: number | null }>(
       'SELECT type, page_id, created_at, read_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 200', userId)
       .filter((n) => !hidden(n.page_id)).map((n) => ({ type: n.type, pageId: n.page_id, createdAt: n.created_at, readAt: n.read_at })),
+    // Rapports d'import (20 au plus, supprimés avec le compte) : bilan seulement ; le détail se relit par /api/v3/imports/:id.
+    importReports: all<{ id: string; space_id: string; source: string; dry_run: number; created_at: number; summary: string }>(
+      'SELECT id, space_id, source, dry_run, created_at, summary FROM import_reports WHERE user_id = ? ORDER BY created_at DESC', userId)
+      .map((r) => ({ id: r.id, spaceId: r.space_id, source: r.source, dryRun: !!r.dry_run, createdAt: r.created_at, summary: JSON.parse(r.summary) as unknown })),
     auditTrail: all<{ at: number; action: string; ip: string | null }>('SELECT at, action, ip FROM audit_log WHERE user_id = ? ORDER BY id DESC LIMIT 1000', userId),
   };
 }

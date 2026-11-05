@@ -1,8 +1,8 @@
 // Pièces jointes : fichiers sur disque (DATA_DIR/attachments/<identifiant>), métadonnées en base (table `attachments`).
 // Le nom sur disque est toujours l'identifiant aléatoire, jamais le nom d'origine ; le type est déduit des premiers octets,
 // jamais de l'extension ni du Content-Type envoyé par le client. Rien n'est servi en ligne sauf une image raster reconnue.
-import { randomBytes } from 'node:crypto';
-import { chmodSync, constants, copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { chmodSync, constants, copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
@@ -278,6 +278,55 @@ export class AttachmentCloner {
   /** Transaction annulée : les fichiers déjà copiés sont effacés (leurs lignes ont disparu avec elle). */
   rollback(): void {
     this.resolved.clear();
+    for (const f of this.created.splice(0)) { try { unlinkSync(f); } catch { /* déjà absent */ } }
+  }
+}
+
+// ---- Fichiers créés depuis des octets en mémoire (import) ------------------------------------
+// Même modèle que l'envoi : nom sur disque aléatoire, type reconnu sur les octets, nom d'origine assaini, fichier 0600 écrit sous un
+// nom temporaire puis renommé. Plafonds par fichier, par instance et par personne vérifiés avant d'écrire. À appeler dans la transaction
+// qui crée la page ; si elle est annulée, `rollback()` efface les fichiers écrits. En simulation (`dryRun`), aucun fichier n'est écrit :
+// les contrôles sont faits et la ligne est insérée dans la transaction de simulation, qui sera annulée.
+export interface StoredAttachment { id: string; name: string; mime: AttachmentMime; size: number }
+
+export class AttachmentWriter {
+  private readonly created: string[] = [];
+  private bytes = 0;
+  constructor(
+    private readonly db: DB,
+    private readonly dir: string,
+    private readonly userId: string | null,
+    private readonly limits: { fileBytes: number; totalBytes: number; userBytes: number },
+    private readonly dryRun = false,
+  ) {}
+
+  store(pageId: string, rawName: string, data: Buffer): StoredAttachment {
+    const mb = (n: number) => Math.round(n / 1024 / 1024);
+    if (data.length === 0) throw new HttpError(400, 'Fichier vide');
+    if (data.length > this.limits.fileBytes) throw new HttpError(413, `Fichier trop lourd (${mb(this.limits.fileBytes)} Mo au plus)`);
+    if (usedBytes(this.db) + reservations(this.db).total + this.bytes + data.length > this.limits.totalBytes) throw new HttpError(413, 'Espace de stockage des pièces jointes plein');
+    if (this.userId && userBytes(this.db, this.userId) + (reservations(this.db).byUser.get(this.userId)?.bytes ?? 0) + this.bytes + data.length > this.limits.userBytes) {
+      throw new HttpError(413, `Quota personnel de pièces jointes atteint (${mb(this.limits.userBytes)} Mo)`);
+    }
+    const id = newAttachmentId();
+    const name = sanitizeFilename(rawName);
+    const mime = sniffMime(data.subarray(0, SNIFF_BYTES));
+    this.bytes += data.length;
+    if (!this.dryRun) {
+      mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+      const tmp = join(this.dir, tempName());
+      const final = attachmentPath(this.dir, id);
+      writeFileSync(tmp, data, { flag: 'wx', mode: 0o600 });
+      try { renameSync(tmp, final); } catch (err) { try { unlinkSync(tmp); } catch { /* déjà absent */ } throw err; }
+      this.created.push(final);
+    }
+    this.db.prepare('INSERT INTO attachments (id, page_id, uploader_id, name, mime, size, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, pageId, this.userId, name, mime, data.length, createHash('sha256').update(data).digest('hex'), Date.now());
+    return { id, name, mime, size: data.length };
+  }
+
+  /** Transaction annulée : les fichiers déjà écrits sont effacés (leurs lignes ont disparu avec elle). */
+  rollback(): void {
     for (const f of this.created.splice(0)) { try { unlinkSync(f); } catch { /* déjà absent */ } }
   }
 }
