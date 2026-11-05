@@ -130,7 +130,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
         : !label ? []
           : text ? await store.search(text, spaceFilter, label) : await store.byLabel(label, spaceFilter);
       if (seq !== requestSeq) return;
-      results = groupBySpace(found.filter((r) => r.id !== exclude).map((r) => ({ page: store.page(r.id) || r, snippet: r.snippet })));
+      results = groupBySpace(found.filter((r) => r.id !== exclude).map((r) => ({ page: store.page(r.id) || r, snippet: r.snippet, attachment: r.attachment?.name })));
     } catch {
       results = [];
     }
@@ -208,6 +208,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
       h('span', { class: 'pal-text' },
         h('span', { class: 'pal-title', html: highlightTitle(r.page.title || 'Sans titre', query) }),
         h('span', { class: 'pal-path' }, pathOf(r.page)),
+        r.attachment ? h('span', { class: 'pal-path' }, `Pièce jointe : ${r.attachment}`) : null,
         r.snippet ? h('span', { class: 'pal-snippet', html: snippetHTML(r.snippet) }) : null)));
     });
     list.querySelector('.pal-item.active')?.scrollIntoView({ block: 'nearest' });

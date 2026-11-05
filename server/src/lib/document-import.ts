@@ -20,7 +20,7 @@ export type DocKind = 'docx' | 'pdf';
 
 export interface DocLimits { timeoutMs: number; maxPages: number; zipEntries: number; zipUncompressedBytes: number; zipRatio: number }
 
-interface WorkerOk { ok: true; markdown: string; images: { mime: string; data: Uint8Array }[]; notes: string[] }
+export interface WorkerOk { ok: true; markdown: string; images: { mime: string; data: Uint8Array }[]; notes: string[] }
 interface WorkerErr { ok: false; status: number; message: string }
 
 const require = createRequire(import.meta.url);
@@ -41,7 +41,16 @@ const MAX_DOCX_UNCOMPRESSED = 200 * 1024 * 1024; // un document Word décompress
 /** Dossier node_modules qui contient mammoth (et ses dépendances) : seul endroit lisible par le processus de conversion. */
 const modulesDir = (() => { const f = require.resolve('mammoth'); return f.slice(0, f.lastIndexOf(`${sep}node_modules${sep}`) + `${sep}node_modules`.length); })();
 
-function runWorker(kind: DocKind, data: Buffer, limits: DocLimits, maxImageBytes: number): Promise<WorkerOk> {
+// Une seule conversion à la fois dans l'instance (import ou extraction pour la recherche) : chaque conversion peut occuper
+// 512 Mo, le total reste donc borné quoi qu'il arrive.
+let slot: Promise<unknown> = Promise.resolve();
+export function runWorker(kind: DocKind, data: Buffer, limits: DocLimits, maxImageBytes: number): Promise<WorkerOk> {
+  const run = slot.then(() => spawnWorker(kind, data, limits, maxImageBytes), () => spawnWorker(kind, data, limits, maxImageBytes));
+  slot = run.catch(() => undefined);
+  return run;
+}
+
+function spawnWorker(kind: DocKind, data: Buffer, limits: DocLimits, maxImageBytes: number): Promise<WorkerOk> {
   return new Promise((resolve, reject) => {
     let done = false;
     // Processus enfant : ni variable d'environnement, ni écriture, ni réseau, ni sous-processus (modèle de permissions de Node) ;
@@ -68,7 +77,7 @@ function runWorker(kind: DocKind, data: Buffer, limits: DocLimits, maxImageBytes
 }
 
 /** Contrôle d'un .docx : archive saine, structure Word présente, chaque entrée relue (taille réelle et somme de contrôle). */
-function checkDocx(buf: Buffer, limits: DocLimits) {
+export function checkDocx(buf: Buffer, limits: DocLimits) {
   const zip = new ZipArchive(buf, { maxEntries: limits.zipEntries, maxTotalBytes: Math.min(limits.zipUncompressedBytes, MAX_DOCX_UNCOMPRESSED), maxRatio: limits.zipRatio });
   if (!zip.items.some((i) => i.path === 'word/document.xml')) throw new HttpError(422, 'Ce fichier n’est pas un document Word (word/document.xml absent)');
   for (const i of zip.items) zip.read(i.path);

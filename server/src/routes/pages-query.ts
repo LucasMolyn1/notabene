@@ -8,6 +8,7 @@ import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
 import { hasPageLink } from '../lib/content.js';
 import { labelsOf, normalizeLabel, pageIdsWithLabel } from '../lib/labels.js';
 import { filterReadable } from '../lib/page-acl.js';
+import { searchAttachments } from '../lib/attachment-text.js';
 import { isFavorite, listPages, searchPages, toMeta, toPage, updatePage } from '../lib/pages.js';
 
 const patchBody = z.object({
@@ -107,8 +108,21 @@ export default async function pageQueryRoutes(app: FastifyInstance) {
     const { q, limit, cursor, spaceId, label } = req.query as { q: string; limit: number; cursor?: string; spaceId?: string; label?: string };
     const { o: offset } = decodeCursor(cursor, z.object({ o: z.number().int().min(0).max(1000) })) ?? { o: 0 };
     // Le classement est recalculé à chaque appel : le curseur est un décalage dans la liste filtrée (limité à 500 résultats).
-    const all = filterReadable(db, req.auth, searchPages(db, q, readableSpaceIds(db, req).filter((id) => !spaceId || id === spaceId), 500, 'AND', label === undefined ? null : normalizeLabel(label)))
+    const spaces = readableSpaceIds(db, req).filter((id) => !spaceId || id === spaceId);
+    const lbl = label === undefined ? null : normalizeLabel(label);
+    const all: (Omit<ReturnType<typeof searchPages>[number], 'text' | 'rank'> & { attachment?: { id: string; name: string } })[] = filterReadable(db, req.auth, searchPages(db, q, spaces, 500, 'AND', lbl))
       .map(({ text: _text, rank: _rank, ...r }) => r);
+    // Pièces jointes (texte des PDF, Word et fichiers texte, ou nom du fichier) : la page porteuse est ajoutée après les pages qui
+    // correspondent elles-mêmes, et seulement si elle est lisible (mêmes droits que pour le texte des pages).
+    const byId = new Map(all.map((r) => [r.id, r]));
+    for (const hit of filterReadable(db, req.auth, searchAttachments(db, q, spaces, 200, lbl))) {
+      const known = byId.get(hit.id);
+      if (known) { known.attachment ??= { id: hit.attachmentId, name: hit.attachmentName }; continue; }
+      const { attachmentId, attachmentName, rank: _rank, ...page } = hit;
+      const item = { ...page, attachment: { id: attachmentId, name: attachmentName } };
+      byId.set(hit.id, item);
+      all.push(item);
+    }
     const items = all.slice(offset, offset + limit);
     return { items, nextCursor: offset + limit < all.length ? encodeCursor({ o: offset + limit }) : null };
   });

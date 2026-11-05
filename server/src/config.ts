@@ -160,6 +160,7 @@ const schema = z
     // Volume de pièces jointes envoyées par une même personne (Mo), et silence maximal pendant un envoi (secondes).
     ATTACHMENT_USER_MB: z.coerce.number().int().min(1).max(10_485_760).default(1024),
     ATTACHMENT_UPLOAD_IDLE_SECONDS: z.coerce.number().int().min(1).max(600).default(30),
+    ATTACHMENT_INDEX: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
     // Volume de pièces jointes copiées par une seule opération (copie, duplication, modèle), en Mo : la copie bloque le serveur.
     ATTACHMENT_COPY_MAX_MB: z.coerce.number().int().min(1).max(1024).default(100),
     // Import d'archives ZIP (Notion) : taille de l'archive envoyée (Mo, gardée en mémoire), volume décompressé total (Mo),
