@@ -88,6 +88,8 @@ export class ZipArchive {
   read(path: string): Buffer {
     const e = this.raw.get(path);
     if (!e) throw new HttpError(404, 'Entrée absente de l’archive');
+    // Volume décompressé cumulé (relectures comprises) borné : un fichier cité par des milliers de pages ne se décompresse pas sans fin.
+    if (this.inflated + e.size > this.limits.maxTotalBytes) throw new ZipError(413, `Archive refusée : plus de ${Math.round(this.limits.maxTotalBytes / 1024 / 1024)} Mo décompressés au total`);
     return this.inflate(e);
   }
 

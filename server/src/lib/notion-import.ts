@@ -164,8 +164,12 @@ export function importNotion(db: DB, input: NotionImportInput): ImportReport {
     const node: Node = { path: c.path, dir: posix.dirname(c.path) === '.' ? '' : posix.dirname(c.path), kind: c.kind, stem, notionId: id, title: clean(stem, MAX_TITLE) || 'Sans titre', body: '', rows: null, asTable: null, item };
     if (c.kind === 'page') {
       // Le titre exact est celui du « # Titre » de tête (le nom de fichier perd certains caractères) ; il est retiré du corps.
-      const h1 = /^#[ \t]+(.+?)[ \t#]*(?:\r?\n|$)/.exec(text);
-      if (h1) { node.title = clean(h1[1]!, MAX_TITLE) || node.title; node.body = text.slice(h1[0].length); } else node.body = text;
+      // Première ligne seulement, coupée à 1000 caractères : aucune expression régulière ne parcourt le texte entier (pas de retour
+      // arrière quadratique sur une page piégée).
+      const eol = text.indexOf('\n');
+      const first = (eol < 0 ? text : text.slice(0, eol)).slice(0, 1000).replace(/\r$/, '');
+      const h1 = /^#[ \t]+(.+)$/.exec(first);
+      if (h1) { node.title = clean(h1[1]!.replace(/[ \t#]+$/, ''), MAX_TITLE) || node.title; node.body = eol < 0 ? '' : text.slice(eol + 1); } else node.body = text;
     } else node.rows = parseCsv(text);
     nodes.push(node);
     items.push(item);
@@ -251,6 +255,13 @@ export function importNotion(db: DB, input: NotionImportInput): ImportReport {
         const t = target(href, from);
         if (!t || !files.has(t)) return null;
         if (attached.has(t)) return attached.get(t)!;
+        // Aucune décompression d'un fichier déjà refusé ni d'un fichier annoncé plus gros que le plafond des pièces jointes.
+        if (failed.has(t) || files.get(t)! > input.writer.fileLimit) {
+          if (!failed.has(t)) { failed.add(t); skip(t, 'attachment', 'Fichier trop lourd pour une pièce jointe'); }
+          notes.add(`fichier non joint : ${posix.basename(t)}`);
+          attached.set(t, null);
+          return null;
+        }
         const data = zip.read(t); // archive invalide : tout l'import est refusé
         let stored: StoredAttachment | null = null;
         try {

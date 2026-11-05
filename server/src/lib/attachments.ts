@@ -300,6 +300,9 @@ export class AttachmentWriter {
     private readonly dryRun = false,
   ) {}
 
+  /** Taille maximale d'un fichier (octets) : permet de refuser avant de décompresser. */
+  get fileLimit(): number { return this.limits.fileBytes; }
+
   store(pageId: string, rawName: string, data: Buffer): StoredAttachment {
     const mb = (n: number) => Math.round(n / 1024 / 1024);
     if (data.length === 0) throw new HttpError(400, 'Fichier vide');

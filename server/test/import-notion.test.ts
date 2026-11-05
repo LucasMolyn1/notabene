@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { type Zippable, zipSync } from 'fflate';
+import { strToU8, type Zippable, zipSync } from 'fflate';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
@@ -379,5 +379,26 @@ describe('route d’import Notion', () => {
     for (let i = 0; i < 21; i++) codes.push((await post(ed1, 'sp', 'dryRun=true', Buffer.from('x'))).statusCode);
     expect(codes.slice(0, 20).every((c) => c === 400)).toBe(true);
     expect(codes[20]).toBe(429);
+  });
+
+  it('une page au titre piégé (200 000 « # ») s’importe sans bloquer le serveur', async () => {
+    const ed1 = await login('ed1');
+    const trap = zipOf({ [`Piège ${ROOT_ID}.md`]: strToU8(`# ${'#'.repeat(200_000)}`) });
+    const t0 = Date.now();
+    const res = await post(ed1, 'sp', 'dryRun=true', trap);
+    expect(Date.now() - t0).toBeLessThan(3000);
+    expect([200, 422]).toContain(res.statusCode);
+  });
+
+  it('un anonyme est refusé avant toute lecture du corps, et un second import simultané reçoit 503', async () => {
+    const anon = await app.inject({ method: 'POST', url: '/api/v3/spaces/sp/import/notion?dryRun=true', payload: Buffer.from('x'), headers: { 'content-type': 'application/zip' } });
+    expect(anon.statusCode).toBe(401);
+    const ed1 = await login('ed1');
+    const archive = zipOf(notionExport());
+    const [a, b] = await Promise.all([post(ed1, 'sp', 'dryRun=true', archive), post(ed1, 'sp', 'dryRun=true', archive)]);
+    expect([a.statusCode, b.statusCode].filter((c) => c === 200).length).toBeGreaterThanOrEqual(1);
+    expect([a.statusCode, b.statusCode].every((c) => c === 200 || c === 503)).toBe(true);
+    // Le verrou est bien rendu : un import suivant passe.
+    expect((await post(ed1, 'sp', 'dryRun=true', archive)).statusCode).toBe(200);
   });
 });

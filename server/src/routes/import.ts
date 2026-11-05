@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { guard, requireAuth } from '../auth/context.js';
 import { clonerFor, loadWritablePage, requireSpaceRole } from '../lib/access.js';
@@ -60,8 +60,23 @@ export default async function importRoutes(app: FastifyInstance) {
   const zipLimit = config.IMPORT_ZIP_MAX_MB * MB;
   app.addContentTypeParser(['application/zip', 'application/x-zip-compressed'], { parseAs: 'buffer', bodyLimit: zipLimit }, (_req, payload, done) => done(null, payload));
 
+  // Un seul import Notion à la fois sur l'instance (le traitement est synchrone et garde l'archive en mémoire). L'identité est
+  // contrôlée et le verrou pris en `onRequest`, donc AVANT la lecture du corps : un visiteur anonyme ne fait rien lire, et un
+  // second envoi simultané est refusé sans que ses 200 Mo soient reçus. Libéré à la fin de la réponse ou si le client coupe.
+  let importHolder: object | null = null;
+  const takeImportLock = async (req: FastifyRequest, reply: FastifyReply) => {
+    if (importHolder) {
+      reply.header('retry-after', '30');
+      throw new HttpError(503, 'Un import est déjà en cours sur cette instance : réessayez dans quelques minutes');
+    }
+    importHolder = req;
+  };
+  const releaseImportLock = async (req: FastifyRequest) => { if (importHolder === req) importHolder = null; };
+
   app.post('/spaces/:id/import/notion', {
-    preHandler: guard('write'),
+    onRequest: [guard('write'), takeImportLock],
+    onResponse: releaseImportLock,
+    onRequestAbort: releaseImportLock,
     bodyLimit: zipLimit,
     config: { rateLimit: { max: 20, timeWindow: '1 hour' } },
     schema: {
