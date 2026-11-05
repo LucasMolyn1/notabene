@@ -4,6 +4,11 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## Non publié
+
+### Ajouté
+- **MCP complet** : le serveur MCP (`POST /mcp`) peut maintenant modifier une page (`update_page` : titre, icône, texte ajouté à la fin ou remplacé, avec `expectedVersion` pour ne pas écraser une modification faite entre-temps), la déplacer (`move_page`, y compris vers un autre espace), la mettre à la corbeille ou la restaurer (`trash_page`, `restore_page`), lire ses informations sans contenu (`get_page_info`) et gérer ses commentaires (`list_comments`, `add_comment`, `resolve_comment`). Tout passe par l'API v3 avec le jeton de l'appelant : portées, rôles et droits de page s'appliquent comme ailleurs. Les outils qui peuvent écraser ou supprimer sont annoncés avec `destructiveHint`. Voir `docs/MCP.md`.
+
 ## [3.12.0] - 2026-11-05
 
 ### Ajouté

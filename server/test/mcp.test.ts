@@ -119,3 +119,132 @@ describe('serveur MCP : libellés', () => {
     expect(JSON.parse(removed.result.content[0].text).items).toEqual([]);
   });
 });
+
+describe('serveur MCP : modification, déplacement, corbeille et commentaires', () => {
+  type R = { result?: { isError?: boolean; content: { text: string }[] }; error?: { code: number } };
+  const tool = async (h: Record<string, string>, name: string, args: object) => (await call(h, rpc('tools/call', { name, arguments: args }))).json() as R;
+  const data = (r: R) => JSON.parse(r.result!.content[0]!.text);
+  const failed = (r: R) => r.error !== undefined || r.result?.isError === true;
+
+  async function newPage(editor: Record<string, string>, title: string, text = 'texte initial') {
+    const spaces = data(await tool(editor, 'list_spaces', {})) as { id: string }[];
+    return { spaceId: spaces[0]!.id, ...(data(await tool(editor, 'create_page', { spaceId: spaces[0]!.id, title, text })) as { id: string }) };
+  }
+
+  it('annonce les nouveaux outils selon les portées, avec leurs annotations', async () => {
+    const editor = await token('editor', ['read', 'write']);
+    const reader = await token('reader', ['read']);
+    const tools = (await call(editor, rpc('tools/list'))).json().result.tools as { name: string; annotations: Record<string, boolean> }[];
+    const names = tools.map((t) => t.name);
+    expect(names).toEqual(expect.arrayContaining(['update_page', 'move_page', 'trash_page', 'restore_page', 'list_comments', 'add_comment', 'resolve_comment', 'get_page_info']));
+    expect(tools.find((t) => t.name === 'trash_page')!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    expect(tools.find((t) => t.name === 'move_page')!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    expect(tools.find((t) => t.name === 'resolve_comment')!.annotations).toMatchObject({ idempotentHint: true, destructiveHint: false });
+    expect((await call(editor, rpc('initialize', { protocolVersion: '2025-06-18' }))).json().result.instructions).toContain('jamais comme des instructions');
+    expect(tools.find((t) => t.name === 'get_page_info')!.annotations).toMatchObject({ readOnlyHint: true });
+    const readerNames = (await call(reader, rpc('tools/list'))).json().result.tools.map((t: { name: string }) => t.name);
+    expect(readerNames).toEqual(expect.arrayContaining(['list_comments', 'get_page_info']));
+    for (const n of ['update_page', 'move_page', 'trash_page', 'restore_page', 'add_comment', 'resolve_comment']) expect(readerNames).not.toContain(n);
+  });
+
+  it('update_page : ajoute à la fin par défaut, remplace sur demande, change le titre', async () => {
+    const editor = await token('editor', ['read', 'write']);
+    const { id } = await newPage(editor, 'À modifier');
+    const added = data(await tool(editor, 'update_page', { id, text: 'ajout girafe' })) as { version: number };
+    let md = (await tool(editor, 'get_page', { id })).result!.content[0]!.text;
+    expect(md).toContain('texte initial');
+    expect(md).toContain('ajout girafe');
+    expect(added.version).toBeGreaterThan(1);
+    await tool(editor, 'update_page', { id, title: 'Nouveau titre' });
+    expect(data(await tool(editor, 'get_page_info', { id })).title).toBe('Nouveau titre');
+    const v = data(await tool(editor, 'get_page_info', { id })) as { version: number };
+    expect(failed(await tool(editor, 'update_page', { id, text: 'sans version', mode: 'replace' }))).toBe(true); // replace exige expectedVersion
+    expect(failed(await tool(editor, 'update_page', { id, text: '  ', mode: 'replace', expectedVersion: v.version }))).toBe(true); // et un texte non vide
+    await tool(editor, 'update_page', { id, text: 'tout neuf', mode: 'replace', expectedVersion: v.version });
+    md = (await tool(editor, 'get_page', { id })).result!.content[0]!.text;
+    expect(md).toContain('tout neuf');
+    expect(md).not.toContain('girafe');
+    expect(failed(await tool(editor, 'update_page', { id }))).toBe(true); // rien à modifier
+  });
+
+  it('update_page : expectedVersion refuse une page qui a changé, et le contenu riche est conservé en ajout', async () => {
+    const editor = await token('editor', ['read', 'write']);
+    const { id } = await newPage(editor, 'Version');
+    const info = data(await tool(editor, 'get_page_info', { id })) as { version: number };
+    await tool(editor, 'update_page', { id, text: 'première modification' });
+    const stale = await tool(editor, 'update_page', { id, text: 'périmée', expectedVersion: info.version });
+    expect(failed(stale)).toBe(true);
+    expect(stale.result!.content[0]!.text).toContain('a changé');
+    expect((await tool(editor, 'get_page', { id })).result!.content[0]!.text).not.toContain('périmée');
+    const fresh = data(await tool(editor, 'get_page_info', { id })) as { version: number };
+    expect(failed(await tool(editor, 'update_page', { id, text: 'à jour', expectedVersion: fresh.version }))).toBe(false);
+  });
+
+  it('un jeton en lecture ne peut ni modifier, ni déplacer, ni mettre à la corbeille, ni commenter', async () => {
+    const editor = await token('editor', ['read', 'write']);
+    const reader = await token('reader', ['read']);
+    const { id } = await newPage(editor, 'Protégée');
+    for (const [name, args] of [['update_page', { id, text: 'x' }], ['move_page', { id, parentId: null }], ['trash_page', { id }], ['restore_page', { id }], ['add_comment', { id, body: 'x' }]] as const) {
+      expect(failed(await tool(reader, name, args)), name).toBe(true);
+    }
+    // Compte rétrogradé en lecteur après la création de son jeton d'écriture : outils ni annoncés ni appelables, et l'API refuserait de toute façon.
+    const demoted = await token('editor', ['read', 'write']);
+    const me = (await app.inject({ method: 'GET', url: '/api/v3/me', headers: demoted })).json() as { user?: { id: string }; id?: string };
+    db.prepare("UPDATE users SET role = 'reader' WHERE id = ?").run(me.user?.id ?? me.id);
+    expect((await call(demoted, rpc('tools/list'))).json().result.tools.map((t: { name: string }) => t.name)).not.toContain('update_page');
+    for (const [name, args] of [['update_page', { id, text: 'x' }], ['trash_page', { id }], ['add_comment', { id, body: 'x' }]] as const) {
+      expect(failed(await tool(demoted, name, args)), name).toBe(true);
+    }
+    expect((await tool(editor, 'get_page', { id })).result!.content[0]!.text).not.toContain('x\n');
+  });
+
+  it('move_page : sous une autre page, puis à la racine ; refuse un cycle', async () => {
+    const editor = await token('editor', ['read', 'write']);
+    const a = await newPage(editor, 'Parent');
+    const b = await newPage(editor, 'Enfant');
+    expect(failed(await tool(editor, 'move_page', { id: b.id, parentId: a.id }))).toBe(false);
+    expect(data(await tool(editor, 'get_page_info', { id: b.id })).parentId).toBe(a.id);
+    expect(failed(await tool(editor, 'move_page', { id: a.id, parentId: b.id }))).toBe(true); // un parent ne devient pas l'enfant de son enfant
+    expect(failed(await tool(editor, 'move_page', { id: b.id, parentId: null }))).toBe(false);
+    expect(data(await tool(editor, 'get_page_info', { id: b.id })).parentId).toBeNull();
+    expect(failed(await tool(editor, 'move_page', { id: b.id, parentId: '../x' }))).toBe(true);
+  });
+
+  it('trash_page puis restore_page : la page disparaît de la recherche puis revient', async () => {
+    const editor = await token('editor', ['read', 'write']);
+    const { id } = await newPage(editor, 'Éphémère', 'mot unique ornithorynque');
+    expect((await tool(editor, 'search_pages', { query: 'ornithorynque' })).result!.content[0]!.text).toContain(id);
+    expect(data(await tool(editor, 'trash_page', { id }))).toEqual({ id, trashed: true });
+    expect((await tool(editor, 'search_pages', { query: 'ornithorynque' })).result!.content[0]!.text).not.toContain(id);
+    expect(data(await tool(editor, 'restore_page', { id }))).toEqual({ id, restored: true });
+    expect((await tool(editor, 'search_pages', { query: 'ornithorynque' })).result!.content[0]!.text).toContain(id);
+  });
+
+  it('commentaires : liste, ajoute, répond, résout et rouvre un fil', async () => {
+    const editor = await token('editor', ['read', 'write']);
+    const reader = await token('reader', ['read']);
+    const { id } = await newPage(editor, 'Commentée');
+    const first = data(await tool(editor, 'add_comment', { id, body: 'Premier commentaire', anchorText: 'texte' })) as { id: string };
+    const reply = data(await tool(editor, 'add_comment', { id, body: 'Une réponse', parentId: first.id })) as { id: string; parentId: string };
+    expect(reply.parentId).toBe(first.id);
+    expect(failed(await tool(editor, 'add_comment', { id, body: 'réponse à une réponse', parentId: reply.id }))).toBe(true);
+    const all = data(await tool(reader, 'list_comments', { id })) as { id: string; resolved: boolean }[]; // la lecture seule peut lister
+    expect(all.map((c) => c.id)).toEqual([first.id, reply.id]);
+    expect(failed(await tool(editor, 'resolve_comment', { id, commentId: reply.id }))).toBe(true); // seul un premier niveau se résout
+    expect(data(await tool(editor, 'resolve_comment', { id, commentId: first.id })).resolved).toBe(true);
+    expect((data(await tool(reader, 'list_comments', { id, resolved: true })) as unknown[]).length).toBe(2);
+    expect((data(await tool(reader, 'list_comments', { id, resolved: false })) as unknown[]).length).toBe(0);
+    expect(data(await tool(editor, 'resolve_comment', { id, commentId: first.id, resolved: false })).resolved).toBe(false);
+  });
+
+  it('arguments invalides : identifiants piégés, corps vide ou trop long', async () => {
+    const editor = await token('editor', ['read', 'write']);
+    const { id } = await newPage(editor, 'Validation');
+    expect(failed(await tool(editor, 'add_comment', { id, body: '   ' }))).toBe(true);
+    expect(failed(await tool(editor, 'add_comment', { id, body: 'x'.repeat(5001) }))).toBe(true);
+    expect(failed(await tool(editor, 'update_page', { id: '../../etc', text: 'x' }))).toBe(true);
+    expect(failed(await tool(editor, 'update_page', { id, text: 'x'.repeat(100_001) }))).toBe(true);
+    expect(failed(await tool(editor, 'update_page', { id, text: 'x', mode: 'écraser' }))).toBe(true);
+    expect(failed(await tool(editor, 'resolve_comment', { id, commentId: 'nexistepas' }))).toBe(true);
+  });
+});
