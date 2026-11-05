@@ -6,6 +6,7 @@ import { AttachmentWriter, attachmentsDir } from '../lib/attachments.js';
 import { audit } from '../lib/audit.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
 import { IMPORT_LIMITS, importMarkdown } from '../lib/markdown-import.js';
+import { type DocKind, importDocument, sniffDocument } from '../lib/document-import.js';
 import { importNotion, type ImportReport } from '../lib/notion-import.js';
 import { ZipArchive } from '../lib/zip-read.js';
 
@@ -23,6 +24,7 @@ const notionQuery = z.object({
 // Rapports gardés par personne (les plus anciens sont supprimés au-delà).
 export const MAX_REPORTS_PER_USER = 20;
 const MB = 1024 * 1024;
+const docQuery = notionQuery.extend({ filename: z.string().min(1).max(300) });
 
 interface ReportRow { id: string; user_id: string; space_id: string; source: string; dry_run: number; created_at: number; summary: string; items: string }
 const toReport = (r: ReportRow, full: boolean) => ({
@@ -71,7 +73,23 @@ export default async function importRoutes(app: FastifyInstance) {
     }
     importHolder = req;
   };
-  const releaseImportLock = async (req: FastifyRequest) => { if (importHolder === req) importHolder = null; };
+  // Conversion de document en cours : le verrou ne se libère pas sur abandon du client (le processus enfant tourne encore) mais
+  // à la fin de la conversion, dans le `finally` de la route.
+  const converting = new WeakSet<object>();
+  const releaseImportLock = async (req: FastifyRequest) => { if (importHolder === req && !converting.has(req)) importHolder = null; };
+
+  // Rapport enregistré pour la personne ; les plus anciens au-delà de MAX_REPORTS_PER_USER sont supprimés.
+  const saveReport = (userId: string, spaceId: string, source: string, dryRun: boolean, report: ImportReport) => {
+    const id = newId();
+    const now = Date.now();
+    db.transaction(() => {
+      db.prepare('INSERT INTO import_reports (id, user_id, space_id, source, dry_run, created_at, summary, items) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, userId, spaceId, source, dryRun ? 1 : 0, now, JSON.stringify(report.summary), JSON.stringify(report.items));
+      db.prepare(`DELETE FROM import_reports WHERE user_id = ? AND id NOT IN (
+        SELECT id FROM import_reports WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?)`).run(userId, userId, MAX_REPORTS_PER_USER);
+    })();
+    return { id, now };
+  };
 
   app.post('/spaces/:id/import/notion', {
     onRequest: [guard('write'), takeImportLock],
@@ -112,18 +130,69 @@ export default async function importRoutes(app: FastifyInstance) {
     // Simulation : la transaction a été annulée, les copies éventuelles de fichiers cités sont effacées.
     if (dryRun) cloner.rollback();
 
-    const id = newId();
-    const now = Date.now();
-    db.transaction(() => {
-      db.prepare('INSERT INTO import_reports (id, user_id, space_id, source, dry_run, created_at, summary, items) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(id, auth.user.id, spaceId, 'notion', dryRun ? 1 : 0, now, JSON.stringify(report.summary), JSON.stringify(report.items));
-      db.prepare(`DELETE FROM import_reports WHERE user_id = ? AND id NOT IN (
-        SELECT id FROM import_reports WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?)`).run(auth.user.id, auth.user.id, MAX_REPORTS_PER_USER);
-    })();
+    const { id, now } = saveReport(auth.user.id, spaceId, 'notion', dryRun, report);
     // Journal : volumes seulement, jamais de nom de fichier ni de titre.
     audit(db, req, dryRun ? 'import.notion.dry_run' : 'import.notion', spaceId, { report: id, entries: zip.items.length, bytes: req.body.length, ...report.summary });
     if (!dryRun) app.bus.publish({ type: 'space.changed', spaceId });
     return reply.status(dryRun ? 200 : 201).send({ id, source: 'notion', spaceId, parentId: parentId ?? null, dryRun, createdAt: now, ...report });
+  });
+
+  // ---- Import d'un document Word (.docx) ou PDF : une page par envoi ----------------------------------------------------------
+  const docLimit = config.DOC_IMPORT_MAX_MB * MB;
+  const DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  app.addContentTypeParser(['application/pdf', DOCX_TYPE], { parseAs: 'buffer', bodyLimit: docLimit }, (_req, payload, done) => done(null, payload));
+
+  app.post('/spaces/:id/import/document', {
+    onRequest: [guard('write'), takeImportLock],
+    onResponse: releaseImportLock,
+    onRequestAbort: releaseImportLock,
+    bodyLimit: docLimit,
+    config: { rateLimit: { max: 30, timeWindow: '1 hour' } },
+    schema: {
+      tags: ['import'],
+      summary: 'Importer un document Word (.docx) ou un PDF (texte seulement) comme une page ; dryRun=true simule et rend le même rapport',
+      params: idParams, querystring: docQuery, consumes: ['application/pdf', DOCX_TYPE],
+    },
+  }, async (req, reply) => {
+    const auth = requireAuth(req);
+    const spaceId = (req.params as { id: string }).id;
+    const { dryRun, parentId, filename } = req.query as z.output<typeof docQuery>;
+    requireSpaceRole(db, req, spaceId, 'edit');
+    if (parentId) {
+      const parent = loadWritablePage(db, req, parentId);
+      if (parent.space_id !== spaceId) throw new HttpError(404, 'Page introuvable');
+    }
+    if (!Buffer.isBuffer(req.body)) throw new HttpError(415, 'Document attendu (Content-Type: application/pdf ou .docx)');
+    const kind: DocKind | null = sniffDocument(req.body);
+    if (!kind) throw new HttpError(415, 'Format non pris en charge : seuls les fichiers .docx et .pdf sont acceptés');
+    const writer = new AttachmentWriter(db, attachmentsDir(config.DATA_DIR), auth.user.id, {
+      fileBytes: config.ATTACHMENT_MAX_MB * MB, totalBytes: config.ATTACHMENTS_TOTAL_MB * MB, userBytes: config.ATTACHMENT_USER_MB * MB,
+    }, dryRun);
+    const cloner = clonerFor(db, config, req);
+    let report: ImportReport;
+    converting.add(req);
+    try {
+      report = await importDocument(db, {
+        kind, buffer: req.body, filename, spaceId, parentId: parentId ?? null, userId: auth.user.id, writer, cloner, dryRun,
+        limits: {
+          timeoutMs: config.DOC_IMPORT_TIMEOUT_SECONDS * 1000, maxPages: config.DOC_IMPORT_MAX_PAGES,
+          zipEntries: config.IMPORT_ZIP_MAX_ENTRIES, zipUncompressedBytes: config.IMPORT_ZIP_UNCOMPRESSED_MB * MB, zipRatio: config.IMPORT_ZIP_MAX_RATIO,
+        },
+      });
+    } catch (err) {
+      writer.rollback();
+      cloner.rollback();
+      throw err;
+    } finally {
+      converting.delete(req);
+      if (importHolder === req) importHolder = null;
+    }
+    if (dryRun) cloner.rollback();
+    const { id, now } = saveReport(auth.user.id, spaceId, kind, dryRun, report);
+    // Journal : volumes seulement, jamais de nom de fichier ni de titre.
+    audit(db, req, dryRun ? 'import.document.dry_run' : 'import.document', spaceId, { report: id, kind, bytes: req.body.length, ...report.summary });
+    if (!dryRun) app.bus.publish({ type: 'space.changed', spaceId });
+    return reply.status(dryRun ? 200 : 201).send({ id, source: kind, spaceId, parentId: parentId ?? null, dryRun, createdAt: now, ...report });
   });
 
   // Rapports : ceux de la personne connectée seulement, et seulement si elle lit encore l'espace (sinon : introuvable).

@@ -1,4 +1,5 @@
 import { crc32 } from 'node:zlib';
+import { strToU8, zipSync } from 'fflate';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { ADMIN } from './accounts';
@@ -147,4 +148,52 @@ test('import Notion : refus du serveur annoncés (import en cours, archive trop 
   await dialog.getByRole('button', { name: 'Simuler' }).click();
   await expect(dialog.getByRole('alert')).toHaveText('Archive trop volumineuse pour cette instance (réglage IMPORT_ZIP_MAX_MB).');
   await a11y(page, 'import Notion refusé');
+});
+
+// ---- Document Word ----------------------------------------------------------------------------------------------------
+
+/** Document Word minimal : un paragraphe en gras et un texte ordinaire. */
+function docxFile(): Buffer {
+  const t = (s: string) => strToU8(s);
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  return Buffer.from(zipSync({
+    '[Content_Types].xml': t('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'),
+    '_rels/.rels': t('<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'),
+    'word/document.xml': t(`<?xml version="1.0"?><w:document ${W}><w:body><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Note de réunion importée</w:t></w:r></w:p><w:p><w:r><w:t>Premier sujet traité.</w:t></w:r></w:p></w:body></w:document>`),
+  }));
+}
+
+test('import d’un document Word : simulation puis import, page créée avec le nom du fichier', async ({ page, browser }) => {
+  const spaceId = await publicSpace(browser);
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto(`/s/${spaceId}`);
+  await page.locator('.space-switch').click();
+  await page.getByRole('menuitem', { name: /Importer un document/ }).click();
+  const dialog = page.getByRole('dialog', { name: /Importer un document/ });
+  await dialog.getByLabel(/Document Word/).setInputFiles({ name: 'Reunion_equipe.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: docxFile() });
+
+  await dialog.getByRole('button', { name: 'Simuler' }).click();
+  await expect(dialog.getByText('Simulation terminée : rien n’a été créé.')).toBeVisible();
+  expect(await titlesIn(browser, spaceId)).not.toContain('Reunion equipe');
+  await a11y(page, 'rapport de simulation document');
+
+  await dialog.getByRole('button', { name: 'Importer' }).click();
+  await expect(dialog.getByText('Import terminé.', { exact: true }).first()).toBeVisible();
+  expect(await titlesIn(browser, spaceId)).toContain('Reunion equipe');
+
+  // Un fichier d'un autre type est refusé côté interface.
+  await dialog.getByLabel(/Document Word/).setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('texte') });
+  await dialog.getByRole('button', { name: 'Simuler' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('.docx et .pdf');
+});
+
+test('paramètres, Import : les imports Notion et document s’ouvrent pour l’espace choisi', async ({ page }) => {
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto('/settings/import');
+  await expect(page.getByRole('heading', { name: 'Importer depuis Notion ou un document' })).toBeVisible();
+  await page.getByRole('button', { name: 'Importer un document (Word, PDF)' }).click();
+  await expect(page.getByRole('dialog', { name: /Importer un document/ })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Importer un export Notion' }).click();
+  await expect(page.getByRole('dialog', { name: /Importer depuis Notion/ })).toBeVisible();
 });
