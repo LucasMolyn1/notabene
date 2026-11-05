@@ -34,8 +34,10 @@ export interface ReportItem {
 export interface ImportSummary {
   pages: number; bases: number; tables: number; folders: number; attachments: number; skipped: number;
   links: { resolved: number; unresolved: number };
+  /** Lignes du rapport non listées (au-delà de REPORT_MAX_ITEMS). */
+  truncated?: number;
 }
-export interface ImportReport { summary: ImportSummary; items: ReportItem[]; /** Lignes du rapport non listées (au-delà de REPORT_MAX_ITEMS). */ truncated?: number }
+export interface ImportReport { summary: ImportSummary; items: ReportItem[] }
 const REPORT_MAX_ITEMS = 5000;
 const TEXT_TOTAL_BYTES = 50_000_000;
 
@@ -334,9 +336,9 @@ export function importNotion(db: DB, input: NotionImportInput): ImportReport {
         attachments: items.filter((i) => i.kind === 'attachment' && i.status === 'imported').length,
         skipped: items.filter((i) => i.status === 'skipped').length,
         links: stats.links,
+        ...(items.length > REPORT_MAX_ITEMS ? { truncated: items.length - REPORT_MAX_ITEMS } : {}),
       },
       items: items.slice(0, REPORT_MAX_ITEMS),
-      ...(items.length > REPORT_MAX_ITEMS ? { truncated: items.length - REPORT_MAX_ITEMS } : {}),
     };
     if (input.dryRun) throw new DryRun(report);
     return report;

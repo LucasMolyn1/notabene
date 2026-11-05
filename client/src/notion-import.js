@@ -115,7 +115,7 @@ function reportEl(report, close) {
     head,
     summaryEl(report.summary),
     createdEl,
-    report.truncated > 0 && h('p', { class: 'notice warning' }, `Rapport tronqué : ${report.truncated} fichier(s) non listé(s).`),
+    report.summary.truncated > 0 && h('p', { class: 'notice warning' }, `Rapport tronqué : ${report.summary.truncated} fichier(s) non listé(s).`),
     items.length > 0
       ? [filters, countEl,
         h('div', { class: 'ni-scroll' }, h('table', { class: 'ni-table' },

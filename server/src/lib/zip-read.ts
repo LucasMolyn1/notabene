@@ -174,7 +174,7 @@ export class ZipArchive {
       if (local + 30 > buf.length || buf.readUInt32LE(local) !== LOC) bad(`en-tête local introuvable pour « ${shown} »`);
       const dataStart = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
       if (dataStart + compressed > buf.length) bad(`données hors de l’archive pour « ${shown} »`);
-      ranges.push([dataStart, dataStart + compressed]);
+      ranges.push([local, dataStart + compressed]);
       const entry: Raw = { path: name, size, nested, method, crc, compressed, dataStart, src: buf };
 
       // Archive imbriquée (Notion découpe un gros export en « …-Part-1.zip ») : un seul niveau, à la racine, mêmes plafonds.
