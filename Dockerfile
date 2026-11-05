@@ -20,6 +20,11 @@ ENV NODE_ENV=production \
 # Commit transmis à la construction (voir README, « Versions et releases ») : affiché dans Paramètres, Instance.
 ARG GIT_COMMIT=
 ENV GIT_COMMIT=$GIT_COMMIT
+# CVE-2026-109518 (apt, HIGH) : correctif Debian 2.6.2, absent de l'image de base épinglée. À retirer quand le digest
+# ci-dessus (mis à jour par Dependabot) embarque déjà apt >= 2.6.2.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends --only-upgrade apt libapt-pkg6.0 \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build --chown=node:node /app/package.json /app/CHANGELOG.md ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
