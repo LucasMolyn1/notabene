@@ -2,6 +2,7 @@
 // Tout est échappé ; seuls les nœuds, marques et liens connus sont rendus (liste blanche, comme lib/content.ts).
 import { ATTACHMENT_ID } from './attachments.js';
 import { type DocNode, isSafeHref, isSafeImageSrc } from './content.js';
+import type { ExportLinks } from './markdown.js';
 
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
@@ -10,11 +11,13 @@ type MentionName = (id: string) => string | null;
 
 const MARK: Record<string, string> = { bold: 'strong', italic: 'em', strike: 's', code: 'code', underline: 'u', highlight: 'mark' };
 
-export function renderHtml(doc: DocNode, titleOf: TitleOf, mentionName: MentionName = () => null): string {
+// `links` : adresses relatives d'un export hors ligne (voir ExportLinks) ; elles ne viennent que du serveur, jamais du contenu.
+export function renderHtml(doc: DocNode, titleOf: TitleOf, mentionName: MentionName = () => null, links: ExportLinks = {}): string {
+  const pageHref = (id: string) => links.page?.(id) ?? `/p/${id}`;
   const inline = (nodes: DocNode[] = []): string => nodes.map((n) => {
     if (n.type === 'hardBreak') return '<br>';
     if (n.type === 'mention') return `<span>@${escapeHtml(mentionName(String(n.attrs?.id)) ?? 'utilisateur')}</span>`;
-    if (n.type === 'pageLink') return `<a href="/p/${escapeHtml(String(n.attrs?.id ?? ''))}">${escapeHtml(titleOf(String(n.attrs?.id)) ?? 'Sans titre')}</a>`;
+    if (n.type === 'pageLink') return `<a href="${escapeHtml(pageHref(String(n.attrs?.id ?? '')))}">${escapeHtml(titleOf(String(n.attrs?.id)) ?? 'Sans titre')}</a>`;
     if (n.type !== 'text') return '';
     let html = escapeHtml(n.text ?? '');
     for (const m of n.marks ?? []) {
@@ -45,8 +48,12 @@ export function renderHtml(doc: DocNode, titleOf: TitleOf, mentionName: MentionN
       case 'horizontalRule': return '<hr>';
       // Pièce jointe : lien de téléchargement seulement (aucun lecteur intégré) ; le fichier n'est servi qu'à qui peut lire sa page.
       case 'attachment': case 'video': case 'audio':
-        return ATTACHMENT_ID.test(String(a.id)) ? `<p><a href="/api/v3/attachments/${escapeHtml(String(a.id))}" rel="nofollow">${escapeHtml(String(a.name || 'Fichier'))}</a></p>` : '';
-      case 'image': return isSafeImageSrc(a.src) && !String(a.src).startsWith('data:') ? `<img src="${escapeHtml(String(a.src))}" alt="${escapeHtml(String(a.alt ?? ''))}" loading="lazy">` : '';
+        return ATTACHMENT_ID.test(String(a.id)) ? `<p><a href="${escapeHtml(links.file?.(String(a.id)) ?? `/api/v3/attachments/${String(a.id)}`)}" rel="nofollow">${escapeHtml(String(a.name || 'Fichier'))}</a></p>` : '';
+      case 'image': {
+        const local = isSafeImageSrc(a.src) ? links.image?.(String(a.src)) : null;
+        if (local) return `<img src="${escapeHtml(local)}" alt="${escapeHtml(String(a.alt ?? ''))}" loading="lazy">`;
+        return isSafeImageSrc(a.src) && !String(a.src).startsWith('data:') ? `<img src="${escapeHtml(String(a.src))}" alt="${escapeHtml(String(a.alt ?? ''))}" loading="lazy">` : '';
+      }
       case 'bulletList': return `<ul>${children(node)}</ul>`;
       case 'orderedList': return `<ol>${children(node)}</ol>`;
       case 'taskList': return `<ul>${children(node)}</ul>`;

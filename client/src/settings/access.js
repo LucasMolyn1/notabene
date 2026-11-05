@@ -187,6 +187,8 @@ const AUDIT_LABELS = {
   'token.create': 'Jeton créé', 'token.revoke': 'Jeton révoqué', 'settings.ai': 'Réglages IA', 'ai.ask': 'Question IA', 'ai.assist': 'Assistant de rédaction',
   'space.create': 'Espace créé', 'space.delete': 'Espace supprimé', 'space.visibility': 'Visibilité modifiée',
   'page.destroy': 'Page supprimée définitivement', 'trash.empty': 'Corbeille vidée',
+  'page.export.zip': 'Page exportée en ZIP', 'space.export.zip': 'Espace exporté en ZIP',
+  'images.migration.dryrun': 'Conversion des images simulée', 'images.migration.start': 'Conversion des images lancée', 'images.migration.revert': 'Conversion des images annulée', 'images.migration.end': 'Conversion des images terminée',
 };
 
 export async function renderAudit(el) {

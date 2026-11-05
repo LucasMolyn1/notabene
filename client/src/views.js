@@ -385,6 +385,7 @@ function mountPage(page) {
       { label: 'Exporter en Markdown', icon: 'download', onClick: async () => { await flush(); A.exportMarkdown(id); } },
       { label: 'Exporter en HTML', icon: 'download', onClick: async () => { await flush(); A.exportHTML(id); } },
       { label: 'Exporter en PDF', icon: 'pdf', onClick: async () => { await flush(); A.exportPDF(id); } },
+      session.user && { label: 'Exporter en ZIP', icon: 'download', onClick: async () => { await flush(); A.openZipExport({ pageId: id }); } },
       canWrite && { label: 'Dupliquer', icon: 'copy', onClick: async () => { await flush(); A.duplicate(id); } },
       canWrite && { label: 'Ajouter une sous-page', icon: 'plus', onClick: () => A.newPage(p.spaceId, id) },
       canWrite && { label: 'Ajouter une sous-page depuis un modèle', icon: 'layers', onClick: () => A.newPageFromTemplate(p.spaceId, id) },

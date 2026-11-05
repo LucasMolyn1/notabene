@@ -12,6 +12,11 @@ export interface ZipEntry {
   mtime: number;
   /** Stocker sans recompresser (fichier déjà compressé). */
   store?: boolean;
+  /**
+   * `false` : `size` n'est qu'une estimation (texte produit pendant le flux, qui peut changer d'ici là) ; la taille réelle n'est
+   * pas exigée, mais l'archive entière reste bornée (vérifié octet par octet pendant l'écriture).
+   */
+  exact?: boolean;
   body: () => Buffer | AsyncIterable<Buffer>;
 }
 
@@ -75,9 +80,15 @@ async function* write(named: ZipEntry[]): AsyncGenerator<Buffer> {
     if (err) failure = err;
     else if (chunk.length) out.push(Buffer.from(chunk.buffer, chunk.byteOffset, chunk.length));
   });
+  let total = 0;
   const flush = function* () {
     if (failure) throw failure;
-    while (out.length) yield out.shift()!;
+    while (out.length) {
+      const chunk = out.shift()!;
+      total += chunk.length;
+      if (total > ZIP_MAX_BYTES) throw new Error('archive trop volumineuse');
+      yield chunk;
+    }
   };
 
   for (const e of named) {
@@ -86,19 +97,20 @@ async function* write(named: ZipEntry[]): AsyncGenerator<Buffer> {
     zip.add(file);
     const body = e.body();
     let written = 0;
+    const exact = e.exact !== false;
     if (Buffer.isBuffer(body)) {
       written = body.length;
-      if (written === e.size) file.push(body, true);
+      if (!exact || written === e.size) file.push(body, true);
     } else {
       for await (const chunk of body) {
         written += chunk.length;
-        if (written > e.size) break;
+        if (exact && written > e.size) break;
         file.push(chunk, false);
         yield* flush();
       }
-      if (written === e.size) file.push(new Uint8Array(0), true);
+      if (!exact || written === e.size) file.push(new Uint8Array(0), true);
     }
-    if (written !== e.size) throw new Error(`taille inattendue pour ${e.name}`);
+    if (exact && written !== e.size) throw new Error(`taille inattendue pour ${e.name}`);
     yield* flush();
   }
   zip.end();

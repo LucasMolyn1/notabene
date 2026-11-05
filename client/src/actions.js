@@ -206,6 +206,109 @@ export async function exportPDF(id) {
   toast('Choisissez « Enregistrer au format PDF » dans la fenêtre d’impression.');
 }
 
+// ---- Export ZIP (serveur) ------------------------------------------------
+
+const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+// Message clair pour chaque refus connu de l'export ZIP (le détail du serveur est repris quand il précise le plafond).
+function zipError(status, detail) {
+  if (status === 401) return 'Votre session a expiré : reconnectez-vous pour exporter.';
+  if (status === 403) return 'Vous n’avez pas accès à cet export.';
+  if (status === 404) return 'Page ou espace introuvable (supprimé ou inaccessible).';
+  if (status === 413) return detail ? `Export trop volumineux : ${detail}` : 'Export trop volumineux : exportez une partie plus petite.';
+  if (status === 429) return detail || 'Trop d’exports en cours ou demandés récemment : réessayez dans une minute.';
+  if (status === 0) return 'Connexion au serveur impossible.';
+  return detail || `Export impossible (erreur ${status}).`;
+}
+
+/**
+ * Télécharge une archive ZIP préparée par le serveur. Renvoie null si tout va bien, sinon le message d'erreur.
+ * @param {{ pageId?: string, spaceId?: string, format: 'md' | 'html', subpages?: boolean }} target
+ * @returns {Promise<string | null>}
+ */
+export async function downloadZip({ pageId, spaceId, format, subpages = false }) {
+  const id = pageId || spaceId;
+  if (!SAFE_ID.test(id || '') || !['md', 'html'].includes(format)) return 'Export impossible : paramètres invalides.';
+  const url = pageId
+    ? `/api/v3/pages/${id}/export/zip?format=${format}&subpages=${subpages ? 'true' : 'false'}`
+    : `/api/v3/spaces/${id}/export/zip?format=${format}`;
+  let res;
+  try {
+    res = await fetch(url, { credentials: 'same-origin' });
+  } catch {
+    return zipError(0);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    return zipError(res.status, typeof data?.detail === 'string' ? data.detail : '');
+  }
+  // Nom proposé par le serveur (ASCII sûr) ; repli sur un nom neutre.
+  const name = /filename="([\w.-]+\.zip)"/.exec(res.headers.get('content-disposition') || '')?.[1] || 'export.zip';
+  const blobUrl = URL.createObjectURL(await res.blob());
+  const a = h('a', { href: blobUrl, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
+  return null;
+}
+
+/**
+ * Fenêtre d'export ZIP : format (Markdown ou HTML) et, pour une page, inclusion des sous-pages.
+ * @param {{ pageId?: string, spaceId?: string }} target
+ */
+export function openZipExport({ pageId, spaceId }) {
+  const forPage = !!pageId;
+  const title = forPage ? (store.page(pageId)?.title || 'Sans titre') : (store.space(spaceId)?.name || 'Espace');
+  const radio = (value, label, hint) => {
+    const input = h('input', { type: 'radio', name: 'zip-format', value });
+    input.checked = value === 'md';
+    return h('label', { class: 'zip-choice' }, input, h('span', null, h('strong', null, label), h('small', { class: 'hint' }, hint)));
+  };
+  const formats = h('fieldset', { class: 'zip-formats' },
+    h('legend', null, 'Format des pages'),
+    radio('md', 'Markdown', 'Fichiers .md, lisibles dans tout éditeur de texte.'),
+    radio('html', 'HTML', 'Fichiers .html, lisibles dans un navigateur.'));
+  const subpages = h('input', { type: 'checkbox' });
+  const hasChildren = forPage && store.descendants(pageId).length > 0;
+  subpages.checked = hasChildren;
+  const live = h('p', { class: 'zip-status', role: 'status', 'aria-live': 'polite' });
+  const error = h('p', { class: 'notice warning', role: 'alert', hidden: true });
+  let busy = false;
+
+  const submit = async () => {
+    if (busy) return false;
+    busy = true;
+    error.hidden = true;
+    live.textContent = 'Préparation de l’archive…';
+    const format = /** @type {'md' | 'html'} */ (formats.querySelector('input:checked')?.value === 'html' ? 'html' : 'md');
+    const failure = await downloadZip(forPage ? { pageId, format, subpages: subpages.checked } : { spaceId, format });
+    busy = false;
+    if (failure) {
+      live.textContent = '';
+      error.textContent = failure;
+      error.hidden = false;
+      return false;
+    }
+    live.textContent = '';
+    toast('Archive ZIP téléchargée.');
+    return undefined;
+  };
+
+  openModal({
+    title: forPage ? `Exporter « ${title} » en ZIP` : `Exporter l’espace « ${title} » en ZIP`,
+    body: h('div', { class: 'stack' },
+      h('p', { class: 'muted' }, forPage
+        ? 'L’archive contient la page, ses images et ses pièces jointes.'
+        : 'L’archive contient toutes les pages que vous pouvez lire dans cet espace (hors corbeille), avec leurs images et pièces jointes.'),
+      formats,
+      forPage && h('label', { class: 'check-row zip-check' }, subpages, h('span', null, 'Avec les sous-pages', h('small', { class: 'hint' }, 'Seules les sous-pages que vous pouvez lire sont incluses.'))),
+      live, error),
+    actions: [{ label: 'Annuler' }, { label: 'Télécharger le ZIP', primary: true, onClick: submit }],
+  });
+  setTimeout(() => formats.querySelector('input:checked')?.focus(), 30);
+}
+
 // ---- Historique -----------------------------------------------------------
 
 export async function openHistory(id) {

@@ -94,6 +94,9 @@ export class CollabHub {
 
   get roomCount() { return this.#rooms.size; }
 
+  /** Page ouverte en co-édition (salle chargée, avec ou sans connexion en cours) : un traitement de fond ne doit pas y toucher. */
+  isOpen(pageId: string): boolean { return this.#rooms.has(pageId); }
+
   // Referme les connexions qui n'ont plus le droit d'écrire (compte désactivé, session fermée, page déplacée…).
   recheckAll() {
     for (const room of this.#rooms.values()) {

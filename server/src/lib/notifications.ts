@@ -92,7 +92,7 @@ export function startNotifications(db: DB, bus: EventBus, mailer: Mailer, config
 
   return bus.subscribe((e) => {
     try {
-      if (!e.pageId) return;
+      if (!e.pageId || e.quiet) return;
       const actorId = e.by?.id ?? null;
       if (e.type === 'page.created' && actorId) watch(db, actorId, e.pageId);
       if (e.type === 'page.created') pageMentions(e.pageId, actorId, true);
