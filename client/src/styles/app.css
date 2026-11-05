@@ -1264,3 +1264,29 @@ tr:hover .bt-row-actions, .bt-row-actions:focus-within { opacity: 1; }
 .zip-check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
 .zip-check input { margin-top: 4px; accent-color: var(--accent); }
 .zip-check > span { display: grid; gap: 2px; }
+/* Import Notion */
+.ni-h { margin: 0; font-size: 15px; font-weight: 600; }
+.ni-progress { width: 100%; height: 8px; accent-color: var(--accent); }
+.ni-status:empty { display: none; }
+.ni-report-box:focus { outline: none; }
+.ni-report-box:empty { display: none; }
+.ni-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ni-stat { display: grid; padding: 10px 12px; border-radius: 10px; background: var(--bg-soft); }
+.ni-stat strong { font-size: 18px; }
+.ni-stat span { color: var(--text-2); font-size: 12.5px; }
+.ni-created h4 { margin: 0; font-size: 14px; }
+.ni-filters { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.ni-filters legend { font-size: 12.5px; font-weight: 500; color: var(--text-2); padding: 0; margin-bottom: 6px; }
+.ni-filter { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 16px; font-size: 13px; cursor: pointer; }
+.ni-filter:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.ni-filter input { margin: 0; accent-color: var(--accent); }
+.ni-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+.ni-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.ni-table th { position: sticky; top: 0; background: var(--elevated); text-align: left; font-weight: 600; color: var(--text-2); }
+.ni-table th, .ni-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.ni-table tr:last-child td { border-bottom: 0; }
+.ni-path { overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; }
+.ni-note { color: var(--text-2); }
+.ni-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ni-history li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+@media (max-width: 600px) { .ni-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

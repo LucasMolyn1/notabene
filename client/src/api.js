@@ -52,7 +52,30 @@ export const api = {
  * @param {{ onProgress?: (ratio: number) => void, signal?: AbortSignal }} [options]
  * @returns {Promise<any>}
  */
-export function upload(path, file, { onProgress, signal } = {}) {
+export function upload(path, file, options = {}) {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return sendBody(path, form, options);
+}
+
+/**
+ * Envoi d'un corps brut (par exemple une archive ZIP en application/zip), avec progression et annulation.
+ * @param {string} path chemin v3, paramètres de requête compris
+ * @param {Blob} blob
+ * @param {{ contentType: string, onProgress?: (ratio: number) => void, onSent?: () => void, signal?: AbortSignal }} options
+ * @returns {Promise<any>}
+ */
+export function uploadRaw(path, blob, options) {
+  return sendBody(path, blob, options);
+}
+
+/**
+ * @param {string} path
+ * @param {FormData | Blob} body
+ * @param {{ contentType?: string, onProgress?: (ratio: number) => void, onSent?: () => void, signal?: AbortSignal }} options
+ * @returns {Promise<any>}
+ */
+function sendBody(path, body, { contentType, onProgress, onSent, signal } = {}) {
   const url = v3(path);
   if (!SAFE_URL.test(url) || url.includes('..') || url.includes('//')) return Promise.reject(new ApiError(400, 'Adresse de requête invalide', null));
   return new Promise((resolve, reject) => {
@@ -61,7 +84,9 @@ export function upload(path, file, { onProgress, signal } = {}) {
     const done = () => signal?.removeEventListener('abort', abort);
     xhr.open('POST', url);
     if (csrf) xhr.setRequestHeader('X-CSRF-Token', csrf);
+    if (contentType) xhr.setRequestHeader('Content-Type', contentType);
     xhr.upload.addEventListener('progress', (e) => { if (e.lengthComputable && e.total > 0) onProgress?.(e.loaded / e.total); });
+    xhr.upload.addEventListener('load', () => onSent?.());
     xhr.addEventListener('load', () => {
       done();
       let data;
@@ -73,9 +98,7 @@ export function upload(path, file, { onProgress, signal } = {}) {
     xhr.addEventListener('abort', () => { done(); reject(new ApiError(0, 'Envoi annulé', { aborted: true })); });
     if (signal?.aborted) { reject(new ApiError(0, 'Envoi annulé', { aborted: true })); return; }
     signal?.addEventListener('abort', abort);
-    const form = new FormData();
-    form.append('file', file, file.name);
-    xhr.send(form);
+    xhr.send(body);
   });
 }
 
