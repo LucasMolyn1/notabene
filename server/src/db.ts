@@ -568,6 +568,22 @@ export const MIGRATIONS: string[] = [
     seen_at    INTEGER NOT NULL
   );
   `,
+  // v23 : rapports d'import (simulation ou import réel), relus ensuite par la personne qui a importé. Le rapport ne contient que
+  // des chemins de l'archive, des titres et des motifs, jamais le contenu des fichiers. Supprimé avec le compte ou l'espace.
+  // Retour arrière : DROP TABLE import_reports; (aucune autre table n'en dépend).
+  `
+  CREATE TABLE import_reports (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    space_id   TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    source     TEXT NOT NULL CHECK (source IN ('notion')),
+    dry_run    INTEGER NOT NULL CHECK (dry_run IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    summary    TEXT NOT NULL,
+    items      TEXT NOT NULL
+  );
+  CREATE INDEX import_reports_user ON import_reports(user_id, created_at);
+  `,
 ];
 
 export function openDb(file: string): DB {

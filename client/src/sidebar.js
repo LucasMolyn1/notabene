@@ -9,6 +9,7 @@ import { prefs, savePrefs, currentTheme } from './prefs.js';
 import { avatarEl } from './avatar.js';
 import { openMenu, pageIcon } from './ui.js';
 import * as A from './actions.js';
+import { openNotionImport } from './notion-import.js';
 
 let dragId = null;
 
@@ -32,6 +33,7 @@ function spaceMenu(anchor, space) {
     })),
     session.user && { sep: true },
     session.user && { label: 'Exporter l’espace en ZIP', icon: 'download', onClick: () => A.openZipExport({ spaceId: space.id }) },
+    session.user && session.can('write') && store.canWriteIn(space.id) && { label: 'Importer depuis Notion', icon: 'upload', onClick: () => openNotionImport(space.id) },
     (admin || canCreatePersonal || store.canManage(space.id)) && { sep: true },
     canCreatePersonal && { label: 'Créer mon espace personnel', icon: 'home', onClick: () => A.createPersonalSpace() },
     admin && { label: 'Nouvel espace', icon: 'plus', onClick: () => A.spaceForm() },

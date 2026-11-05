@@ -162,6 +162,12 @@ const schema = z
     ATTACHMENT_UPLOAD_IDLE_SECONDS: z.coerce.number().int().min(1).max(600).default(30),
     // Volume de pièces jointes copiées par une seule opération (copie, duplication, modèle), en Mo : la copie bloque le serveur.
     ATTACHMENT_COPY_MAX_MB: z.coerce.number().int().min(1).max(1024).default(100),
+    // Import d'archives ZIP (Notion) : taille de l'archive envoyée (Mo, gardée en mémoire), volume décompressé total (Mo),
+    // nombre d'entrées, et taux de compression maximal d'une entrée de plus de 1 Mio (au-delà : archive refusée, bombe ZIP).
+    IMPORT_ZIP_MAX_MB: z.coerce.number().int().min(1).max(2048).default(200),
+    IMPORT_ZIP_UNCOMPRESSED_MB: z.coerce.number().int().min(1).max(20_480).default(1024),
+    IMPORT_ZIP_MAX_ENTRIES: z.coerce.number().int().min(1).max(100_000).default(10_000),
+    IMPORT_ZIP_MAX_RATIO: z.coerce.number().int().min(2).max(10_000).default(100),
     // Export ZIP d'une page et de ses sous-pages ou d'un espace : nombre de pages et volume total (Mo) au plus.
     EXPORT_MAX_PAGES: z.coerce.number().int().min(1).max(100_000).default(5000),
     EXPORT_MAX_MB: z.coerce.number().int().min(1).max(4000).default(2048),

@@ -60,7 +60,23 @@ function validPath(p: string) {
 
 // ---- Markdown -> TipTap ----------------------------------------------------------------------
 
-interface Ctx { resolveLink: (href: string, from: string) => string | null; from: string; stats: ImportResult; notes?: Set<string> }
+/** Fichier de l'archive devenu pièce jointe : adresse à citer et bloc qui l'affiche. */
+export interface ResolvedFile { url: string; block: DocNode }
+
+export interface Ctx {
+  resolveLink: (href: string, from: string) => string | null;
+  from: string;
+  stats: ImportResult;
+  notes?: Set<string>;
+  /** Image par chemin relatif : bloc image (ou fichier si ce n'est pas une image reconnue), null si introuvable. */
+  resolveImage?: (href: string, from: string) => DocNode | null;
+  /** Lien relatif vers un fichier qui n'est pas une page : pièce jointe créée, null si introuvable. */
+  resolveFile?: (href: string, from: string) => ResolvedFile | null;
+  /** Lien absolu vers une page de l'outil d'origine (notion.so) : identifiant de la page importée, null sinon. */
+  resolveExternal?: (href: string) => string | null;
+  /** Citation commençant par un émoji : encadré (« callout » de Notion). */
+  emojiCallouts?: boolean;
+}
 type Mark = { type: string; attrs?: Record<string, unknown> };
 
 const para = (content: DocNode[] = []): DocNode => (content.length ? { type: 'paragraph', content } : { type: 'paragraph' });
@@ -85,19 +101,25 @@ function inline(tokens: Token[] = [], ctx: Ctx, marks: Mark[] = []): DocNode[] {
       case 'link': {
         const { href, tokens } = t as Tokens.Link;
         if (/^(https?:|mailto:)/i.test(href)) {
-          out.push(...inline(tokens, ctx, [...marks, { type: 'link', attrs: { href } }]));
+          const id = ctx.resolveExternal?.(href);
+          if (id) { ctx.stats.links.resolved++; out.push({ type: 'pageLink', attrs: { id } }); }
+          else out.push(...inline(tokens, ctx, [...marks, { type: 'link', attrs: { href } }]));
         } else if (href.startsWith('#')) {
           out.push(...inline(tokens, ctx, marks));
         } else {
           const id = ctx.resolveLink(href, ctx.from);
+          const file = id ? null : ctx.resolveFile?.(href, ctx.from);
           if (id) { ctx.stats.links.resolved++; out.push({ type: 'pageLink', attrs: { id } }); }
+          else if (file) out.push(...inline(tokens, ctx, [...marks, { type: 'link', attrs: { href: file.url } }]));
           else { ctx.stats.links.unresolved++; out.push(...inline(tokens, ctx, marks)); }
         }
         break;
       }
       case 'image': {
         const { href, text: alt, title } = t as Tokens.Image;
-        if (/^https:\/\//i.test(href) || /^data:image\//i.test(href)) out.push({ type: 'image', attrs: { src: href, alt: alt || null, title: title || null } });
+        const local = /^https:\/\//i.test(href) || /^data:image\//i.test(href) ? null : ctx.resolveImage?.(href, ctx.from);
+        if (!local && (/^https:\/\//i.test(href) || /^data:image\//i.test(href))) out.push({ type: 'image', attrs: { src: href, alt: alt || null, title: title || null } });
+        else if (local) out.push(local.type === 'image' ? { ...local, attrs: { ...local.attrs, alt: alt || null, title: title || null } } : local);
         else { ctx.stats.images++; out.push(text(`[Image : ${alt || href.split('/').pop() || 'non importée'}]`, marks)); }
         break;
       }
@@ -135,7 +157,16 @@ function blocks(tokens: Token[] = [], ctx: Ctx): DocNode[] {
         out.push({ type: 'heading', attrs: { level: Math.min(3, h.depth) }, content: inline(h.tokens, ctx) });
         break;
       }
-      case 'paragraph': out.push(para(inline((t as Tokens.Paragraph).tokens, ctx))); break;
+      case 'paragraph': {
+        // Paragraphe fait d'un seul lien vers un fichier de l'archive (bloc fichier de Notion) : bloc pièce jointe.
+        const tokens = (t as Tokens.Paragraph).tokens.filter((k) => !(k.type === 'text' && !k.raw.trim()));
+        const only = tokens.length === 1 && tokens[0]!.type === 'link' ? (tokens[0] as Tokens.Link) : null;
+        const file = only && !/^[a-z][a-z0-9+.-]*:/i.test(only.href) && !only.href.startsWith('#') && !ctx.resolveLink(only.href, ctx.from)
+          ? ctx.resolveFile?.(only.href, ctx.from) : null;
+        if (file) out.push(file.block);
+        else out.push(...hoist(inline((t as Tokens.Paragraph).tokens, ctx)));
+        break;
+      }
       case 'text': out.push(para(inline([t], ctx))); break;
       case 'hr': out.push({ type: 'horizontalRule' }); break;
       case 'code': {
@@ -167,10 +198,35 @@ function blocks(tokens: Token[] = [], ctx: Ctx): DocNode[] {
   return out;
 }
 
+// Blocs qui ne vont jamais dans un paragraphe (l'éditeur les affiche en bloc).
+const BLOCK_IN_INLINE = new Set(['image', 'attachment', 'video', 'audio']);
+
+/** Paragraphe dont les images et fichiers sont sortis en blocs, dans l'ordre du texte. */
+function hoist(content: DocNode[]): DocNode[] {
+  if (!content.some((n) => BLOCK_IN_INLINE.has(n.type))) return [para(content)];
+  const out: DocNode[] = [];
+  let run: DocNode[] = [];
+  const flush = () => { if (run.some((n) => n.type !== 'hardBreak' && (n.type !== 'text' || n.text?.trim()))) out.push(para(run)); run = []; };
+  for (const n of content) {
+    if (BLOCK_IN_INLINE.has(n.type)) { flush(); out.push(n); } else run.push(n);
+  }
+  flush();
+  return out;
+}
+
+// Émoji en tête de citation (callout de Notion) : type d'encadré d'après l'émoji, « info » par défaut.
+const EMOJI_START = /^\p{Extended_Pictographic}/u;
+const EMOJI_TYPE: [RegExp, string][] = [[/^(\u26a0|\u2757|\u203c|\u{1f6a8}|\u{1f525})/u, 'warning'], [/^(\u2705|\u2714|\u{1f7e2}|\u{1f389})/u, 'success'], [/^(\u274c|\u26d4|\u{1f6ab}|\u{1f6d1}|\u{1f534})/u, 'danger']];
+
 function blockquote(t: Tokens.Blockquote, ctx: Ctx): DocNode {
   const inner = blocks(t.tokens, ctx);
   const first = inner[0];
   const firstText = first?.type === 'paragraph' ? (first.content ?? []).map((n) => n.text ?? '').join('') : '';
+  if (ctx.emojiCallouts && EMOJI_START.test(firstText)) {
+    // Ligne « > » vide en fin de citation (Notion) : paragraphe vide retiré.
+    const body = inner.filter((n, i) => i === 0 || !(n.type === 'paragraph' && !n.content?.length));
+    return { type: 'callout', attrs: { type: EMOJI_TYPE.find(([re]) => re.test(firstText))?.[1] ?? 'info' }, content: body };
+  }
   const alert = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/.exec(firstText);
   if (alert && first) {
     const rest = (first.content ?? []).filter((n, i) => !(i === 0 && n.type === 'text'));

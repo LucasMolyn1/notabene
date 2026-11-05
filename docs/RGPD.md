@@ -10,6 +10,7 @@ Ce document aide la personne ou l'organisation qui **déploie** BeNote à respec
 | Contenu | pages, versions, commentaires (et personnes mentionnées), libellés, modèles, favoris, suivis, permissions, appartenance aux groupes et aux espaces (y compris celle recopiée du fournisseur d'identité à chaque connexion), espace personnel (lisible de son seul propriétaire), liens de partage public (jeton, auteur du lien) ; l'auteur est rattaché par identifiant | base SQLite |
 | Pièces jointes | fichiers joints aux pages (contenu libre, qui peut contenir des données personnelles), nom d'origine, envoyeur (identifiant), date ; visibles de qui peut lire la page | fichiers dans `DATA_DIR/attachments`, inventaire en base |
 | Photo de profil (facultative) | une image réduite à 256 px, envoyée par la personne elle-même ; visible des personnes connectées ; métadonnées retirées par le navigateur ; supprimée avec le compte, ou par la personne, ou par un administrateur | base SQLite |
+| Rapports d'import (Notion) | chemins des fichiers de l'archive importée, titres, motifs d'écart, auteur, espace, date ; lisibles de leur seul auteur ; l'archive elle-même n'est pas conservée | base SQLite |
 | Sessions et jetons | hash de l'identifiant de session, hash des jetons d'API, dates | base SQLite |
 | Journal d'audit | action, date, identifiant de l'utilisateur, **adresse IP** | base SQLite |
 | Notifications | type, page concernée, auteur, état de lecture ; l'e-mail ne contient que le titre, le nom et un lien | base SQLite, serveur SMTP |
@@ -29,6 +30,7 @@ Des purges automatiques tournent toutes les heures. Les valeurs sont en jours, `
 | Adresses IP du journal d'audit (effacées, l'entrée reste) | `AUDIT_IP_RETENTION_DAYS` | 90 |
 | Entrées du journal d'audit | `AUDIT_RETENTION_DAYS` | 365 |
 | Sessions, jetons de connexion et de réinitialisation expirés | non réglable | à l'expiration |
+| Rapports d'import (les 20 derniers par personne, supprimés avec le compte ou l'espace) | non réglable | 20 rapports |
 
 Adaptez ces durées à votre finalité et documentez-les dans votre registre des traitements.
 
