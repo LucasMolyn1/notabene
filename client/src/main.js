@@ -20,6 +20,7 @@ import { showMfaSetup, showResetPassword } from './local-auth.js';
 import { refreshUnread } from './notifications.js';
 import { onCommentEvent } from './comments.js';
 import { showShare } from './share.js';
+import { toggleChat } from './ai-chat.js';
 import * as A from './actions.js';
 import { pagePath, parseRoute, spacePath, upgradeLegacyHash } from './urls.js';
 
@@ -71,6 +72,7 @@ function onKey(e) {
   if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); A.search(); }
   else if (mod && e.key === '\\') { e.preventDefault(); A.toggleSidebar(); }
   else if (e.altKey && !mod && e.code === 'KeyN' && !app.embed && session.can('write')) { e.preventDefault(); A.newPage(prefs.space); }
+  else if (e.altKey && !mod && !e.shiftKey && e.code === 'KeyI' && !app.embed && session.can('ai')) { e.preventDefault(); toggleChat(); }
 }
 
 // Les liens internes (/p/…, /s/…, /settings…) naviguent sans recharger la page ; un clic avec Ctrl, Maj ou la molette garde son sens habituel.

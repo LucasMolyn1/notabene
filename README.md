@@ -183,7 +183,7 @@ curl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v3/
 
 **Version** : l'API est servie sous `/api/v3`. Les versions v1 et v2 ont été retirées (leur contenu est dans la v3 : pagination par curseur, `ETag`/`If-Match`, erreurs RFC 9457, commentaires, permissions par page, notifications). `GET /api/versions` indique l'état ; voir `docs/API-VERSIONING.md`.
 
-Principales routes : `GET/POST /spaces`, `GET/POST /pages`, `GET/PATCH/DELETE /pages/:id`, `POST /pages/:id/move`, `GET /pages/:id/versions`, `GET /search`, `POST /ai/ask` (SSE). Le détail complet est sur **`/api/docs`**.
+Principales routes : `GET/POST /spaces`, `GET/POST /pages`, `GET/PATCH/DELETE /pages/:id`, `POST /pages/:id/move`, `GET /pages/:id/versions`, `GET /search`, `POST /ai/ask` (SSE), `POST /ai/chat` (SSE, conversations par personne sous `/ai/conversations`). Le détail complet est sur **`/api/docs`**.
 
 ## Recherche IA
 

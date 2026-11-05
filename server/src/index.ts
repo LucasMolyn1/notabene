@@ -31,6 +31,7 @@ const retention = {
   notificationDays: config.NOTIFICATION_RETENTION_DAYS,
   auditIpDays: config.AUDIT_IP_RETENTION_DAYS,
   auditDays: config.AUDIT_RETENTION_DAYS,
+  aiChatDays: config.AI_CHAT_RETENTION_DAYS,
 };
 cleanup(db, retention);
 // Pièces jointes : avant d'ouvrir le port, effacer les envois interrompus et les fichiers sans ligne en base ; ensuite, chaque heure,

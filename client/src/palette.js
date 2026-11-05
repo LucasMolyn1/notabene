@@ -8,6 +8,7 @@ import { store } from './store.js';
 import { session } from './session.js';
 import { streamAsk } from './api.js';
 import { normalizeLabel } from './labels.js';
+import { renderAnswer } from './ai-markdown.js';
 
 let current = null;
 
@@ -37,34 +38,6 @@ function pathOf(page) {
   const space = store.space(page.spaceId);
   return [space ? space.name : '', ...store.ancestors(page.id).map((a) => a.title || 'Sans titre')]
     .filter(Boolean).join(' › ');
-}
-
-// Markdown minimal et sûr pour les réponses de l'IA : tout est échappé avant mise en forme.
-function renderAnswer(text, sources) {
-  const byN = new Map(sources.map((s) => [s.n, s]));
-  const inline = (s) => esc(s)
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|[\s(])_([^_]+)_(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>')
-    .replace(/\[(\d{1,2})\]/g, (m, n) => {
-      const src = byN.get(Number(n));
-      return src ? `<a class="cite" href="${pagePath(src)}" title="${esc(src.title)}">${n}</a>` : m;
-    });
-  const out = [];
-  let list = null;
-  for (const line of text.split('\n')) {
-    const item = /^\s*(?:[-*]|\d+\.)\s+(.*)$/.exec(line);
-    if (item) {
-      if (!list) { list = []; out.push(list); }
-      list.push(`<li>${inline(item[1])}</li>`);
-      continue;
-    }
-    list = null;
-    const head = /^#{1,4}\s+(.*)$/.exec(line);
-    if (head) out.push(`<p><strong>${inline(head[1])}</strong></p>`);
-    else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
-  }
-  return out.map((b) => (Array.isArray(b) ? `<ul>${b.join('')}</ul>` : b)).join('');
 }
 
 /**
