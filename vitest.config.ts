@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     include: ['server/test/**/*.test.ts'],
     environment: 'node',
+    // Les tests de migration rejouent tout le schéma (FTS compris) : sous couverture sur la CI, 5 s ne suffisent plus.
+    testTimeout: 20_000,
     coverage: {
       provider: 'v8',
       include: ['server/src/**/*.ts'],
