@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard } from '../auth/context.js';
-import { requireSpaceRole } from '../lib/access.js';
+import { clonerFor, requireSpaceRole } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
 import { idSchema } from '../lib/http.js';
 import { IMPORT_LIMITS, importMarkdown } from '../lib/markdown-import.js';
@@ -20,7 +20,9 @@ export default async function importRoutes(app: FastifyInstance) {
   }, async (req) => {
     const { spaceId, files } = req.body as z.output<typeof body>;
     requireSpaceRole(app.db, req, spaceId, 'edit'); // jamais dans l'espace personnel de quelqu'un d'autre
-    const result = importMarkdown(app.db, { spaceId, files, userId: req.auth?.user.id ?? null });
+    const cloner = clonerFor(app.db, app.config, req);
+    let result;
+    try { result = importMarkdown(app.db, { spaceId, files, userId: req.auth?.user.id ?? null, cloner }); } catch (err) { cloner.rollback(); throw err; }
     audit(app.db, req, 'import.markdown', spaceId, { files: files.length, ...result });
     app.bus.publish({ type: 'space.changed', spaceId });
     return result;

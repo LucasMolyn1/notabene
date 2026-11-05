@@ -11,6 +11,7 @@ import { DrawIo, Excalidraw, MathBlock, Mermaid, PlantUml } from './diagrams.js'
 import { Column, Columns, ColoredHighlight, Details, DetailsContent, DetailsSummary, TextAlign, TextColor } from './editor/blocks.js';
 import { CodeBlockEditor } from './editor/code-block.js';
 import { ResizableImage } from './editor/image.js';
+import { AudioBlock, FileBlock, uploadFiles, VideoBlock } from './editor/attachments.js';
 import { CommentAnchor } from './editor/comment-anchor.js';
 import { createBubbleMenu, createTableMenu } from './editor/menus.js';
 import { BaseBlock } from './editor/base-block.js';
@@ -20,7 +21,7 @@ import { Callout, PageLink } from './editor/nodes.js';
 import { createMobileToolbar } from './editor/mobile-toolbar.js';
 import { createSlashMenu, insertImageFile } from './editor/slash.js';
 
-function baseExtensions({ collab = false } = {}) {
+function baseExtensions({ collab = false, shareToken = null } = {}) {
   return [
     StarterKit.configure({
       ...(collab ? { undoRedo: false } : {}),
@@ -40,7 +41,10 @@ function baseExtensions({ collab = false } = {}) {
     Column,
     TaskList,
     TaskItem.configure({ nested: true }),
-    ResizableImage.configure({ allowBase64: true }),
+    ResizableImage.configure({ allowBase64: true, shareToken }),
+    FileBlock.configure({ shareToken }),
+    VideoBlock.configure({ shareToken }),
+    AudioBlock.configure({ shareToken }),
     Table.configure({ resizable: false }),
     TableRow,
     TableHeader,
@@ -60,8 +64,6 @@ function baseExtensions({ collab = false } = {}) {
   ];
 }
 
-// Image dont la largeur se règle à la poignée (attribut `width`, la hauteur suit).
-
 const schemaExtensions = baseExtensions();
 
 export function jsonToHTML(json) {
@@ -72,16 +74,28 @@ export function jsonToHTML(json) {
 // ---- Fabrique -------------------------------------------------------------
 
 // `collab` : { ydoc, provider, user } active la co-édition (le contenu vient alors de Yjs, pas de `content`).
+// `context.pageId` : page qui reçoit les fichiers déposés ou collés ; `context.shareToken` : lecture par un lien public.
 /** @param {{ element: HTMLElement, content?: object, editable?: boolean, onChange?: (editor: any) => void, context?: { navigate?: (path: string) => void, [key: string]: any }, collab?: any }} options */
 export function createEditor({ element, content, editable = true, onChange, context = {}, collab = null }) {
   let slash = null;
   let mention = null;
+  // Envois en cours : annulés si l'éditeur est détruit (changement de page), pour ne rien insérer ailleurs.
+  const uploads = new Set();
+  // Fichiers déposés ou collés : pièces jointes de la page ; sans page (cas improbable), seules les images restent possibles, en base64.
+  const receive = (files, pos) => {
+    if (!files.length || !editor.isEditable) return false;
+    if (context.pageId) { uploadFiles(editor, files, { pageId: context.pageId, pos, signals: uploads }); return true; }
+    const image = files.find((f) => f.type.startsWith('image/'));
+    if (!image) return false;
+    insertImageFile(editor, image, pos);
+    return true;
+  };
   const editor = new Editor({
     element,
     ...(collab ? {} : { content: content || '' }),
     editable,
     extensions: [
-      ...baseExtensions({ collab: !!collab }),
+      ...baseExtensions({ collab: !!collab, shareToken: context.shareToken || null }),
       ...(collab ? [
         Collaboration.configure({ document: collab.ydoc }),
         CollaborationCaret.configure({ provider: collab.provider, user: collab.user }),
@@ -103,24 +117,20 @@ export function createEditor({ element, content, editable = true, onChange, cont
         for (const el of doc.querySelectorAll('[data-mention-id]')) el.removeAttribute('data-mention-id');
         return doc.body.innerHTML;
       },
-      handlePaste: (_view, event) => {
-        const file = [...(event.clipboardData?.files || [])].find((f) => f.type.startsWith('image/'));
-        if (!file) return false;
-        insertImageFile(editor, file);
-        return true;
-      },
+      handlePaste: (_view, event) => receive([...(event.clipboardData?.files || [])], null),
       handleDrop: (view, event, _slice, moved) => {
-        const file = !moved && [...(event.dataTransfer?.files || [])].find((f) => f.type.startsWith('image/'));
-        if (!file) return false;
+        const files = moved ? [] : [...(event.dataTransfer?.files || [])];
+        if (!files.length) return false;
         const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-        insertImageFile(editor, file, pos);
+        if (!receive(files, pos ?? null)) return false;
+        event.preventDefault();
         return true;
       },
     },
     onUpdate: () => onChange?.(editor),
   });
 
-  slash = createSlashMenu(editor, context);
+  slash = createSlashMenu(editor, { ...context, uploads });
   mention = createMentionMenu(editor, () => context.pageId);
   const bubble = createBubbleMenu(editor, context);
   const tableMenu = createTableMenu(editor);
@@ -144,6 +154,7 @@ export function createEditor({ element, content, editable = true, onChange, cont
   element.addEventListener('click', onClick);
 
   editor.on('destroy', () => {
+    for (const ctrl of uploads) ctrl.abort();
     slash.destroy();
     mention.destroy();
     bubble.destroy();

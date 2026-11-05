@@ -1,8 +1,12 @@
 // Données personnelles d'un compte : export (droit d'accès et de portabilité) et effacement par anonymisation.
 // L'export n'inclut jamais de secret (hash de mot de passe, secret TOTP, hash de jeton ou de session) ni de page
-// que la personne ne peut plus lire.
+// que la personne ne peut plus lire. Les pièces jointes qu'elle a envoyées y figurent (métadonnées dans le JSON, fichiers
+// dans l'archive tar), sous la même règle : seulement celles des pages qu'elle peut encore lire.
+import { createReadStream, statSync } from 'node:fs';
 import type { Auth } from '../auth/context.js';
 import type { DB } from '../db.js';
+import { attachmentPath, sanitizeFilename } from './attachments.js';
+import { zipEntryName, zipStream, type ZipEntry } from './zip.js';
 import { filterReadable, keepPagesClosed, pagesOnlyOpenTo } from './page-acl.js';
 import { inPersonalSpace } from './personal-spaces.js';
 
@@ -25,6 +29,9 @@ export function exportUserData(db: DB, userId: string, requesterId: string = use
   const titled = filterReadable(db, subject, all<{ id: string; title: string; at: number }>(
     'SELECT id, title, created_at AS at FROM pages WHERE created_by = ? AND deleted_at IS NULL ORDER BY created_at', userId));
   const hidden = (pageId: string) => requesterId !== userId && inPersonalSpace(db, pageId);
+  const uploads = filterReadable(db, subject, all<{ id: string; att: string; name: string; mime: string; size: number; sha256: string; created_at: number }>(
+    `SELECT a.page_id AS id, a.id AS att, a.name, a.mime, a.size, a.sha256, a.created_at FROM attachments a JOIN pages p ON p.id = a.page_id
+     WHERE a.uploader_id = ? AND p.deleted_at IS NULL ORDER BY a.created_at, a.rowid`, userId)).filter((a) => !hidden(a.id));
   const prefs = db.prepare('SELECT email_comments AS c, email_changes AS g FROM notification_prefs WHERE user_id = ?').get(userId) as { c: number; g: number } | undefined;
 
   return {
@@ -50,7 +57,13 @@ export function exportUserData(db: DB, userId: string, requesterId: string = use
     contributions: {
       pagesEdited: one<{ n: number }>('SELECT COUNT(*) AS n FROM pages WHERE updated_by = ?', userId).n,
       versionsAuthored: one<{ n: number }>('SELECT COUNT(*) AS n FROM page_versions WHERE created_by = ?', userId).n,
+      // Toutes ses pièces jointes, y compris sur des pages devenues illisibles pour elle (non détaillées ci-dessous).
+      attachmentsUploaded: one<{ n: number }>('SELECT COUNT(*) AS n FROM attachments WHERE uploader_id = ?', userId).n,
     },
+    // `file` : chemin du fichier dans l'archive de l'export (route …/export/archive).
+    attachments: uploads.map((a) => ({
+      id: a.att, pageId: a.id, name: a.name, mime: a.mime, size: a.size, sha256: a.sha256, createdAt: a.created_at, file: archiveName(a.att, a.name),
+    })),
     comments: all<{ id: string; page_id: string; body: string; created_at: number }>(
       'SELECT id, page_id, body, created_at FROM page_comments WHERE author_id = ? AND deleted_at IS NULL ORDER BY created_at', userId)
       .filter((c) => !hidden(c.page_id)).map((c) => ({ id: c.id, pageId: c.page_id, body: c.body, createdAt: c.created_at })),
@@ -61,7 +74,38 @@ export function exportUserData(db: DB, userId: string, requesterId: string = use
   };
 }
 
+export type PersonalData = NonNullable<ReturnType<typeof exportUserData>>;
+
+// Nom d'un fichier dans l'archive : identifiant (unique) puis nom d'origine réduit à l'ASCII sûr, pour rester sous 100 octets.
+// Nom de l'entrée : dossier fixe, identifiant (unique) puis nom d'origine assaini, sans chemin ; déjà sous la forme que garde l'archive.
+function archiveName(id: string, name: string): string {
+  return zipEntryName(`pieces-jointes/${id}-${sanitizeFilename(name)}`);
+}
+// Déjà compressés : stockés tels quels dans l'archive.
+const STORED = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf', 'application/zip', 'video/mp4', 'video/webm', 'audio/mpeg', 'audio/ogg']);
+
+/**
+ * Archive ZIP de l'export : `donnees.json` puis les fichiers des pièces jointes. Un fichier absent du disque, ou dont la taille
+ * ne correspond plus, est signalé dans le JSON (`included: false`) au lieu d'être joint.
+ */
+export function personalDataArchive(data: PersonalData, filesDir: string): AsyncGenerator<Buffer> {
+  const files = data.attachments.map((a) => {
+    const path = attachmentPath(filesDir, a.id);
+    let included = false;
+    try { included = statSync(path).size === a.size; } catch { /* absent du disque */ }
+    return { a, path, included };
+  });
+  const json = Buffer.from(JSON.stringify({ ...data, attachments: files.map(({ a, included }) => ({ ...a, included })) }, null, 2));
+  const entries: ZipEntry[] = [
+    { name: 'donnees.json', size: json.length, mtime: Date.now(), body: () => json },
+    ...files.filter((f) => f.included).map((f) => ({ name: f.a.file, size: f.a.size, mtime: f.a.createdAt, store: STORED.has(f.a.mime), body: () => createReadStream(f.path) })),
+  ];
+  return zipStream(entries);
+}
+
 // Effacement : le compte et ce qui lui est propre disparaissent ; ce qu'il a écrit reste mais sans auteur.
+// Pièces jointes : les fichiers restent rattachés à leur page (ils font partie du contenu, comme le texte), l'envoyeur est
+// retiré. Elles ne comptent alors plus dans aucun quota personnel, toujours dans le plafond de l'instance.
 // (Les clés étrangères en cascade retirent sessions, jetons, favoris, suivis, notifications, permissions et préférences.)
 export function eraseUser(db: DB, userId: string, closedBy: string | null = null): boolean {
   return db.transaction(() => {
@@ -72,6 +116,8 @@ export function eraseUser(db: DB, userId: string, closedBy: string | null = null
     db.prepare('UPDATE pages SET created_by = NULL WHERE created_by = ?').run(userId);
     db.prepare('UPDATE pages SET updated_by = NULL WHERE updated_by = ?').run(userId);
     db.prepare('UPDATE page_versions SET created_by = NULL WHERE created_by = ?').run(userId);
+    // Déjà fait par la clé étrangère (ON DELETE SET NULL) : écrit ici pour que la règle ne dépende pas du schéma.
+    db.prepare('UPDATE attachments SET uploader_id = NULL WHERE uploader_id = ?').run(userId);
     db.prepare('UPDATE settings SET updated_by = NULL WHERE updated_by = ?').run(userId);
     // Le journal garde la trace des actions, sans la personne ni son adresse IP.
     db.prepare('UPDATE audit_log SET user_id = NULL, ip = NULL WHERE user_id = ?').run(userId);

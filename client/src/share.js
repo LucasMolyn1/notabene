@@ -38,7 +38,7 @@ export async function showShare(token, pageId) {
   document.title = `${data.page.title || 'Sans titre'} · BeNote`;
 
   const host = h('div', { class: 'prose-host' });
-  const editor = createEditor({ element: host, content: withShareLinks(data.page.content, token, data.titles), editable: false });
+  const editor = createEditor({ element: host, content: withShareLinks(data.page.content, token, data.titles), editable: false, context: { shareToken: token } });
   const children = (parent) => data.tree.filter((t) => t.parentId === parent);
   const node = (t) => h('li', null,
     h('a', { class: `share-link${t.id === data.page.id ? ' active' : ''}`, href: `/share/${token}/p/${t.id}` }, pageIcon(t.icon, 14), ` ${t.title || 'Sans titre'}`),

@@ -25,6 +25,8 @@ import pageQueryRoutes from './routes/pages-query.js';
 import templateRoutes from './routes/templates.js';
 import seoRoutes from './routes/seo.js';
 import avatarRoutes from './routes/avatars.js';
+import attachmentRoutes from './routes/attachments.js';
+import { attachmentsDir, drainAttachmentGc } from './lib/attachments.js';
 import v3Routes from './routes/v3.js';
 import { sessionAuth as sessionAuthWithIdle, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
@@ -220,6 +222,14 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     }
   });
 
+  // Une suppression (pièce jointe, page définitivement, corbeille, espace, compte) peut laisser des fichiers sans ligne : ils
+  // sont inscrits par un déclencheur dans attachment_gc et effacés ici, après la réponse.
+  const filesDir = attachmentsDir(config.DATA_DIR);
+  // Seulement après une suppression réussie et authentifiée : un visiteur ne déclenche aucun travail disque.
+  app.addHook('onResponse', async (req, reply) => {
+    if (req.method === 'DELETE' && req.auth && reply.statusCode >= 200 && reply.statusCode < 300) await drainAttachmentGc(db, filesDir).catch((err: unknown) => req.log.warn({ err }, 'nettoyage des pièces jointes'));
+  });
+
   app.addHook('onSend', async (_req, reply, payload) => {
     if (!reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
     return payload;
@@ -281,6 +291,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(v3Routes);
     await scope.register(aboutRoutes);
     await scope.register(avatarRoutes);
+    await scope.register(attachmentRoutes);
   }, { prefix: '/api/v3' });
   await app.register(mcpRoutes);
   await app.register(versionRoutes);

@@ -44,6 +44,41 @@ export const api = {
   del: (path) => request('DELETE', v3(path)),
 };
 
+/**
+ * Envoi d'un fichier (multipart, un seul champ « file ») avec suivi de progression et annulation.
+ * XMLHttpRequest plutôt que fetch : seul lui expose la progression de l'envoi.
+ * @param {string} path chemin v3 (par exemple « /pages/<id>/attachments »)
+ * @param {File} file
+ * @param {{ onProgress?: (ratio: number) => void, signal?: AbortSignal }} [options]
+ * @returns {Promise<any>}
+ */
+export function upload(path, file, { onProgress, signal } = {}) {
+  const url = v3(path);
+  if (!SAFE_URL.test(url) || url.includes('..') || url.includes('//')) return Promise.reject(new ApiError(400, 'Adresse de requête invalide', null));
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    const done = () => signal?.removeEventListener('abort', abort);
+    xhr.open('POST', url);
+    if (csrf) xhr.setRequestHeader('X-CSRF-Token', csrf);
+    xhr.upload.addEventListener('progress', (e) => { if (e.lengthComputable && e.total > 0) onProgress?.(e.loaded / e.total); });
+    xhr.addEventListener('load', () => {
+      done();
+      let data;
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { data = null; }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new ApiError(xhr.status, data?.detail || data?.message || `Erreur ${xhr.status}`, data));
+    });
+    xhr.addEventListener('error', () => { done(); reject(new ApiError(0, 'Connexion interrompue', null)); });
+    xhr.addEventListener('abort', () => { done(); reject(new ApiError(0, 'Envoi annulé', { aborted: true })); });
+    if (signal?.aborted) { reject(new ApiError(0, 'Envoi annulé', { aborted: true })); return; }
+    signal?.addEventListener('abort', abort);
+    const form = new FormData();
+    form.append('file', file, file.name);
+    xhr.send(form);
+  });
+}
+
 // Alias conservé pour les modules écrits avant la migration.
 export const api3 = api;
 

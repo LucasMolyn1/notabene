@@ -46,7 +46,7 @@ export async function renderInstance(el) {
       ['Recherche IA', status(session.config.ai, 'Configurée', 'Non configurée')],
       ['Draw.io', status(!!info.integrations.drawioUrl, 'Configuré', 'Non configuré')],
     ])),
-    card('Sauvegarde', 'Télécharge une copie cohérente de la base (pages, comptes, réglages). Elle contient des secrets chiffrés : conservez-la comme un secret. Pour une sauvegarde automatique, voir docs/BACKUP.md.',
+    card('Sauvegarde', 'Télécharge une copie cohérente de la base (pages, comptes, réglages). Elle contient des secrets chiffrés : conservez-la comme un secret. Ce téléchargement ne contient que la base, pas les fichiers des pièces jointes : pour une sauvegarde complète ou automatique, voir docs/BACKUP.md.',
       h('button', { class: 'btn btn-primary btn-sm', onClick: downloadBackup }, icon('download', 14), 'Télécharger une sauvegarde')),
     card('Ressources', null, h('div', { class: 'row wrap' },
       h('a', { class: 'btn btn-ghost btn-sm', href: REPO_URL, target: '_blank', rel: 'noopener' }, 'Dépôt GitHub ↗'),
