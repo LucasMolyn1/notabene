@@ -130,6 +130,10 @@ Les migrations de base **ne reviennent pas en arrière** : un serveur plus ancie
 
 Tout ce qui a été écrit après la sauvegarde est perdu : c'est pourquoi on la prend juste avant.
 
+### Retour automatique de l'updater
+
+Quand la nouvelle version n'est pas jugée saine (délai `HEALTH_TIMEOUT`, 300 s par défaut), le service tente de remettre l'ancienne image. Si l'ancienne version ne peut pas relire la base déjà migrée, il **remet la nouvelle version en place** plutôt que de laisser le site à l'arrêt, et le dit dans l'état affiché par l'interface. Les dernières lignes du journal de la nouvelle version sont copiées dans `journalctl -t notabene-updater`. Après une mise à jour du dépôt, recopiez `scripts/updater/notabene-updater.sh` vers `/usr/local/sbin/` sur l'hôte : le service ne se met pas à jour tout seul.
+
 ## En cas de problème
 
 | Symptôme | Cause probable | Action |
