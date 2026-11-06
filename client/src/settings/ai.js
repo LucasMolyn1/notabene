@@ -52,7 +52,7 @@ export async function renderAi(el) {
     placeholder: current.hasKey ? `Clé enregistrée (${current.keyHint}) : laisser vide pour la conserver` : 'Collez la clé d’API',
   });
   const removeKey = h('input', { type: 'checkbox' });
-  const result = h('span', { class: 'hint' });
+  const result = h('span', { class: 'hint ai-test-result' });
   const baseField = h('label', { class: 'field' }, h('span', null, 'URL de base'), baseUrl,
     h('small', { class: 'hint' }, 'Ollama : http://ollama:11434/v1 · LM Studio : http://hote:1234/v1. Une adresse du réseau interne ou en http exige AI_ALLOW_PRIVATE=true dans l’environnement du serveur.'));
 
@@ -122,9 +122,13 @@ export async function renderAi(el) {
           class: 'btn btn-ghost',
           onClick: async () => {
             if (!(await save())) return;
-            result.textContent = 'Test en cours…';
+            // save() redessine toute la page : on retrouve le nouvel emplacement du résultat.
+            const out = el.querySelector('.ai-test-result') || result;
+            out.textContent = 'Test en cours…';
             const r = await A.attempt(() => api.post('/admin/ai/test'));
-            result.textContent = r?.ok ? `Connexion réussie (« ${r.sample} »)` : r?.message || 'Échec';
+            const msg = r?.ok ? `Connexion réussie (« ${r.sample} »)` : r?.message || 'Échec du test';
+            out.textContent = msg;
+            toast(msg);
           },
         }, 'Enregistrer et tester'),
         result))),

@@ -193,6 +193,8 @@ Un administrateur l’active dans **menu utilisateur → Recherche IA** :
 - **Compatible OpenAI** : renseignez l’URL de base (`http://ollama:11434/v1` pour un Ollama local) et le modèle. Une adresse du réseau interne ou en `http` exige `AI_ALLOW_PRIVATE=true` dans l’environnement du serveur.
 - Le bouton **Charger les modèles** interroge le fournisseur (`/models`) et propose tous ses modèles dans la liste. La clé enregistrée n’est utilisée que pour l’adresse enregistrée ; pour une autre adresse, saisissez la clé. Modifier le fournisseur demande la ressaisie du mot de passe.
 
+Guide pas à pas (Ollama local ou Ollama Cloud, erreurs courantes) : [`docs/IA.md`](docs/IA.md).
+
 La clé est chiffrée en base (AES-256-GCM) et n’est jamais renvoyée au navigateur. Pour chaque question, seuls des extraits des pages pertinentes **que l’utilisateur a le droit de lire** sont envoyés au modèle.
 
 ## Intégration dans un portfolio
