@@ -23,7 +23,7 @@ GITHUB_API="${GITHUB_API:-https://api.github.com}"
 SERVICE="${SERVICE:-notabene}"
 # Vide par défaut : on lit l'état de santé du conteneur (indépendant de l'adresse sur laquelle le port est publié).
 HEALTH_URL="${HEALTH_URL:-}"
-HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-120}"
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-300}"
 REQUIRE_BACKUP="${REQUIRE_BACKUP:-false}"
 PIN_DIGEST="${PIN_DIGEST:-false}"
 VERIFY_ATTESTATION="${VERIFY_ATTESTATION:-false}"
@@ -167,14 +167,25 @@ if healthy "$VERSION"; then
   exit 0
 fi
 
-# 5. Échec : retour à l'ancienne image. Les migrations de base peuvent empêcher l'ancienne version de démarrer.
+# 5. Échec : on garde d'abord la trace de ce que disait la nouvelle version (le conteneur va être remplacé).
 log "version $VERSION non fonctionnelle, retour à $current"
+failed_cid=$(compose ps -q "$SERVICE" 2>/dev/null | head -1)
+[ -n "$failed_cid" ] && docker logs --tail 15 "$failed_cid" 2>&1 | cut -c1-300 | while IFS= read -r l; do log "journal $VERSION : $l"; done
 set_state running "$VERSION" 'Échec : retour à l’ancienne version…'
 sed -i "s#^NOTABENE_IMAGE=.*#${old_line//#/\\#}#" "$ENV_FILE"
 compose up -d >/dev/null 2>&1 || true
 if healthy "$current"; then
   set_state failed "$VERSION" "La version $VERSION ne démarre pas : retour à la $current effectué."
 else
-  set_state failed "$VERSION" "La version $VERSION ne démarre pas et le retour à la $current a échoué : restaurez le snapshot ou la sauvegarde (docs/MISE-A-JOUR.md)."
+  # Les migrations de base ne reviennent pas en arrière : l'ancienne version refuse souvent de relire une base déjà
+  # migrée. Mieux vaut remettre la nouvelle version (peut-être seulement lente ou mal détectée) que laisser le site à l'arrêt.
+  log "retour à $current impossible, la nouvelle version $VERSION est remise en place"
+  sed -i "s#^NOTABENE_IMAGE=.*#NOTABENE_IMAGE=$new_image#" "$ENV_FILE"
+  compose up -d >/dev/null 2>&1 || true
+  if healthy "$VERSION"; then
+    set_state failed "$VERSION" "La version $VERSION a été jugée non fonctionnelle, mais la $current ne peut pas relire la base migrée : la $VERSION est remise en place et fonctionne. Vérifiez le journal (journalctl -t notabene-updater)."
+  else
+    set_state failed "$VERSION" "La version $VERSION ne démarre pas et le retour à la $current est impossible : restaurez le snapshot ou la sauvegarde (docs/MISE-A-JOUR.md)."
+  fi
 fi
 exit 0
