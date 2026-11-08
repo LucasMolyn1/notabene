@@ -13,7 +13,7 @@ import { canReadPage } from './page-acl.js';
 import { getPageRow } from './pages.js';
 
 const EMAIL_CHANGES_INTERVAL = 60 * 60_000;
-export type NotificationType = 'comment' | 'reply' | 'page.updated' | 'mention';
+export type NotificationType = 'comment' | 'reply' | 'page.updated' | 'mention' | 'verification.expiring' | 'verification.expired';
 
 interface UserRow { id: string; name: string; email: string | null; role: 'admin' | 'editor' | 'reader'; disabled: number }
 const asAuth = (u: UserRow): Auth => ({ user: { id: u.id, name: u.name, email: u.email, role: u.role }, via: 'session', scopes: new Set(['read']) });
@@ -27,7 +27,13 @@ export const getPrefs = (db: DB, userId: string) => {
 export const watch = (db: DB, userId: string, pageId: string) =>
   db.prepare('INSERT OR IGNORE INTO page_watch (user_id, page_id, created_at) VALUES (?, ?, ?)').run(userId, pageId, Date.now());
 
-export function startNotifications(db: DB, bus: EventBus, mailer: Mailer, config: () => Config) {
+export interface Notifier {
+  /** Dépose une notification (et l'e-mail correspondant) si le destinataire est actif et lit encore la page ; true si déposée. */
+  deliver: (userId: string, type: NotificationType, pageId: string, actorId: string | null) => boolean;
+}
+
+// Dépôt des notifications, partagé par l'abonnement au bus (ci-dessous) et par les rappels de vérification (verifications.ts).
+export function createNotifier(db: DB, bus: EventBus, mailer: Mailer, config: () => Config): Notifier {
   const user = (id: string) => db.prepare('SELECT id, name, email, role, disabled FROM users WHERE id = ?').get(id) as UserRow | undefined;
 
   // Renvoie true si une notification a été déposée.
@@ -65,12 +71,24 @@ export function startNotifications(db: DB, bus: EventBus, mailer: Mailer, config
     }
     const page = getPageRow(db, pageId);
     if (!page) return;
-    const actor = actorId ? user(actorId)?.name ?? 'Quelqu’un' : 'Quelqu’un';
     const title = oneLine(page.title || 'Sans titre');
     const url = `${config().PUBLIC_URL}/p/${pageId}`;
+    // Rappel de vérification : aucun auteur, seulement le titre et le lien.
+    if (type === 'verification.expiring' || type === 'verification.expired') {
+      const state = type === 'verification.expiring' ? 'arrive à échéance' : 'a expiré';
+      await mailer.send({ to: target.email, ...mails.notification(`BeNote : la vérification de « ${title} » ${state}`, `La vérification de la page « ${title} », dont vous êtes vérificateur, ${state}.\n\nOuvrir la page : ${url}`) });
+      return;
+    }
+    const actor = actorId ? user(actorId)?.name ?? 'Quelqu’un' : 'Quelqu’un';
     const what = { comment: 'a commenté', reply: 'a répondu à votre commentaire sur', 'page.updated': 'a modifié', mention: 'vous a mentionné dans' }[type];
     await mailer.send({ to: target.email, ...mails.notification(`BeNote : ${oneLine(actor)} ${what} « ${title} »`, `${oneLine(actor)} ${what} la page « ${title} ».\n\nOuvrir la page : ${url}`) });
   };
+
+  return { deliver };
+}
+
+export function startNotifications(db: DB, bus: EventBus, mailer: Mailer, config: () => Config) {
+  const { deliver } = createNotifier(db, bus, mailer, config);
 
   // Mentions dans le contenu d'une page : une notification par page et par personne, à la première apparition.
   // Le contenu n'est lu que s'il contient une mention (test sur le texte JSON, sans l'analyser).

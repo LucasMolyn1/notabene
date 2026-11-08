@@ -149,7 +149,7 @@ export async function listAll(path) {
 }
 
 // Flux d'événements temps réel (reconnexion automatique gérée par EventSource).
-const EVENT_TYPES = ['page.created', 'page.updated', 'page.moved', 'page.trashed', 'page.restored', 'page.deleted', 'space.changed', 'presence', 'notification', 'page.permissions', 'page.labels', 'base.changed', 'comment.created', 'comment.updated', 'comment.deleted'];
+const EVENT_TYPES = ['page.created', 'page.updated', 'page.moved', 'page.trashed', 'page.restored', 'page.deleted', 'space.changed', 'presence', 'notification', 'page.permissions', 'page.labels', 'page.verification', 'base.changed', 'comment.created', 'comment.updated', 'comment.deleted'];
 
 export function openEvents(onEvent) {
   const source = new EventSource(v3('/events'));

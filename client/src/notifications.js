@@ -35,6 +35,19 @@ const TEXT = {
   'page.updated': (n) => `${n.actor?.name || 'Quelqu’un'} a modifié${n.count > 1 ? ` (${n.count} fois)` : ''}`,
 };
 
+// Rappels de vérification (sans auteur) : le titre est au milieu de la phrase.
+const VERIFICATION = {
+  'verification.expiring': ['La page ', ' arrive à échéance de vérification'],
+  'verification.expired': ['La vérification de la page ', ' a expiré'],
+};
+
+function describe(n) {
+  const title = h('strong', null, pageIcon(n.page.icon), ` ${n.page.title || 'Sans titre'}`);
+  const around = VERIFICATION[n.type];
+  if (around) return h('span', null, around[0], title, around[1]);
+  return [h('span', null, `${(TEXT[n.type] || (() => ''))(n)} `), title];
+}
+
 async function openInbox() {
   const list = h('div', { class: 'table' }, h('p', { class: 'muted' }, 'Chargement…'));
   const m = openModal({
@@ -53,7 +66,7 @@ async function openInbox() {
         href: pagePathById(n.page.id),
         onClick: async () => { m.close(); if (!n.read) { await api3.post('/notifications/read', { ids: [n.id] }).catch(() => null); refreshUnread(); } },
       },
-      h('span', { class: 'grow' }, h('span', null, `${(TEXT[n.type] || (() => ''))(n)} `), h('strong', null, pageIcon(n.page.icon), ` ${n.page.title || 'Sans titre'}`), h('small', null, timeAgo(n.createdAt))),
+      h('span', { class: 'grow' }, describe(n), h('small', null, timeAgo(n.createdAt))),
       !n.read && h('span', { class: 'pill accent' }, 'Nouveau')))
       : [h('p', { class: 'muted' }, 'Aucune notification pour le moment. Suivez une page pour être prévenu des commentaires.')]));
   };

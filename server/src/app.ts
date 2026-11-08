@@ -14,7 +14,8 @@ import type { Config } from './config.js';
 import type { DB } from './db.js';
 import { OidcClient } from './auth/oidc.js';
 import { Mailer } from './lib/mail.js';
-import { startNotifications } from './lib/notifications.js';
+import { createNotifier, startNotifications } from './lib/notifications.js';
+import { REMINDER_INTERVAL, remindVerifications } from './lib/verifications.js';
 import { startWebhooks } from './lib/webhooks.js';
 import { AuditForwarder } from './lib/audit-forwarder.js';
 import auditRoutes from './routes/audit.js';
@@ -30,6 +31,7 @@ import avatarRoutes from './routes/avatars.js';
 import attachmentRoutes from './routes/attachments.js';
 import { attachmentsDir, drainAttachmentGc } from './lib/attachments.js';
 import v3Routes from './routes/v3.js';
+import verificationRoutes from './routes/verifications.js';
 import { sessionAuth as sessionAuthWithIdle, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
 import { SecretBox, safeEqual } from './lib/crypto.js';
@@ -122,6 +124,12 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   app.decorate('presence', new Presence(bus));
   const stopNotifications = startNotifications(db, bus, app.mail, () => rt.get());
   app.addHook('onClose', async () => { stopNotifications(); });
+  // Rappels de vérification de page : une minute après le démarrage, puis chaque heure (une notification par changement d'état).
+  const notifier = createNotifier(db, bus, app.mail, () => rt.get());
+  const remind = () => { try { remindVerifications(db, notifier); } catch (err) { app.log.warn({ err }, 'rappels de vérification'); } };
+  const remindFirst = setTimeout(remind, 60_000).unref();
+  const remindEvery = setInterval(remind, REMINDER_INTERVAL).unref();
+  app.addHook('onClose', async () => { clearTimeout(remindFirst); clearInterval(remindEvery); });
   const stopWebhooks = startWebhooks(db, bus, box, config.WEBHOOK_ALLOW_PRIVATE);
   app.addHook('onClose', async () => { stopWebhooks(); });
   // Journal d'audit vers la sortie standard (AUDIT_STDOUT) et vers le SIEM configuré (voir docs/AUDIT.md).
@@ -307,6 +315,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(webhookRoutes);
     await scope.register(importRoutes);
     await scope.register(v3Routes);
+    await scope.register(verificationRoutes);
     await scope.register(aboutRoutes);
     await scope.register(avatarRoutes);
     await scope.register(attachmentRoutes);
