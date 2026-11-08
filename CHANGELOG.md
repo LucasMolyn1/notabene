@@ -4,6 +4,18 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## Non publié
+
+### Ajouté
+- **Vérification de page (serveur)** : des vérificateurs désignés (10 au plus, comptes actifs qui lisent la page) confirment qu'une page est à jour, avec un intervalle facultatif (1 à 3650 jours) qui fixe l'échéance. Statut calculé par le serveur : `none`, `pending` (jamais vérifiée), `verified`, `expiring` (échéance dans 7 jours ou moins), `expired` ; `modifiedSinceVerification` signale une page modifiée depuis, sans invalider la vérification. Configurer ou retirer : qui peut modifier la page ; marquer vérifiée : un vérificateur désigné (un lecteur peut l'être) ou un administrateur, qui lit encore la page ; un jeton d'API doit alors porter la portée `write`. Rappel par notification (et e-mail selon la préférence des commentaires) aux vérificateurs qui lisent la page, une seule fois au passage en `expiring` puis en `expired`, sans autre contenu que le titre. Routes `GET`, `PUT`, `DELETE /api/v3/pages/:id/verification`, `POST /api/v3/pages/:id/verification/verify`, `GET /api/v3/verifications?scope=mine|all` (pages à revoir, `all` réservé aux administrateurs, pagination par curseur, pages illisibles exclues). Journal d'audit `verification.set`, `verification.clear`, `verification.verify` sans contenu. Incluse dans l'export des données personnelles ; à l'effacement d'un compte, ses désignations disparaissent et ses vérifications restent sans auteur. Migration v27. Voir `docs/RGPD.md`.
+- **Vérification de page (interface)** : pastille de statut sous le titre (Vérifiée jusqu'au JJ/MM, Arrive à échéance, Vérification expirée, En attente de vérification, et « modifiée depuis la vérification »), mise à jour en temps réel ; fenêtre « Vérification » depuis la pastille ou le menu « … » de la page (vérificateurs, dernière vérification, échéance, « Marquer comme vérifiée », choix des vérificateurs et de l'intervalle, retrait) ; liste « Pages à revoir » dans la barre latérale (mes pages, et toutes pour les administrateurs, filtres par statut) ; rappels de vérification dans les notifications.
+
+### Corrigé
+- **Page au titre long introuvable** : l'adresse lisible d'une page dont le titre dépasse une cinquantaine de caractères (titre tronqué à 60 caractères plus l'identifiant) n'était pas reconnue par l'interface, qui affichait « Page introuvable », par exemple en suivant un lien `/p/<identifiant>` d'un e-mail.
+
+### Attention à la mise à jour
+- Migration v27 (automatique) : nouvelles tables `page_verifications` et `page_verifiers` ; la table `notifications` est reconstruite (mêmes lignes) pour accepter les types `verification.expiring` et `verification.expired`. Retour arrière : restaurer la sauvegarde prise avant la mise à jour, ou supprimer les deux tables et les notifications de ces types puis reconstruire `notifications` avec l'ancienne contrainte.
+
 ## [3.13.1] - 2026-11-08
 
 ### Ajouté
