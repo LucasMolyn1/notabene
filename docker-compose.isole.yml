@@ -1,0 +1,37 @@
+# Exemple de déploiement isolé : aucun accès à Internet pour l'application. Voir docs/DEPLOIEMENT-ISOLE.md.
+# Le réseau « interne » n'a aucune route vers l'extérieur ; seul le réseau « acces » (celui de votre reverse proxy
+# interne) permet aux navigateurs du site d'atteindre l'application.
+
+services:
+  notabene:
+    # Image transférée avec « docker save » puis « docker load » (jamais téléchargée depuis ce réseau).
+    image: ${NOTABENE_IMAGE:?renseigner NOTABENE_IMAGE dans .env}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      HOST: 0.0.0.0
+      PORT: 3000
+      UPDATE_CHECK: "false"
+    volumes:
+      - notabene-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - interne
+      - acces
+
+networks:
+  interne:
+    internal: true
+  acces:
+    # Réseau partagé avec votre reverse proxy interne (à adapter) ; il ne doit pas non plus avoir de route vers Internet.
+    internal: true
+
+volumes:
+  notabene-data:
