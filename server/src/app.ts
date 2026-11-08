@@ -17,6 +17,8 @@ import { Mailer } from './lib/mail.js';
 import { createNotifier, startNotifications } from './lib/notifications.js';
 import { REMINDER_INTERVAL, remindVerifications } from './lib/verifications.js';
 import { startWebhooks } from './lib/webhooks.js';
+import { AuditForwarder } from './lib/audit-forwarder.js';
+import auditRoutes from './routes/audit.js';
 import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
 import baseRoutes from './routes/bases.js';
@@ -73,6 +75,7 @@ declare module 'fastify' {
     rt: RuntimeSettings;
     mail: Mailer;
     updates: UpdateChecker;
+    auditForwarder: AuditForwarder;
   }
 }
 
@@ -90,9 +93,11 @@ export interface AppOptions {
   mailer?: Mailer;
   // Vérificateur de mise à jour injectable (tests) ; par défaut construit d'après UPDATE_CHECK.
   updateChecker?: UpdateChecker;
+  // Sortie standard du journal d'audit (tests) ; par défaut process.stdout quand AUDIT_STDOUT=true.
+  auditStdout?: (line: string) => void;
 }
 
-export async function buildApp({ config, db, logger = false, clientDir, ldap, ldapFactory, mailer, updateChecker }: AppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, db, logger = false, clientDir, ldap, ldapFactory, mailer, updateChecker, auditStdout }: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger === false ? false : {
       ...(typeof logger === 'object' ? logger : {}),
@@ -127,6 +132,14 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   app.addHook('onClose', async () => { clearTimeout(remindFirst); clearInterval(remindEvery); });
   const stopWebhooks = startWebhooks(db, bus, box, config.WEBHOOK_ALLOW_PRIVATE);
   app.addHook('onClose', async () => { stopWebhooks(); });
+  // Journal d'audit vers la sortie standard (AUDIT_STDOUT) et vers le SIEM configuré (voir docs/AUDIT.md).
+  const forwarder = new AuditForwarder(db, () => rt.get(), {
+    allowPrivate: config.WEBHOOK_ALLOW_PRIVATE,
+    stdout: config.AUDIT_STDOUT ? (auditStdout ?? ((line) => { process.stdout.write(`${line}\n`); })) : null,
+  });
+  app.decorate('auditForwarder', forwarder);
+  forwarder.start();
+  app.addHook('onClose', async () => { forwarder.stop(); });
   app.decorate('oidc', new OidcClient(() => rt.get(), db));
   app.decorateRequest('auth', null);
 
@@ -297,6 +310,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(aiRoutes);
     await scope.register(aiChatRoutes);
     await scope.register(adminRoutes);
+    await scope.register(auditRoutes);
     await scope.register(settingsRoutes, { ldapFactory });
     await scope.register(webhookRoutes);
     await scope.register(importRoutes);

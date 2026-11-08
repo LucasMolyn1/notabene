@@ -5,7 +5,8 @@ import { session } from './session.js';
 import { newsPending } from './news.js';
 import { reauthNotice } from './provider-settings.js';
 import { beginView, setView, topbar } from './views.js';
-import { renderAudit, renderAuth, renderMail, renderSpaces, renderUsers } from './settings/access.js';
+import { renderAuth, renderMail, renderSpaces, renderUsers } from './settings/access.js';
+import { renderAudit, renderRetention, renderSiem } from './settings/audit.js';
 import { renderAbout, renderApi, renderAppearance, renderProfile, renderTokens } from './settings/account.js';
 import { renderAi } from './settings/ai.js';
 import { renderDiagrams, renderEmbed, renderEmbeds, renderTools, renderWebhooks } from './settings/features.js';
@@ -37,6 +38,8 @@ const SECTIONS = [
   { group: 'Administration', id: 'import', label: 'Import', ico: 'upload', admin: true, render: renderImport },
   { group: 'Administration', id: 'users', label: 'Utilisateurs', ico: 'users', admin: true, render: renderUsers },
   { group: 'Administration', id: 'audit', label: 'Journal d’audit', ico: 'file', admin: true, render: renderAudit },
+  { group: 'Administration', id: 'siem', label: 'Envoi au SIEM', ico: 'webhook', admin: true, sensitive: true, render: renderSiem },
+  { group: 'Administration', id: 'retention', label: 'Conservation', ico: 'history', admin: true, render: renderRetention },
   { group: 'Administration', id: 'instance', label: 'Instance', ico: 'settings', admin: true, render: renderInstance },
   { group: 'Administration', id: 'images', label: 'Images des pages', ico: 'wand', admin: true, render: renderImages },
 ];

@@ -1094,6 +1094,17 @@ select.input { height: 36px; }
 .method { min-width: 58px; text-align: center; font-weight: 600; }
 .method.get { color: #2f9e44; } .method.post { color: #1971c2; } .method.patch { color: #e67700; } .method.delete { color: var(--danger); }
 .audit-time { width: 110px; flex: none; color: var(--text-3); font-size: 12.5px; }
+/* Journal d'audit : filtres, liste (ul), état ; conservation des données */
+ul.table { list-style: none; margin: 0; padding: 0; }
+.table-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.table.audit .table-row small { overflow-wrap: anywhere; }
+.audit-filters { display: grid; gap: 12px; }
+.audit-filter-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.audit-status { margin: 0; }
+.field-error { color: var(--danger); font-size: 12.5px; font-weight: 500; }
+.field-error[hidden] { display: none; }
+.ret-value { display: grid; gap: 2px; }
+.ret-value small { color: var(--text-3); font-size: 12.5px; }
 
 .profile { display: flex; align-items: center; gap: 18px; }
 .profile h2 { margin: 0 0 2px; font-size: 20px; }

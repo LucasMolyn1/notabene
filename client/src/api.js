@@ -102,6 +102,36 @@ function sendBody(path, body, { contentType, onProgress, onSent, signal } = {}) 
   });
 }
 
+/**
+ * Téléchargement d'un fichier préparé par le serveur (GET, cookie de session same-origin, comme `request`).
+ * Renvoie le contenu, le nom proposé (ASCII sûr, sinon `fallback`) et les en-têtes ; une erreur HTTP lève une ApiError.
+ * @param {string} path chemin v3, paramètres de requête compris
+ * @param {string} fallback nom de fichier de repli
+ * @returns {Promise<{ blob: Blob, name: string, headers: Headers }>}
+ */
+export async function getFile(path, fallback) {
+  const url = v3(path);
+  if (!SAFE_URL.test(url) || url.includes('..') || url.includes('//')) throw new ApiError(400, 'Adresse de requête invalide', null);
+  let res;
+  try {
+    res = await fetch(url, { credentials: 'same-origin' });
+  } catch {
+    throw new ApiError(0, 'Connexion impossible', null);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, (typeof data?.detail === 'string' && data.detail) || data?.message || `Erreur ${res.status}`, data);
+  }
+  const name = /filename="([\w.-]+)"/.exec(res.headers.get('content-disposition') || '')?.[1] || fallback;
+  return { blob: await res.blob(), name, headers: res.headers };
+}
+
+// Chaîne de requête compatible avec SAFE_URL : les caractères que encodeURIComponent laisse passer (!'()*~) sont encodés aussi.
+export const queryString = (params) => Object.entries(params)
+  .filter(([, v]) => v !== undefined && v !== null && v !== '')
+  .map(([k, v]) => `${k}=${encodeURIComponent(String(v)).replace(/[!'()*~]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`)
+  .join('&');
+
 // Alias conservé pour les modules écrits avant la migration.
 export const api3 = api;
 

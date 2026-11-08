@@ -51,7 +51,11 @@ export default async function importRoutes(app: FastifyInstance) {
     const cloner = clonerFor(db, config, req);
     let result;
     try { result = importMarkdown(db, { spaceId, files, userId: req.auth?.user.id ?? null, cloner }); } catch (err) { cloner.rollback(); throw err; }
-    audit(db, req, 'import.markdown', spaceId, { files: files.length, ...result });
+    // Compteurs seulement : ni chemins de fichiers ni notes de conversion dans le journal.
+    audit(db, req, 'import.markdown', spaceId, {
+      files: files.length, pages: result.pages, folders: result.folders, links: result.links, images: result.images,
+      skipped: result.skipped?.length ?? 0, notes: result.notes?.length ?? 0,
+    });
     app.bus.publish({ type: 'space.changed', spaceId });
     return result;
   });
