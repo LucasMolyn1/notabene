@@ -14,6 +14,7 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 - **`docs/IA.md`** : configurer le fournisseur IA (Ollama local, Ollama Cloud, Claude, compatible OpenAI), champs à remplir, modèles gratuits d'Ollama Cloud (relevé du 6 novembre 2026), modèle conseillé, erreurs 401, 402, 404 et 429, et précision que la liste de modèles chargée est celle du fournisseur et non celle accessible au compte.
 
 ### Corrigé
+- **Service de mise à jour** : si la nouvelle version n'est pas jugée saine et que l'ancienne ne peut pas relire la base déjà migrée, la nouvelle version est remise en place au lieu de laisser le site à l'arrêt (bad gateway). Délai de santé porté de 120 à 300 s, et les dernières lignes du journal de la version en échec sont copiées dans `journalctl -t notabene-updater`. Après mise à jour, recopier `scripts/updater/notabene-updater.sh` sur l'hôte.
 - **Erreurs du fournisseur IA plus claires** : un `402` indique maintenant des crédits insuffisants ou un modèle non inclus dans l'offre, un `400` ou `422` renvoie au nom du modèle et à l'URL, un `5xx` signale une panne du fournisseur, au lieu d'un simple « Erreur du fournisseur (402) ».
 - **Réglages IA, « Enregistrer et tester »** : le résultat du test n'apparaissait nulle part, car la page se redessinait après l'enregistrement. Le résultat s'affiche maintenant à côté du bouton et dans une notification, en cas de réussite comme d'échec.
 

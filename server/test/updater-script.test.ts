@@ -171,6 +171,30 @@ esac`);
     expect(status().message).toContain('retour à la 3.1.0 effectué');
     expect(envImage()).toBe(OLD);
   });
+
+  it('remet la nouvelle image quand l’ancienne ne peut pas relire la base migrée', () => {
+    request('{"version":"3.2.0"}');
+    // Seule la nouvelle image répond : le retour arrière échoue (base déjà migrée), la nouvelle est donc remise en place.
+    stub('curl', `
+case "$*" in
+  *releases/latest*) printf '{"tag_name":"v3.2.0"}' ;;
+  *health.invalid*) grep -q ':3.2.0' "${compose}/.env" && [ -f "${root}/second-up" ] && exit 0; exit 7 ;;
+esac`);
+    stub('docker', `
+echo "$*" >> "${root}/docker.log"
+case "$1 $2" in
+  "compose ps") echo cid123 ;;
+  "compose up") grep -q ':3.2.0' "${compose}/.env" && [ -f "${root}/rolled-back" ] && touch "${root}/second-up"; grep -q '3.1.0@' "${compose}/.env" && touch "${root}/rolled-back"; exit 0 ;;
+  "compose exec") exit 0 ;;
+  "pull ghcr.io/lucasmolyn1/notabene:"*) exit 0 ;;
+  logs*) echo "La base est au schéma v25"; exit 0 ;;
+  inspect*) case "$*" in *RepoDigests*) echo "ghcr.io/lucasmolyn1/notabene@${DIGEST}" ;; *) grep -q '3.1.0@' "${compose}/.env" && echo 3.1.0 || echo 3.2.0 ;; esac ;;
+esac`);
+    run();
+    expect(status()).toMatchObject({ state: 'failed', version: '3.2.0' });
+    expect(status().message).toContain('remise en place et fonctionne');
+    expect(envImage()).not.toBe(OLD);
+  });
 });
 
 it.skipIf(process.platform !== 'linux')('le script est valide pour bash', () => {
