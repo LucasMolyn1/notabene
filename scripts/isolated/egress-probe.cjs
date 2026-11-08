@@ -6,7 +6,8 @@ const process = require('node:process');
 const net = require('node:net');
 const dns = require('node:dns');
 
-const LOCAL = /^(localhost$|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1$|fe80:|f[cd][0-9a-f]{2}:)/i;
+// 0.0.0.0 et :: sont des adresses d'écoute (le serveur se lie à HOST=0.0.0.0), pas des destinations.
+const LOCAL = /^(localhost$|0\.0\.0\.0$|::$|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1$|fe80:|f[cd][0-9a-f]{2}:)/i;
 const note = (kind, target) => process.stderr.write(`EGRESS-ATTEMPT ${JSON.stringify({ kind, target: String(target) })}\n`);
 const external = (host) => typeof host === 'string' && host !== '' && !LOCAL.test(host);
 
