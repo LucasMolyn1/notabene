@@ -68,7 +68,7 @@ Configuration dans **Paramètres** (section `siem` de `/admin/settings`), ou par
 ```json
 PUT /api/v3/admin/settings/siem
 { "config": { "enabled": true, "url": "https://siem.example.com/notabene", "actions": ["auth", "settings"] },
-  "secrets": { "secret": "au-moins-16-caracteres" }, "reauth": { "password": "…" }, "testId": "…" }
+  "secrets": { "secret": "<secret de 16 caractères au moins>" }, "reauth": { "password": "…" }, "testId": "…" }
 ```
 
 - `url` : https obligatoire ; mêmes protections que les webhooks (adresses internes refusées sauf `WEBHOOK_ALLOW_PRIVATE=true`, qui autorise aussi http ; aucune redirection suivie ; identifiants dans l'URL refusés ; délai de 5 secondes).
