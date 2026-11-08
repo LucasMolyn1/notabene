@@ -677,6 +677,53 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX ai_messages_conversation ON ai_messages(conversation_id, seq);
   `,
+  // 27 : vérification de page. `page_verifications` : une configuration par page (intervalle en jours, ou NULL pour une
+  // vérification sans échéance), dernière vérification (auteur, date, échéance, date de modification de la page à cet instant)
+  // et `notified_state`, dernier rappel envoyé (none, expiring, expired) pour ne rappeler qu'une fois par changement d'état.
+  // `page_verifiers` : personnes désignées. Supprimées avec la page (ON DELETE CASCADE) ; à la suppression d'un compte, la
+  // désignation disparaît et l'auteur de la vérification devient NULL. La table des notifications est refaite pour accepter les
+  // types `verification.expiring` et `verification.expired` (SQLite ne modifie pas une contrainte CHECK).
+  // Retour arrière : DELETE FROM notifications WHERE type LIKE 'verification.%'; refaire `notifications` avec la contrainte v13 ;
+  // DROP TABLE page_verifiers; DROP TABLE page_verifications;
+  `
+  CREATE TABLE page_verifications (
+    page_id                     TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE,
+    interval_days               INTEGER CHECK (interval_days IS NULL OR interval_days BETWEEN 1 AND 3650),
+    verified_by                 TEXT REFERENCES users(id) ON DELETE SET NULL,
+    verified_at                 INTEGER,
+    expires_at                  INTEGER,
+    verified_content_updated_at INTEGER,
+    notified_state              TEXT NOT NULL DEFAULT 'none' CHECK (notified_state IN ('none', 'expiring', 'expired')),
+    created_by                  TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at                  INTEGER NOT NULL,
+    updated_at                  INTEGER NOT NULL
+  );
+  CREATE INDEX page_verifications_expires ON page_verifications(expires_at) WHERE expires_at IS NOT NULL;
+  CREATE INDEX page_verifications_verified_by ON page_verifications(verified_by) WHERE verified_by IS NOT NULL;
+
+  CREATE TABLE page_verifiers (
+    page_id TEXT NOT NULL REFERENCES page_verifications(page_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (page_id, user_id)
+  );
+  CREATE INDEX page_verifiers_user ON page_verifiers(user_id);
+
+  CREATE TABLE notifications_v27 (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type       TEXT NOT NULL CHECK (type IN ('comment', 'reply', 'page.updated', 'mention', 'verification.expiring', 'verification.expired')),
+    page_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    actor_id   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    count      INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    read_at    INTEGER
+  );
+  INSERT INTO notifications_v27 (id, user_id, type, page_id, actor_id, count, created_at, read_at)
+    SELECT id, user_id, type, page_id, actor_id, count, created_at, read_at FROM notifications;
+  DROP TABLE notifications;
+  ALTER TABLE notifications_v27 RENAME TO notifications;
+  CREATE INDEX notifications_user ON notifications(user_id, created_at DESC);
+  `,
 ];
 
 export function openDb(file: string): DB {

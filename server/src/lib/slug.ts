@@ -15,6 +15,6 @@ export function segmentOf(id: string, title: string): string {
 
 // Identifiant contenu dans un segment d'adresse (les 12 derniers caractères, précédés d'un tiret ou de rien) ; null si le segment est invalide.
 export function idFromSegment(seg: string): string | null {
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(seg)) return null;
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(seg)) return null;
   return seg.length > ID_LENGTH && /^[a-z0-9-]*-[A-Za-z0-9_-]{12}$/.test(seg) ? seg.slice(-ID_LENGTH) : seg;
 }

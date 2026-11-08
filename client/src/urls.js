@@ -20,8 +20,9 @@ export const pagePathById = (id) => pagePath(store.page(id) || { id, title: '' }
 export const spacePathById = (id) => spacePath(store.space(id) || { id, name: '' });
 
 // Identifiant contenu dans un segment : les 12 derniers caractères, précédés d'un tiret ou de rien.
+// Longueur maximale : titre (60) + tiret + identifiant (12) = 73 ; au-delà de 64, un titre long rendait la page introuvable.
 export function idFromSegment(seg) {
-  if (/^[A-Za-z0-9_-]{1,64}$/.test(seg) === false) return null;
+  if (/^[A-Za-z0-9_-]{1,80}$/.test(seg) === false) return null;
   if (seg.length > ID_LENGTH && /^[a-z0-9-]*-[A-Za-z0-9_-]{12}$/.test(seg)) return seg.slice(-ID_LENGTH);
   return seg;
 }

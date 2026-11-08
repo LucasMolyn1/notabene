@@ -44,7 +44,9 @@ describe('adresses lisibles', () => {
     expect(idFromSegment(`ancien-titre-${id}`)).toBe(id); // un titre périmé reste valable
     expect(idFromSegment('a/b')).toBeNull();
     expect(idFromSegment('..')).toBeNull();
-    expect(idFromSegment('x'.repeat(65))).toBeNull();
+    expect(idFromSegment('x'.repeat(81))).toBeNull();
+    // Titre de 60 caractères + tiret + identifiant : 73 caractères, valides.
+    expect(idFromSegment(`${'a'.repeat(60)}-abcdefghijkl`)).toBe('abcdefghijkl');
   });
 });
 

@@ -10,6 +10,7 @@ import { avatarEl } from './avatar.js';
 import { openMenu, pageIcon } from './ui.js';
 import * as A from './actions.js';
 import { openDocumentImport, openNotionImport } from './notion-import.js';
+import { openReviewList } from './verification.js';
 
 let dragId = null;
 
@@ -325,6 +326,7 @@ export function renderSidebar() {
       // Administrateur : une nouvelle version existe. Le lien mène aux nouveautés (et aux consignes de mise à jour).
       session.updateAvailable && h('a', { class: 'update-banner', href: '/settings/about' }, icon('sparkle', 16),
         h('span', null, h('strong', null, `Version ${session.update.latest.version} disponible`), h('small', null, 'Voir les nouveautés'))),
+      session.user && navBtn('verified', 'Pages à revoir', openReviewList),
       canWrite && navBtn('trash', 'Corbeille', A.openTrash),
       session.user && navBtn('settings', 'Paramètres', () => A.go('/settings'), { active: location.pathname.startsWith('/settings'), badge: newsPending(session.version) || session.updateAvailable || undefined }),
       accountBox()));
