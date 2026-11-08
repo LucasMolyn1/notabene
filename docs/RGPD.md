@@ -14,7 +14,7 @@ Ce document aide la personne ou l'organisation qui **déploie** BeNote à respec
 | Rapports d'import (Notion) | chemins des fichiers de l'archive importée, titres, motifs d'écart, auteur, espace, date ; lisibles de leur seul auteur ; l'archive elle-même n'est pas conservée | base SQLite |
 | Conversations du chat IA | titre (début du premier message), messages de la personne et réponses de l'assistant, pages citées en source, page d'origine, dates ; lisibles de leur seule propriétaire (ni les autres comptes ni les administrateurs ne les lisent dans l'interface ou l'API) | base SQLite (tables `ai_conversations` et `ai_messages`) |
 | Sessions et jetons | hash de l'identifiant de session, hash des jetons d'API, dates | base SQLite |
-| Journal d'audit | action, date, identifiant de l'utilisateur, **adresse IP** | base SQLite |
+| Journal d'audit | action, date, identifiant de l'utilisateur, **adresse IP**, cible et détails techniques (jamais de secret ni de contenu de page) | base SQLite ; copies éventuelles : export CSV ou JSON, SIEM, sortie standard (voir [AUDIT.md](AUDIT.md)) |
 | Notifications | type, page concernée, auteur, état de lecture ; l'e-mail ne contient que le titre, le nom et un lien | base SQLite, serveur SMTP |
 | Journaux du serveur | selon votre proxy et `LOG_LEVEL` | votre infrastructure |
 | Sauvegardes | copie de la base et des pièces jointes | votre stockage |
@@ -35,7 +35,7 @@ Des purges automatiques tournent toutes les heures. Les valeurs sont en jours, `
 | Rapports d'import (les 20 derniers par personne, supprimés avec le compte ou l'espace) | non réglable | 20 rapports |
 | Conversations du chat IA sans activité (avec leurs messages ; 100 conversations au plus par personne, la plus ancienne supprimée au-delà) | `AI_CHAT_RETENTION_DAYS` (1 à 3650, pas de désactivation) | 90 |
 
-Adaptez ces durées à votre finalité et documentez-les dans votre registre des traitements.
+Les durées effectives sont lisibles par un administrateur dans les paramètres (`GET /api/v3/admin/retention`). Adaptez-les à votre finalité et documentez-les dans votre registre des traitements.
 
 ## Droits des personnes
 
@@ -64,6 +64,7 @@ La suppression est une **anonymisation** : le compte et ce qui lui est propre di
 - **Serveur SMTP** : reçoit l'adresse du destinataire et le titre de la page.
 - **Fournisseur d'IA** (recherche IA, assistant de rédaction, chat), choisi par l'administrateur : reçoit la question et des **extraits des pages lisibles par la personne** ; pour le chat, aussi le **texte de la page ouverte** (8000 caractères au plus) et les **derniers messages de la conversation** (12 messages, 24 000 caractères au plus), à chaque envoi. BeNote ne maîtrise pas la conservation chez le fournisseur : reportez-vous à son contrat. Avec un service externe (Anthropic, OpenAI, Mistral…), c'est un sous-traitant : contrat de sous-traitance et, hors UE, garanties de transfert. Un modèle local (`AI_ALLOW_PRIVATE=true`, Ollama) garde tout chez vous.
 - **Webhooks** : reçoivent des identifiants de pages et d'utilisateurs, jamais le contenu.
+- **SIEM** (si configuré) et **collecteur de journaux** (`AUDIT_STDOUT=true`) : reçoivent les évènements du journal d'audit, dont l'**identifiant et le nom de l'utilisateur** et l'**adresse IP**, sans secret ni contenu de page. La conservation chez le destinataire relève de votre politique : alignez-la sur `AUDIT_RETENTION_DAYS` et `AUDIT_IP_RETENTION_DAYS` (l'effacement dans BeNote n'atteint pas les copies déjà transmises ni les fichiers exportés), et traitez un SIEM externe comme un sous-traitant.
 - **Draw.io** (si activé) : à héberger vous-même, comme dans le `docker-compose.yml`.
 
 ## Sécurité et incidents

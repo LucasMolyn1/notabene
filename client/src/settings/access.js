@@ -1,5 +1,5 @@
-// Administration des accès : espaces, authentification, e-mail, utilisateurs et journal d'audit.
-import { h, timeAgo, fullDate, download } from '../util.js';
+// Administration des accès : espaces, authentification, e-mail et utilisateurs (journal d'audit : ./audit.js).
+import { h, timeAgo, download } from '../util.js';
 import { icon } from '../icons.js';
 import { api } from '../api.js';
 import { store } from '../store.js';
@@ -179,26 +179,4 @@ export async function renderUsers(el) {
         },
       }, icon('plus', 15), 'Créer le compte')))),
   ].filter(Boolean));
-}
-
-const AUDIT_LABELS = {
-  'auth.login': 'Connexion', 'auth.logout': 'Déconnexion', 'auth.local.failed': 'Échec de connexion', 'auth.ldap.failed': 'Échec de connexion LDAP', 'auth.saml.failed': 'Réponse SAML refusée', 'auth.local.setup': 'Installation initiale', 'auth.local.password': 'Mot de passe modifié', 'auth.mfa.enable': 'MFA activée', 'auth.mfa.disable': 'MFA désactivée', 'backup.download': 'Sauvegarde téléchargée', 'import.markdown': 'Import Markdown', 'user.create': 'Compte créé', 'user.update': 'Compte modifié', 'auth.denied': 'Accès refusé', 'auth.sessions.revoke': 'Sessions fermées',
-  'auth.local.forgot': 'Réinitialisation demandée', 'auth.local.reset': 'Mot de passe réinitialisé', 'auth.reauth.failed': 'Échec de ressaisie', 'settings.test': 'Test de configuration', 'settings.test.failed': 'Test de configuration échoué', 'settings.reset': 'Retour à l’environnement', 'settings.embed': 'Sites autorisés modifiés', 'settings.oidc': 'OIDC modifié', 'settings.ldap': 'LDAP modifié', 'settings.saml': 'SAML modifié', 'settings.smtp': 'SMTP modifié', 'settings.smtp.test-mail': 'E-mail de test envoyé',
-  'token.create': 'Jeton créé', 'token.revoke': 'Jeton révoqué', 'settings.ai': 'Réglages IA', 'ai.ask': 'Question IA', 'ai.assist': 'Assistant de rédaction',
-  'space.create': 'Espace créé', 'space.delete': 'Espace supprimé', 'space.visibility': 'Visibilité modifiée',
-  'page.destroy': 'Page supprimée définitivement', 'trash.empty': 'Corbeille vidée',
-  'page.export.zip': 'Page exportée en ZIP', 'space.export.zip': 'Espace exporté en ZIP',
-  'images.migration.dryrun': 'Conversion des images simulée', 'images.migration.start': 'Conversion des images lancée', 'images.migration.revert': 'Conversion des images annulée', 'images.migration.end': 'Conversion des images terminée',
-};
-
-export async function renderAudit(el) {
-  el.replaceChildren(loadingEl());
-  const rows = await A.attempt(() => api.get('/admin/audit?limit=200'));
-  if (!rows) return;
-  el.replaceChildren(card('Journal d’audit', 'Actions sensibles : jamais de contenu de page ni de secret.',
-    rows.length
-      ? h('div', { class: 'table audit' }, rows.map((r) => h('div', { class: 'table-row' },
-        h('span', { class: 'audit-time', title: fullDate(r.at) }, timeAgo(r.at)),
-        h('span', { class: 'grow' }, h('strong', null, AUDIT_LABELS[r.action] || r.action), h('small', null, [r.user || 'Système', r.ip, r.meta && r.meta.slice(0, 120)].filter(Boolean).join(' · '))))))
-      : h('p', { class: 'muted' }, 'Aucune entrée.')));
 }

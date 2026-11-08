@@ -2,6 +2,7 @@
 // Principe : une configuration dangereuse empêche le serveur de démarrer.
 import { isIP } from 'node:net';
 import { z } from 'zod';
+import { auditFamily } from './lib/audit-events.js';
 import { normalizeEmbedHost, sameSiteAsSelf, selfHost } from './lib/embed.js';
 
 const bool = (def: 'true' | 'false') =>
@@ -96,6 +97,13 @@ const schema = z
     // Conversations du chat IA sans activité depuis ce nombre de jours : supprimées (pas de désactivation possible).
     AI_CHAT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
     SESSION_IDLE_MINUTES: z.coerce.number().min(5).max(24 * 60).default(120),
+    // Journal d'audit : une ligne JSON par évènement sur la sortie standard (collecteurs de journaux), voir docs/AUDIT.md.
+    AUDIT_STDOUT: bool('false'),
+    // Envoi du journal d'audit vers un SIEM (webhook signé). Valeurs de départ, remplaçables depuis l'interface (section « siem »).
+    SIEM_URL: optionalUrl,
+    SIEM_SECRET: z.string().min(16, 'au moins 16 caractères').max(4000).optional(),
+    // Familles d'actions à envoyer (ex. auth,settings) ; vide : toutes.
+    SIEM_ACTIONS: csv('').pipe(z.array(auditFamily).max(50)),
     // Documentation interactive de l'API : auth (connectés seulement, défaut), public, off.
     API_DOCS: z.enum(['auth', 'public', 'off']).default('auth'),
 

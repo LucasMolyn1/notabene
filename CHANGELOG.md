@@ -4,6 +4,14 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## Non publié
+
+### Ajouté
+- **Journal d'audit : filtres, pagination et export** : `GET /api/v3/admin/audit/events` (filtres par action exacte ou famille `auth.`, auteur, cible, issue, plage de dates ; pagination par curseur) renvoie les évènements dans un format stable et documenté (`notabene.audit/1` : `id`, `timestamp` ISO 8601, `action`, `outcome`, `actor`, `target`, `ip`, `meta`). `GET /api/v3/admin/audit/export?format=csv|json` produit l'export en flux, par lots, plafonné à 100 000 lignes, avec neutralisation des formules dans le CSV ; l'export est journalisé (`audit.export`). `GET /api/v3/admin/audit` garde sa forme et accepte les mêmes filtres. Aucun secret ni texte de page ne sort : `meta` est filtré.
+- **Envoi du journal d'audit vers un SIEM** : webhook signé HMAC-SHA256 (mêmes en-têtes et protections SSRF que les webhooks, aucune redirection), configurable dans les paramètres (section `siem` : adresse, familles d'actions, secret chiffré jamais renvoyé ; ressaisie du mot de passe et test d'envoi exigés) ou par `SIEM_URL`, `SIEM_SECRET`, `SIEM_ACTIONS`. File reprise sur le journal lui-même (lots chaînés, corps de 1 Mo au plus), nouvel essai avec délai croissant sans abandon (alerte `audit.siem.failing` au 10e échec), aucun évènement sauté lors d'un changement de configuration, évènement d'arrêt envoyé à l'ancien collecteur. État : `GET /api/v3/admin/audit/siem`. Sortie standard en JSON, une ligne par évènement, avec `AUDIT_STDOUT=true`.
+- **Durées de conservation** : `GET /api/v3/admin/retention` (lecture seule) donne les durées effectives (journal, adresses IP, corbeille, notifications, chat IA, sessions…) avec une description. Voir `docs/AUDIT.md` et `docs/RGPD.md`.
+- **Interface du journal d'audit** : dans Paramètres, le journal se filtre (action ou famille, issue, personne, cible, dates), se pagine (« Voir plus ») et s'exporte en CSV ou JSON avec les filtres saisis ; nouvelles sections « Envoi au SIEM » (état de l'envoi, configuration testée avant l'enregistrement) et « Conservation » (durées en lecture seule).
+
 ## [3.13.1] - 2026-11-08
 
 ### Ajouté
