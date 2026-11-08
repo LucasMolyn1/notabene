@@ -55,6 +55,12 @@ export function exportUserData(db: DB, userId: string, requesterId: string = use
     watchedPages: filterReadable(db, subject, all<{ id: string; title: string }>(
       'SELECT p.id, p.title FROM page_watch w JOIN pages p ON p.id = w.page_id WHERE w.user_id = ? AND p.deleted_at IS NULL', userId)).filter((p) => !hidden(p.id)),
     pagesCreated: titled.filter((p) => !hidden(p.id)).map((p) => ({ id: p.id, title: p.title, createdAt: p.at })),
+    // Vérification de page : pages où la personne est vérificatrice, et ses vérifications (pages qu'elle lit encore).
+    verifierOf: filterReadable(db, subject, all<{ id: string; title: string }>(
+      'SELECT p.id, p.title FROM page_verifiers w JOIN pages p ON p.id = w.page_id WHERE w.user_id = ? AND p.deleted_at IS NULL ORDER BY p.title', userId)).filter((p) => !hidden(p.id)),
+    verificationsPerformed: filterReadable(db, subject, all<{ id: string; title: string; verified_at: number }>(
+      'SELECT p.id, p.title, v.verified_at FROM page_verifications v JOIN pages p ON p.id = v.page_id WHERE v.verified_by = ? AND p.deleted_at IS NULL ORDER BY v.verified_at', userId))
+      .filter((p) => !hidden(p.id)).map((p) => ({ pageId: p.id, title: p.title, verifiedAt: p.verified_at })),
     contributions: {
       pagesEdited: one<{ n: number }>('SELECT COUNT(*) AS n FROM pages WHERE updated_by = ?', userId).n,
       versionsAuthored: one<{ n: number }>('SELECT COUNT(*) AS n FROM page_versions WHERE created_by = ?', userId).n,
@@ -132,7 +138,8 @@ export function personalDataArchive(data: PersonalData, filesDir: string): Async
 // Effacement : le compte et ce qui lui est propre disparaissent ; ce qu'il a écrit reste mais sans auteur.
 // Pièces jointes : les fichiers restent rattachés à leur page (ils font partie du contenu, comme le texte), l'envoyeur est
 // retiré. Elles ne comptent alors plus dans aucun quota personnel, toujours dans le plafond de l'instance.
-// (Les clés étrangères en cascade retirent sessions, jetons, favoris, suivis, notifications, permissions, préférences et conversations du chat IA.)
+// (Les clés étrangères en cascade retirent sessions, jetons, favoris, suivis, notifications, permissions, préférences, conversations du chat IA
+// et désignations comme vérificateur.)
 export function eraseUser(db: DB, userId: string, closedBy: string | null = null): boolean {
   return db.transaction(() => {
     const u = db.prepare('SELECT sub FROM users WHERE id = ?').get(userId) as { sub: string } | undefined;
@@ -147,6 +154,10 @@ export function eraseUser(db: DB, userId: string, closedBy: string | null = null
     db.prepare('UPDATE settings SET updated_by = NULL WHERE updated_by = ?').run(userId);
     // Conversations du chat IA (et leurs messages) : déjà retirées par la cascade, écrit ici pour la même raison.
     db.prepare('DELETE FROM ai_conversations WHERE user_id = ?').run(userId);
+    // Vérification de page : la désignation disparaît, la vérification faite reste sans auteur (même raison).
+    db.prepare('DELETE FROM page_verifiers WHERE user_id = ?').run(userId);
+    db.prepare('UPDATE page_verifications SET verified_by = NULL WHERE verified_by = ?').run(userId);
+    db.prepare('UPDATE page_verifications SET created_by = NULL WHERE created_by = ?').run(userId);
     // Le journal garde la trace des actions, sans la personne ni son adresse IP.
     db.prepare('UPDATE audit_log SET user_id = NULL, ip = NULL WHERE user_id = ?').run(userId);
     // Les connexions sont journalisées avant que l'identité soit posée sur la requête : la personne n'y figure que comme cible.

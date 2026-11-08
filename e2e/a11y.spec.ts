@@ -9,7 +9,7 @@ import { adminContext, api, createLocalUser, loginUi, PASSWORD, sessionContext }
 // Sans animation : axe mesure les contrastes d'un menu ou d'une palette en pleine transition, d'où de fausses alertes.
 test.use({ reducedMotion: 'reduce' });
 
-const SECTIONS = ['profile', 'appearance', 'tokens', 'about', 'ai', 'diagrams', 'tools', 'api', 'embed', 'shares', 'spaces', 'groups', 'auth', 'mail', 'embeds', 'webhooks', 'import', 'users', 'audit', 'instance', 'images'];
+const SECTIONS = ['profile', 'appearance', 'tokens', 'about', 'ai', 'diagrams', 'tools', 'api', 'embed', 'shares', 'spaces', 'groups', 'auth', 'mail', 'embeds', 'webhooks', 'import', 'users', 'audit', 'siem', 'retention', 'instance', 'images'];
 
 async function violations(page: Page, label: string) {
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
@@ -74,6 +74,41 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.locator('.label-add').click();
       await page.getByRole('combobox', { name: 'Nouveau libellé' }).waitFor();
       found.push(...await violations(page, 'libellés (champ)'));
+      expect(found).toEqual([]);
+    });
+
+    test('vérification : pastille, boîte de dialogue et pages à revoir', async ({ page, browser }) => {
+      const admin = await adminContext(browser);
+      const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+      const me = await (await api(admin.request, 'GET', '/me')).json();
+      const created = await (await api(admin.request, 'POST', '/pages', { spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: `A11y vérification ${scheme}` })).json();
+      expect((await api(admin.request, 'PUT', `/pages/${created.id}/verification`, { verifierIds: [me.user.id], intervalDays: 90 })).ok()).toBeTruthy();
+      // Une seconde page reste en attente : la liste à revoir a au moins une ligne (pastille de statut mesurée).
+      const due = await (await api(admin.request, 'POST', '/pages', { spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: `A11y à revoir ${scheme}` })).json();
+      expect((await api(admin.request, 'PUT', `/pages/${due.id}/verification`, { verifierIds: [me.user.id], intervalDays: null })).ok()).toBeTruthy();
+      await admin.close();
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.goto(`/p/${created.id}`);
+      await page.locator('.verif-badge').waitFor();
+      const found = await violations(page, 'pastille de vérification');
+      await page.locator('.verif-badge').click();
+      const dialog = page.getByRole('dialog', { name: 'Vérification de la page' });
+      await dialog.getByRole('button', { name: 'Marquer comme vérifiée' }).waitFor();
+      await dialog.getByRole('searchbox', { name: 'Vérificateurs' }).fill('A');
+      await dialog.getByLabel('Échéance après chaque vérification').selectOption('custom');
+      await dialog.getByRole('button', { name: 'Enregistrer' }).waitFor();
+      found.push(...await violations(page, 'boîte de dialogue de vérification'));
+      await dialog.getByRole('button', { name: 'Marquer comme vérifiée' }).click();
+      await page.locator('.verif-badge.verified').waitFor();
+      await dialog.getByRole('button', { name: 'Fermer' }).first().click();
+      found.push(...await violations(page, 'pastille vérifiée'));
+      await page.getByRole('complementary', { name: 'Navigation' }).getByRole('button', { name: 'Pages à revoir' }).click();
+      const list = page.getByRole('dialog', { name: 'Pages à revoir' });
+      await list.getByRole('tabpanel').and(page.locator('[aria-busy="false"]')).waitFor();
+      found.push(...await violations(page, 'pages à revoir'));
+      await list.getByRole('tab', { name: 'Toutes' }).click();
+      await list.getByRole('tabpanel').and(page.locator('[aria-busy="false"]')).waitFor();
+      found.push(...await violations(page, 'pages à revoir (toutes)'));
       expect(found).toEqual([]);
     });
 

@@ -18,6 +18,7 @@ import { openAssistant } from './assistant.js';
 import { assistantButton } from './ai-chat.js';
 import { rememberMentionNames } from './editor/mention.js';
 import { labelBar } from './labels.js';
+import { openVerification, verificationBadge } from './verification.js';
 import { api, listAll } from './api.js';
 import { permissionsButton } from './permissions.js';
 import { shareButton } from './share-dialog.js';
@@ -130,9 +131,11 @@ function mountPage(page) {
   titleEl.value = page.title;
   const metaEl = h('div', { class: 'page-meta' });
   const labels = labelBar(id, { initial: page.labels ?? [], canWrite: canWrite && !app.embed });
+  // Statut de vérification, sous le titre (masqué sans vérification configurée et dans une intégration).
+  const verification = app.embed ? null : verificationBadge(id);
   const editorHost = h('div', { class: 'editor-host' });
   const tocEl = h('aside', { class: 'toc', 'aria-label': 'Sommaire' });
-  const article = h('article', { class: 'page' }, h('div', { class: 'page-head' }, iconBtn, addIconBtn), titleEl, labels.el, metaEl, editorHost);
+  const article = h('article', { class: 'page' }, h('div', { class: 'page-head' }, iconBtn, addIconBtn), titleEl, verification?.el, labels.el, metaEl, editorHost);
   const wrap = h('div', { class: 'page-wrap' }, article, tocEl);
   const scroller = h('div', { class: 'scroller' }, wrap);
 
@@ -380,6 +383,7 @@ function mountPage(page) {
         { sep: true },
       ] : []),
       canWrite && { label: 'Pleine largeur', icon: 'width', checked: !!p.fullWidth, onClick: () => A.attempt(() => store.updatePage(id, { fullWidth: !p.fullWidth })) },
+      session.user && { label: 'Vérification', icon: 'verified', onClick: () => openVerification(id) },
       { label: 'Copier le lien', icon: 'link', onClick: () => A.copyLink(id) },
       { label: 'Intégrer (iframe)', icon: 'code', onClick: () => A.showEmbed(id) },
       { sep: true },
@@ -435,6 +439,7 @@ function mountPage(page) {
       offPresence();
       refreshDerived.cancel();
       labels.destroy();
+      verification?.destroy();
       anchors.destroy();
       window.removeEventListener('beforeunload', beforeUnload);
       editor.destroy();

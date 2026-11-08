@@ -139,6 +139,8 @@ async function boot() {
     if (type === 'page.permissions') { store.scheduleRefresh(evt); return; }
     if (type === 'base.changed') { window.dispatchEvent(new CustomEvent('notabene:base', { detail: evt })); return; }
     if (type === 'page.labels') { window.dispatchEvent(new CustomEvent('notabene:labels', { detail: evt })); return; }
+    // Sans « state » : la pastille relit le statut (les droits de chacun en dépendent).
+    if (type === 'page.verification') { window.dispatchEvent(new CustomEvent('notabene:verification', { detail: { pageId: evt.pageId } })); return; }
     // Nos propres sauvegardes reviennent aussi : inutile de recharger si la version est déjà connue.
     if (type === 'page.updated' && (store.page(evt.pageId)?.version ?? 0) >= (evt.version ?? 0)) return;
     store.scheduleRefresh(evt);

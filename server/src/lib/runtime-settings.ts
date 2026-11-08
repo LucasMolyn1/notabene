@@ -4,11 +4,13 @@
 import { z } from 'zod';
 import type { Config } from '../config.js';
 import type { DB } from '../db.js';
+import { auditFamily } from './audit-events.js';
 import type { SecretBox } from './crypto.js';
 import { normalizeEmbedHost, sameSiteAsSelf, selfHost } from './embed.js';
 
-export type SectionName = 'embed' | 'embeds' | 'oidc' | 'ldap' | 'saml' | 'smtp';
-export const SECTION_NAMES: SectionName[] = ['embed', 'embeds', 'oidc', 'ldap', 'saml', 'smtp'];
+export type SectionName = 'embed' | 'embeds' | 'oidc' | 'ldap' | 'saml' | 'smtp' | 'siem';
+export const SECTION_NAMES: SectionName[] = ['embed', 'embeds', 'oidc', 'ldap', 'saml', 'smtp', 'siem'];
+
 
 const list = z.array(z.string().trim().min(1).max(200)).max(50).default([]);
 const role = z.enum(['reader', 'none']).default('none');
@@ -27,6 +29,8 @@ interface SectionSpec {
   schema: (env: Config) => z.ZodType<Record<string, unknown>>;
   // Champs secrets (jamais renvoyés ; undefined = inchangé, chaîne vide = supprimé).
   secrets: string[];
+  // Règles propres à un secret saisi (appliquées à la valeur rognée, au test comme à l'enregistrement).
+  secretRules?: Record<string, z.ZodType<string>>;
   // Champ désignant la destination réseau : s'il change, les secrets doivent être ressaisis.
   endpoint?: string;
   toEnv: (v: Record<string, unknown>, secrets: Record<string, string | undefined>) => Partial<Config>;
@@ -157,6 +161,19 @@ const SPECS: Record<SectionName, SectionSpec> = {
     toEnv: (v, s) => ({ SMTP_HOST: String(v.host), SMTP_PORT: Number(v.port), SMTP_MODE: v.mode as 'starttls' | 'tls', SMTP_USER: v.user as string | undefined, SMTP_PASSWORD: s.password, SMTP_FROM: String(v.from) }),
     fromEnv: (c) => ({ enabled: !!c.SMTP_HOST, values: { host: c.SMTP_HOST ?? '', port: c.SMTP_PORT, mode: c.SMTP_MODE, user: c.SMTP_USER ?? '', from: c.SMTP_FROM ?? '' } }),
   },
+
+  // Envoi du journal d'audit vers un SIEM (webhook signé HMAC, voir lib/audit-forwarder.ts). http seulement si WEBHOOK_ALLOW_PRIVATE.
+  siem: {
+    secrets: ['secret'],
+    secretRules: { secret: z.string().min(16, 'le secret de signature doit compter au moins 16 caractères').max(4000) },
+    endpoint: 'url',
+    schema: (env) => z.object({
+      url: httpsUrl('URL du collecteur', env.WEBHOOK_ALLOW_PRIVATE),
+      actions: z.array(auditFamily).max(50).transform((all) => [...new Set(all)]).default([]),
+    }),
+    toEnv: (v, s) => ({ SIEM_URL: String(v.url), SIEM_SECRET: s.secret, SIEM_ACTIONS: arr(v.actions) }),
+    fromEnv: (c) => ({ enabled: !!(c.SIEM_URL && c.SIEM_SECRET), values: { url: c.SIEM_URL ?? '', actions: c.SIEM_ACTIONS } }),
+  },
 };
 
 // Clés d'environnement mises à undefined quand une section est désactivée.
@@ -167,6 +184,7 @@ const DISABLE: Record<SectionName, Partial<Config>> = {
   ldap: { LDAP_URL: undefined },
   saml: { SAML_ENTRY_POINT: undefined },
   smtp: { SMTP_HOST: undefined },
+  siem: { SIEM_URL: undefined, SIEM_SECRET: undefined, SIEM_ACTIONS: [] },
 };
 
 interface Stored { enabled: boolean; values: Record<string, unknown>; secrets: Record<string, string>; hints: Record<string, string> }
@@ -245,7 +263,7 @@ export class RuntimeSettings {
   }
 
   #envSecret(section: SectionName, field: string): string | undefined {
-    const map: Record<string, keyof Config> = { 'oidc.clientSecret': 'OIDC_CLIENT_SECRET', 'ldap.bindPassword': 'LDAP_BIND_PASSWORD', 'smtp.password': 'SMTP_PASSWORD' };
+    const map: Record<string, keyof Config> = { 'oidc.clientSecret': 'OIDC_CLIENT_SECRET', 'ldap.bindPassword': 'LDAP_BIND_PASSWORD', 'smtp.password': 'SMTP_PASSWORD', 'siem.secret': 'SIEM_SECRET' };
     const key = map[`${section}.${field}`];
     return key ? (this.env[key] as string | undefined) : undefined;
   }
@@ -258,9 +276,20 @@ export class RuntimeSettings {
     const stored = this.#read(section);
     const old = stored ? this.#secretsOf(section, stored) : Object.fromEntries(spec.secrets.map((f) => [f, this.#envSecret(section, f)]));
     this.#assertSecretsRetyped(section, values, secretsIn, current);
+    this.#checkSecrets(section, secretsIn);
     const secrets: Record<string, string | undefined> = {};
-    for (const f of spec.secrets) secrets[f] = secretsIn[f] === undefined ? old[f] : secretsIn[f] || undefined;
+    // Valeur rognée, comme à l'enregistrement : le secret testé est exactement celui qui sera scellé.
+    for (const f of spec.secrets) secrets[f] = secretsIn[f] === undefined ? old[f] : secretsIn[f]!.trim() || undefined;
     return this.#apply({ ...current }, section, enabled, values, secrets);
+  }
+
+  #checkSecrets(section: SectionName, secretsIn: Record<string, string | undefined>) {
+    for (const [f, rule] of Object.entries(SPECS[section].secretRules ?? {})) {
+      const v = secretsIn[f]?.trim();
+      if (!v) continue; // absent : inchangé ; vide : supprimé (refusé plus loin si la section est active)
+      const r = rule.safeParse(v);
+      if (!r.success) throw new SettingsError(`${f} : ${r.error.issues[0]?.message ?? 'valeur invalide'}`);
+    }
   }
 
   // Si la destination (hôte, URL) change, un secret déjà enregistré ne doit pas partir vers la nouvelle cible sans être ressaisi.
@@ -280,7 +309,7 @@ export class RuntimeSettings {
     const { enabled, values } = this.validate(section, input);
     const spec = SPECS[section];
     const prev = this.#read(section);
-    if (enabled) this.#assertSecretsRetyped(section, values, secretsIn, this.get());
+    if (enabled) { this.#assertSecretsRetyped(section, values, secretsIn, this.get()); this.#checkSecrets(section, secretsIn); }
     const secrets: Record<string, string> = {};
     const hints: Record<string, string> = {};
     // Section désactivée : plus aucun secret conservé. Sinon, une section « éteinte » garderait un mot de passe scellé

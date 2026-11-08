@@ -10,6 +10,7 @@ import { guard, requireAuth } from '../auth/context.js';
 import { assertBackupAllowed, backupName, backupTo, encryptFile } from '../backup.js';
 import { attachmentsDir } from '../lib/attachments.js';
 import { audit } from '../lib/audit.js';
+import { auditFilters, auditWhere, FilterError } from '../lib/audit-events.js';
 import { HttpError, idParams } from '../lib/http.js';
 import { eraseUser, exportUserData, personalDataArchive, type PersonalData } from '../lib/personal-data.js';
 import { reauthInput, requireReauth } from '../lib/reauth.js';
@@ -65,15 +66,23 @@ export default async function adminRoutes(app: FastifyInstance) {
     ).all(Date.now()) as { id: string; name: string; email: string | null; role: string; created_at: number; last_login_at: number | null; tokens: number; disabled: number; totp_enabled: number; is_local: number }[])
       .map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, createdAt: u.created_at, lastLoginAt: u.last_login_at, tokens: u.tokens, disabled: !!u.disabled, mfa: !!u.totp_enabled, local: !!u.is_local })));
 
+  // Forme historique (tableau, `meta` en texte brut) gardée pour la compatibilité ; accepte les mêmes filtres.
+  // La liste paginée au format stable est GET /admin/audit/events (routes/audit.ts).
+  const legacyAuditQuery = auditFilters.extend({ limit: z.coerce.number().int().min(1).max(500).default(100) });
   app.get('/admin/audit', {
     preHandler: guard('admin'),
-    schema: { tags: ['admin'], summary: 'Journal d’audit', querystring: z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) }) },
+    schema: { tags: ['admin'], summary: 'Journal d’audit (forme historique)', querystring: legacyAuditQuery },
   }, async (req) => {
-    const { limit } = req.query as { limit: number };
+    const { limit, ...filters } = req.query as z.output<typeof legacyAuditQuery>;
+    let w: { sql: string; args: unknown[] };
+    try { w = auditWhere(Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined))); } catch (err) {
+      if (err instanceof FilterError) throw new HttpError(400, err.message);
+      throw err;
+    }
     return db.prepare(
       `SELECT a.id, a.at, a.action, a.target, a.ip, a.meta, u.name AS user FROM audit_log a
-       LEFT JOIN users u ON u.id = a.user_id ORDER BY a.id DESC LIMIT ?`,
-    ).all(limit);
+       LEFT JOIN users u ON u.id = a.user_id WHERE ${w.sql} ORDER BY a.id DESC LIMIT ?`,
+    ).all(...w.args, limit);
   });
 
   // Téléchargement d'une copie cohérente de la base (admin, session navigateur uniquement). Contient des secrets chiffrés et des hash de jetons.

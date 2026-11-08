@@ -1,4 +1,4 @@
-// Configuration modifiable depuis l'interface (admin) : intégration portfolio, OIDC, LDAP, SAML, SMTP.
+// Configuration modifiable depuis l'interface (admin) : intégration portfolio, OIDC, LDAP, SAML, SMTP, SIEM.
 // Chaque écriture exige une nouvelle preuve d'identité, un test de connexion réussi (sauf intégration) et laisse une trace d'audit.
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -57,6 +57,13 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
     smtp: async (cfg) => {
       await app.mail.verify(cfg);
       return 'Connexion SMTP et authentification réussies (aucun message envoyé).';
+    },
+    // Évènement de test signé, avec la même protection SSRF que les webhooks ; le corps de la réponse n'est pas relu.
+    siem: async (cfg) => {
+      if ((cfg.SIEM_SECRET ?? '').length < 16) throw new Error('le secret de signature doit compter au moins 16 caractères');
+      const status = await app.auditForwarder.sendTest(cfg);
+      if (status < 200 || status >= 300) throw new Error(status ? `le collecteur répond ${status}` : 'collecteur injoignable, adresse refusée ou redirection');
+      return `Évènement de test accepté par le collecteur (statut ${status}).`;
     },
   };
 
@@ -120,8 +127,17 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
       if (!hit || hit.exp < Date.now() || hit.content !== contentOf(auth.user.id, section, body)) throw new HttpError(409, 'Testez la connexion avec cette configuration avant de l’enregistrer.');
       passed.delete(body.testId!);
     }
-    const view = wrap(() => rt.save(section, body.config, secretsOf(section, body.secrets), auth.user.id));
-    audit(db, req, `settings.${section}`, section, { enabled: view.enabled, secretsChanged: Object.keys(body.secrets), ...(section === 'embeds' ? { hosts: view.values.hosts } : {}) });
+    const secrets = secretsOf(section, body.secrets);
+    let view!: ReturnType<typeof rt.view>;
+    const apply = () => {
+      view = wrap(() => rt.save(section, body.config, secrets, auth.user.id));
+      audit(db, req, `settings.${section}`, section, { enabled: view.enabled, secretsChanged: Object.keys(body.secrets), ...(section === 'embeds' ? { hosts: view.values.hosts } : {}), ...(section === 'siem' ? { actions: view.values.actions } : {}) });
+    };
+    if (section === 'siem') {
+      // Validé avant tout envoi à l'ancien collecteur ; l'entrée d'audit ci-dessus devient le point de départ d'une nouvelle adresse.
+      const next = body.config.enabled ? wrap(() => rt.candidate(section, body.config, secrets)) : null;
+      await app.auditForwarder.reconfigure(next?.SIEM_URL && next.SIEM_SECRET ? next.SIEM_URL : undefined, apply);
+    } else apply();
     return view;
   });
 
@@ -130,8 +146,15 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
     adminSession(req);
     const { section } = req.params as z.output<typeof sectionParams>;
     await requireReauth(app, req, (req.body as { reauth: z.output<typeof reauthInput> }).reauth);
-    wrap(() => rt.reset(section));
-    audit(db, req, 'settings.reset', section);
+    const apply = () => {
+      wrap(() => rt.reset(section));
+      audit(db, req, 'settings.reset', section);
+    };
+    if (section === 'siem') {
+      if (rt.locked) throw new HttpError(409, 'Configuration verrouillée par l’environnement (CONFIG_LOCKED).');
+      const env = app.config;
+      await app.auditForwarder.reconfigure(env.SIEM_URL && env.SIEM_SECRET ? env.SIEM_URL : undefined, apply);
+    } else apply();
     return rt.view(section);
   });
 
