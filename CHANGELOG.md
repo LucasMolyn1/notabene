@@ -4,7 +4,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
-## Non publié
+## [3.14.0] - 2026-11-09
 
 ### Ajouté
 - **Déploiement isolé** : guide `docs/DEPLOIEMENT-ISOLE.md` (image transférée par `docker save`, réglages à connaître) et exemple `docker-compose.isole.yml`. Un nouveau job de CI, `isole`, fait tourner l'application sur un réseau Docker sans sortie, exécute un parcours complet et échoue si une sonde détecte une tentative de connexion ou de résolution DNS vers l'extérieur (avec un témoin positif qui vérifie la sonde).
