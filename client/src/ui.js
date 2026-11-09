@@ -93,13 +93,13 @@ export function openMenu(anchor, items, opts) {
 }
 
 export const ICON_LABELS = {
-  file: 'Page', folder: 'Dossier', home: 'Accueil', star: 'Étoile', layers: 'Couches', code: 'Code', settings: 'Réglages', shield: 'Bouclier',
+  benote: 'BeNote', file: 'Page', folder: 'Dossier', home: 'Accueil', star: 'Étoile', layers: 'Couches', code: 'Code', settings: 'Réglages', shield: 'Bouclier',
   key: 'Clé', lock: 'Cadenas', globe: 'Globe', eye: 'Œil', search: 'Loupe', link: 'Lien', pencil: 'Crayon', download: 'Téléchargement',
   upload: 'Envoi', users: 'Personnes', sparkle: 'Étincelle', diamond: 'Diamant', hexagon: 'Hexagone', webhook: 'Webhook', pdf: 'PDF', wand: 'Baguette', table: 'Tableau',
 };
 
 export const PAGE_ICONS = [
-  'file', 'folder', 'home', 'star', 'layers', 'code', 'settings', 'shield',
+  'benote', 'file', 'folder', 'home', 'star', 'layers', 'code', 'settings', 'shield',
   'key', 'lock', 'globe', 'eye', 'search', 'link', 'pencil', 'download',
   'upload', 'users', 'sparkle', 'diamond', 'hexagon', 'webhook', 'pdf', 'wand', 'table',
 ];
@@ -107,6 +107,8 @@ export const PAGE_ICONS = [
 // Icône d'une page ou d'un espace : nom d'une icône de l'interface (« folder ») ou emoji. Un emoji s'affiche en texte (jamais en HTML).
 export function pageIcon(name, size = 16) {
   if (!name) return icon('file', size);
+  // Le « N » de BeNote : pastille violette fixe (pas une icône au trait, elle garde ses couleurs).
+  if (name === 'benote') return h('span', { class: 'brand-logo brand-glyph', style: { width: `${size}px`, height: `${size}px`, borderRadius: `${Math.round(size * 0.29)}px` }, 'aria-hidden': 'true' });
   if (PAGE_ICONS.includes(name)) return icon(name, size);
   if (/^[a-z-]+$/i.test(name)) return icon('file', size); // nom inconnu
   return h('span', { class: 'emoji-glyph', style: { fontSize: `${Math.round(size * 0.95)}px` }, 'aria-hidden': 'true' }, name);

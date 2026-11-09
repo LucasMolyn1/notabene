@@ -3,7 +3,7 @@
 // d'une icône (« folder »), soit le caractère emoji lui-même.
 import { h, norm } from './util.js';
 import { icon } from './icons.js';
-import { closePopover, openPopover, PAGE_ICONS, ICON_LABELS } from './ui.js';
+import { closePopover, openPopover, pageIcon, PAGE_ICONS, ICON_LABELS } from './ui.js';
 
 const RECENT_KEY = 'notabene:recent-emojis';
 const RECENT_MAX = 16;
@@ -48,15 +48,15 @@ export function iconPicker(anchor, onPick, { allowRemove = true } = {}) {
       const words = q.split(/\s+/);
       const iconHits = PAGE_ICONS.filter((n) => words.every((w) => norm(`${n} ${ICON_LABELS[n] ?? ''}`).includes(w)));
       const hits = all.filter((e) => words.every((w) => e.search.includes(w))).slice(0, 160);
-      if (iconHits.length) body.append(section('icons', 'Icônes', iconHits.map((n) => button(n, ICON_LABELS[n] || n, icon(n, 20)))));
+      if (iconHits.length) body.append(section('icons', 'Icônes', iconHits.map((n) => button(n, ICON_LABELS[n] || n, pageIcon(n, 20)))));
       if (hits.length) body.append(section('found', 'Emojis', hits.map(emojiBtn)));
       if (!iconHits.length && !hits.length) body.append(h('p', { class: 'muted emoji-empty' }, `Aucun résultat pour « ${search.value.trim()} »`));
     } else {
       const recents = readRecents();
       if (recents.length) {
-        body.append(section('recent', 'Récents', recents.map((v) => (PAGE_ICONS.includes(v) ? button(v, ICON_LABELS[v] || v, icon(v, 20)) : button(v, all.find((e) => e.char === v)?.label || v, v)))));
+        body.append(section('recent', 'Récents', recents.map((v) => (PAGE_ICONS.includes(v) ? button(v, ICON_LABELS[v] || v, pageIcon(v, 20)) : button(v, all.find((e) => e.char === v)?.label || v, v)))));
       }
-      body.append(section('icons', 'Icônes', PAGE_ICONS.map((n) => button(n, ICON_LABELS[n] || n, icon(n, 20)))));
+      body.append(section('icons', 'Icônes', PAGE_ICONS.map((n) => button(n, ICON_LABELS[n] || n, pageIcon(n, 20)))));
       if (!all.length) body.append(h('p', { class: 'muted emoji-empty' }, 'Chargement des emojis…'));
       for (const g of GROUPS) {
         const list = all.filter((e) => e.group === g.id);

@@ -29,7 +29,7 @@ function spaceMenu(anchor, space) {
   openMenu(anchor, [
     { heading: 'Espaces' },
     ...store.spaces.map((s) => ({
-      label: s.name, icon: s.icon || 'folder', checked: s.id === space.id,
+      label: s.name, emoji: pageIcon(s.icon || 'folder', 16), checked: s.id === space.id,
       onClick: () => { prefs.space = s.id; savePrefs(); A.go(`/s/${s.id}`); },
     })),
     session.user && { sep: true },

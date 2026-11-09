@@ -4,6 +4,19 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [3.15.0] - 2026-11-09
+
+### Ajouté
+- **Bases : relations et cumuls** : colonne Relation vers une autre base (50 liens par cellule, 10 relations par base), à sens unique ou double (la colonne miroir « Relation » est créée dans la base cible ; il faut pouvoir écrire dans la cible). Une ligne liée n'apparaît que si la personne lit la base cible. Colonne Cumul (compter, somme, moyenne, min, max, pourcentage coché), calculée par le serveur sur les seules lignes lisibles, sans cumul de cumul. Copier une base retire ses relations vers d'autres bases. Export CSV : titres liés et nombres. Migration v32.
+- **Bases : sous-éléments et dépendances** : lignes parentes (4 niveaux au plus, repliables), « Bloqué par » (10 par ligne, sans cycle), décalage automatique des dates en cascade (20 niveaux, 200 lignes au plus ; tout ou rien). Réglages de la base : sous-éléments, dépendances, colonnes de début et de fin. `PATCH /api/v3/bases/:id/settings` ; la réponse de `PATCH .../rows/:rowId` ajoute `row` et `shifted` (compatible).
+- **Bases : vue Chronologie** : barres entre deux colonnes date, échelles jour, semaine, mois, trimestre, aujourd'hui, regroupement, couleur par statut, flèches de dépendance. Déplacement et étirement à la souris ou au clavier (flèches, Maj + flèches), et « Tableau des dates » équivalent pour lecteur d'écran.
+- **Icône BeNote** : le « N » violet du logo est proposé dans le sélecteur d'icônes des pages et des espaces.
+
+### Corrigé
+- **Suppression des blocs** : un bloc synchronisé, dépliable ou une colonne se supprime au clavier (Retour arrière ou Suppr dans un bloc vide ; pour un bloc avec texte, une première frappe le sélectionne, la suivante le supprime).
+- **Icône d'un espace** : un emoji comme icône d'espace n'apparaissait pas dans le sélecteur d'espaces.
+- **Dépôt** : les liens symboliques `node_modules` versionnés par erreur sont retirés, `.gitignore` les couvre.
+
 ## [3.14.1] - 2026-11-09
 
 ### Ajouté

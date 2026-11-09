@@ -28,3 +28,24 @@ test('la case du partage public et son explication ne se collent pas', async ({ 
   const hint = page.getByRole('dialog').getByText('Décocher retire les liens publics existants de cet espace.');
   expect(await hint.evaluate((el) => getComputedStyle(el).display)).toBe('block');
 });
+
+test('un espace avec un emoji ou le logo BeNote affiche son icône dans le sélecteur d’espaces', async ({ page }) => {
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto('/settings/spaces');
+  await page.getByRole('button', { name: 'Nouvel espace' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Nom').first().fill('Pompiers e2e');
+  await dialog.getByRole('button', { name: 'Choisir l’icône de l’espace' }).click();
+  await page.locator('.emoji-search').fill('camion de pompiers');
+  await page.locator('.emoji-picker .emoji-btn').filter({ hasText: '🚒' }).first().click();
+  await dialog.getByRole('button', { name: /Créer|Enregistrer/ }).click();
+  await page.goto('/');
+  await page.locator('.space-switch').click();
+  await expect(page.locator('.menu-item', { hasText: 'Pompiers e2e' }).locator('.menu-ico')).toContainText('🚒');
+  // Le logo BeNote figure parmi les icônes proposées.
+  await page.keyboard.press('Escape');
+  await page.goto('/settings/spaces');
+  await page.getByRole('button', { name: 'Nouvel espace' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Choisir l’icône de l’espace' }).click();
+  await expect(page.locator('.emoji-picker .emoji-btn[aria-label="BeNote"] .brand-glyph')).toBeVisible();
+});

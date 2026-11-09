@@ -810,6 +810,55 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE audit_log ADD COLUMN token_id TEXT;
   ALTER TABLE audit_log ADD COLUMN token_name TEXT;
   `,
+  // v32 : relations, cumuls, sous-éléments, dépendances et réglages de base (lib/base-links.ts, lib/base-project.ts).
+  // - base_properties est refaite (SQLite ne modifie pas un CHECK) pour accepter `relation` et `rollup`, avec `config` (JSON validé
+  //   par le serveur : jamais de JSON libre). Une relation ne garde que des identifiants de lignes ; les droits sont relus à chaque lecture.
+  // - base_rows.parent_id : sous-élément d'une ligne de la même base (profondeur et cycles vérifiés par le serveur).
+  // - base_row_deps : « bloqué par », entre lignes de la même base.
+  // - base_settings : options de la base (sous-éléments, dépendances, colonnes de début et de fin).
+  // Aucune donnée existante modifiée. Retour arrière : restaurer la sauvegarde prise avant la mise à jour (le serveur précédent
+  // refuse un schéma plus récent que le sien).
+  `
+  CREATE TABLE base_properties_v32 (
+    id         TEXT PRIMARY KEY,
+    base_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    type       TEXT NOT NULL CHECK (type IN ('text', 'number', 'date', 'select', 'multi_select', 'status', 'checkbox', 'person', 'page_link', 'formula', 'relation', 'rollup')),
+    options    TEXT NOT NULL DEFAULT '[]',
+    position   REAL NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    formula    TEXT,
+    config     TEXT NOT NULL DEFAULT '{}',
+    CHECK ((type = 'formula') = (formula IS NOT NULL))
+  );
+  INSERT INTO base_properties_v32 (id, base_id, name, type, options, position, created_at, formula)
+    SELECT id, base_id, name, type, options, position, created_at, formula FROM base_properties;
+  DROP TABLE base_properties;
+  ALTER TABLE base_properties_v32 RENAME TO base_properties;
+  CREATE INDEX base_properties_base ON base_properties(base_id, position);
+  CREATE INDEX base_properties_relation ON base_properties(json_extract(config, '$.targetId')) WHERE type = 'relation';
+
+  ALTER TABLE base_rows ADD COLUMN parent_id TEXT REFERENCES base_rows(id) ON DELETE CASCADE;
+  CREATE INDEX base_rows_parent ON base_rows(parent_id) WHERE parent_id IS NOT NULL;
+
+  CREATE TABLE base_row_deps (
+    base_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    row_id     TEXT NOT NULL REFERENCES base_rows(id) ON DELETE CASCADE,
+    blocker_id TEXT NOT NULL REFERENCES base_rows(id) ON DELETE CASCADE,
+    PRIMARY KEY (row_id, blocker_id),
+    CHECK (row_id != blocker_id)
+  ) WITHOUT ROWID;
+  CREATE INDEX base_row_deps_base ON base_row_deps(base_id);
+  CREATE INDEX base_row_deps_blocker ON base_row_deps(blocker_id);
+
+  CREATE TABLE base_settings (
+    base_id           TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE,
+    subitems          INTEGER NOT NULL DEFAULT 0 CHECK (subitems IN (0, 1)),
+    dependencies      INTEGER NOT NULL DEFAULT 0 CHECK (dependencies IN (0, 1)),
+    start_property_id TEXT REFERENCES base_properties(id) ON DELETE SET NULL,
+    end_property_id   TEXT REFERENCES base_properties(id) ON DELETE SET NULL
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {
