@@ -4,7 +4,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
-## Non publié
+## [3.15.0] - 2026-11-09
 
 ### Ajouté
 - **Bases : relations et cumuls** : colonne Relation vers une autre base (50 liens par cellule, 10 relations par base), à sens unique ou double (la colonne miroir « Relation » est créée dans la base cible ; il faut pouvoir écrire dans la cible). Une ligne liée n'apparaît que si la personne lit la base cible. Colonne Cumul (compter, somme, moyenne, min, max, pourcentage coché), calculée par le serveur sur les seules lignes lisibles, sans cumul de cumul. Copier une base retire ses relations vers d'autres bases. Export CSV : titres liés et nombres. Migration v32.
