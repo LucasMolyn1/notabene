@@ -49,22 +49,41 @@ function excerpt(text: string, terms: string[]): string {
   return out.slice(0, PER_DOC);
 }
 
-export function buildContext(db: DB, question: string, spaceIds: string[], visible: <T extends { id: string }>(items: T[]) => T[] = (items) => items) {
-  const results = visible(searchPages(db, question, spaceIds, MAX_DOCS * 3, 'OR')).slice(0, MAX_DOCS);
+// Page placée en tête du contexte (chat ouvert depuis une page) : déjà contrôlée en lecture par l'appelant, texte déjà borné.
+export interface PinnedPage {
+  id: string;
+  title: string;
+  icon: string;
+  spaceId: string;
+  text: string;
+}
+
+// Une balise glissée dans un texte ne doit pas pouvoir fermer la zone de données.
+const neutralize = (text: string) => text.replace(/<\/?document/gi, '‹document');
+
+export function buildContext(
+  db: DB, question: string, spaceIds: string[],
+  visible: <T extends { id: string }>(items: T[]) => T[] = (items) => items,
+  pinned?: PinnedPage,
+) {
+  const results = visible(searchPages(db, question, spaceIds, MAX_DOCS * 3, 'OR')).filter((r) => r.id !== pinned?.id).slice(0, MAX_DOCS);
   const terms = (question.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).slice(0, 10);
   const sources: Source[] = [];
   let budget = TOTAL;
   const docs: string[] = [];
-  for (const r of results) {
-    if (budget <= 0) break;
-    const body = excerpt(r.text, terms).slice(0, budget).replace(/<\/?document/gi, '‹document');
-    budget -= body.length;
+  const add = (r: { id: string; title: string; icon: string; spaceId: string }, body: string, extra = '') => {
     const n = sources.length + 1;
     sources.push({ n, id: r.id, title: r.title || 'Sans titre', icon: r.icon, spaceId: r.spaceId });
-    docs.push(`<document index="${n}" title="${(r.title || 'Sans titre').replace(/"/g, "'")}">\n${body}\n</document>`);
+    docs.push(`<document index="${n}" title="${(r.title || 'Sans titre').replace(/"/g, "'")}"${extra}>\n${body}\n</document>`);
+  };
+  // La page courante ne compte pas dans le budget des extraits trouvés par la recherche.
+  if (pinned) add(pinned, neutralize(pinned.text), ' current="true"');
+  for (const r of results) {
+    if (budget <= 0) break;
+    const body = neutralize(excerpt(r.text, terms).slice(0, budget));
+    budget -= body.length;
+    add(r, body);
   }
-  const user = docs.length
-    ? `<documents>\n${docs.join('\n')}\n</documents>\n\nQuestion : ${question}`
-    : `<documents>\n(aucun document pertinent trouvé)\n</documents>\n\nQuestion : ${question}`;
-  return { sources, user };
+  const documents = docs.length ? `<documents>\n${docs.join('\n')}\n</documents>` : '<documents>\n(aucun document pertinent trouvé)\n</documents>';
+  return { sources, user: `${documents}\n\nQuestion : ${question}`, documents };
 }

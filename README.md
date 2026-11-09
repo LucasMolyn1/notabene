@@ -4,6 +4,10 @@ Le projet s'appelle **NotaBene** ; **BeNote** en est le nom commercial, celui qu
 
 Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com) : espaces, pages imbriquées, éditeur riche, diagrammes, recherche par IA et API REST. Conçu *secure by design* et déployable autant de fois que nécessaire à partir de ce dépôt.
 
+![Démonstration de BeNote : menu `/`, co-édition en temps réel, assistant de rédaction, partage par lien public](docs/images/notabene-demo.gif)
+
+[Démo complète en vidéo (1 min)](docs/images/notabene-demo.mp4)
+
 ## Fonctionnalités
 
 | Domaine | Ce qui est inclus |
@@ -21,7 +25,7 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | **Partage public** | Une page se publie par un lien lisible sans compte (facultatif, désactivé par défaut), avec ou sans sous-pages, retirable à tout moment ; contenu assaini, sans indexation par défaut |
 | **Bases** | Tableaux de données dans une page : colonnes typées (texte, nombre, date, sélection, statut, personne, lien vers une page…), vues tableau ou Kanban avec tri et filtres, colonnes calculées (formules), bloc `/base` dans les pages, export CSV ; mêmes droits que les pages, jamais publiques |
 | **Permissions par page** | Un administrateur réserve une page et ses sous-pages à des personnes, en lecture ou en écriture ; appliqué partout (liste, recherche, export, IA, flux, co-édition) |
-| **Organisation** | Glisser-déposer, favoris, libellés, modèles de pages, corbeille, export Markdown / HTML, import Markdown et HTML (Wiki.js), intégration iframe pour un portfolio |
+| **Organisation** | Glisser-déposer, favoris, libellés, modèles de pages, corbeille, export Markdown / HTML, import Notion, Word, PDF, Markdown et HTML (Wiki.js), intégration iframe pour un portfolio |
 | **Adresses et référencement** | Adresses lisibles `/p/titre-de-la-page-<id>` ; pour les espaces publics, contenu rendu en HTML, `sitemap.xml` et `robots.txt` (désactivable : `SEO_INDEX=false`). Voir [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) |
 | **Profil** | Photo de profil (recadrage dans le navigateur, validée côté serveur), double authentification TOTP facultative, export de ses données |
 | **Téléphone et application** | Interface adaptée au tactile (barre de mise en forme au-dessus du clavier), installable comme une application (Chrome, Edge, Safari). Voir [docs/ACCESSIBILITE.md](docs/ACCESSIBILITE.md) |
@@ -183,7 +187,7 @@ curl -H "Authorization: Bearer $NOTABENE_TOKEN" https://wiki.example.com/api/v3/
 
 **Version** : l'API est servie sous `/api/v3`. Les versions v1 et v2 ont été retirées (leur contenu est dans la v3 : pagination par curseur, `ETag`/`If-Match`, erreurs RFC 9457, commentaires, permissions par page, notifications). `GET /api/versions` indique l'état ; voir `docs/API-VERSIONING.md`.
 
-Principales routes : `GET/POST /spaces`, `GET/POST /pages`, `GET/PATCH/DELETE /pages/:id`, `POST /pages/:id/move`, `GET /pages/:id/versions`, `GET /search`, `POST /ai/ask` (SSE). Le détail complet est sur **`/api/docs`**.
+Principales routes : `GET/POST /spaces`, `GET/POST /pages`, `GET/PATCH/DELETE /pages/:id`, `POST /pages/:id/move`, `GET /pages/:id/versions`, `GET /search`, `POST /ai/ask` (SSE), `POST /ai/chat` (SSE, conversations par personne sous `/ai/conversations`). Le détail complet est sur **`/api/docs`**.
 
 ## Recherche IA
 
@@ -192,6 +196,8 @@ Un administrateur l’active dans **menu utilisateur → Recherche IA** :
 - **Anthropic Claude** : collez une clé d’API (modèle par défaut `claude-opus-5-5`).
 - **Compatible OpenAI** : renseignez l’URL de base (`http://ollama:11434/v1` pour un Ollama local) et le modèle. Une adresse du réseau interne ou en `http` exige `AI_ALLOW_PRIVATE=true` dans l’environnement du serveur.
 - Le bouton **Charger les modèles** interroge le fournisseur (`/models`) et propose tous ses modèles dans la liste. La clé enregistrée n’est utilisée que pour l’adresse enregistrée ; pour une autre adresse, saisissez la clé. Modifier le fournisseur demande la ressaisie du mot de passe.
+
+Guide pas à pas (Ollama local ou Ollama Cloud, erreurs courantes) : [`docs/IA.md`](docs/IA.md).
 
 La clé est chiffrée en base (AES-256-GCM) et n’est jamais renvoyée au navigateur. Pour chaque question, seuls des extraits des pages pertinentes **que l’utilisateur a le droit de lire** sont envoyés au modèle.
 

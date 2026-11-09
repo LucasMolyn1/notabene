@@ -39,13 +39,15 @@ export async function renderProfile(el) {
     security,
     notifPrefs,
     card('Mes données personnelles', 'Téléchargez une copie de vos données (profil, pages créées, commentaires, jetons, sessions, journal de vos actions). Aucun secret n’y figure.',
-      h('button', {
+      h('div', { class: 'row wrap' }, h('button', {
         class: 'btn btn-ghost',
         onClick: async () => {
           const data = await A.attempt(() => api.get('/me/export'));
           if (data) download('mes-donnees-notabene.json', JSON.stringify(data, null, 2), 'application/json');
         },
-      }, icon('download', 15), 'Télécharger mes données')),
+      }, icon('download', 15), 'Télécharger mes données'),
+      // Archive produite en flux par le serveur : un simple lien, le navigateur la télécharge sans la garder en mémoire.
+      h('a', { class: 'btn btn-ghost', href: '/api/v3/me/export/archive', download: '' }, icon('download', 15), 'Exporter mes données avec mes fichiers (archive .zip)'))),
     card('Sessions actives', 'Chaque navigateur connecté ouvre une session distincte, valable au maximum la durée configurée.', sessionsBox),
     card('Déconnexion', null, h('button', { class: 'btn btn-ghost', onClick: () => session.logout() }, icon('move', 15), 'Se déconnecter'))].filter(Boolean));
 
@@ -79,7 +81,7 @@ export function renderAppearance(el) {
     card('Lecture et navigation', null,
       session.can('write') && toggle('Ouvrir les pages en mode lecture', 'Évite les modifications accidentelles ; le bouton « Éditer » reste disponible sur chaque page.', prefs.readOnly, (v) => { prefs.readOnly = v; savePrefs(); }),
       toggle('Barre latérale repliée', `Raccourci : ${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} \\`, !prefs.sidebar, (v) => { prefs.sidebar = !v; savePrefs(); document.body.classList.toggle('sb-collapsed', v); })),
-    card('Raccourcis clavier', null, kv([['⌘K / Ctrl K', 'Rechercher, puis Tab pour demander à l’IA'], ['⌥N / Alt N', 'Nouvelle page'], ['⌘\\ / Ctrl \\', 'Afficher ou masquer la barre latérale'], ['/', 'Menu d’insertion dans l’éditeur']])));
+    card('Raccourcis clavier', null, kv([['⌘K / Ctrl K', 'Rechercher, puis Tab pour demander à l’IA'], ['⌥N / Alt N', 'Nouvelle page'], ...(session.can('ai') ? [['⌥I / Alt I', 'Ouvrir ou fermer l’assistant']] : []), ['⌘\\ / Ctrl \\', 'Afficher ou masquer la barre latérale'], ['/', 'Menu d’insertion dans l’éditeur']])));
 }
 
 const SCOPE_LABELS = {

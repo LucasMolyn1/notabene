@@ -2,12 +2,13 @@
 // La logique métier reste celle de lib/ ; seuls la forme des réponses et le contrôle de concurrence changent.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { loadReadablePage, loadWritablePage, readableSpaceIds } from '../lib/access.js';
+import { clonerFor, loadReadablePage, loadWritablePage, readableSpaceIds } from '../lib/access.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
 import { hasPageLink } from '../lib/content.js';
 import { labelsOf, normalizeLabel, pageIdsWithLabel } from '../lib/labels.js';
 import { filterReadable } from '../lib/page-acl.js';
+import { searchAttachments } from '../lib/attachment-text.js';
 import { isFavorite, listPages, searchPages, toMeta, toPage, updatePage } from '../lib/pages.js';
 
 const patchBody = z.object({
@@ -73,8 +74,10 @@ export default async function pageQueryRoutes(app: FastifyInstance) {
     return { items };
   });
 
+  // Débit limité : un enregistrement peut copier des pièces jointes citées depuis une autre page.
   app.patch('/pages/:id', {
     preHandler: async (req) => { if (!req.auth) throw new HttpError(401, 'Authentification requise'); },
+    config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
     schema: { tags, summary: 'Modifier une page : If-Match (ETag) obligatoire pour changer le contenu', params: idParams, body: patchBody },
   }, async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -86,9 +89,11 @@ export default async function pageQueryRoutes(app: FastifyInstance) {
     if (typeof header === 'string' && !match) throw new HttpError(400, 'En-tête If-Match invalide (attendu : la valeur de l’ETag)');
     if (body.content !== undefined && !match) throw new HttpError(428, 'En-tête If-Match requis pour modifier le contenu : envoyez l’ETag reçu à la lecture');
     let row;
+    const cloner = clonerFor(db, app.config, req);
     try {
-      row = updatePage(db, id, { ...body, baseVersion: match ? Number(match[1]) : undefined }, userId(req));
+      row = updatePage(db, id, { ...body, baseVersion: match ? Number(match[1]) : undefined }, userId(req), cloner);
     } catch (err) {
+      cloner.rollback();
       if (err instanceof HttpError && err.statusCode === 409) throw new HttpError(412, 'La page a changé depuis votre lecture (ETag périmé)', err.details);
       throw err;
     }
@@ -103,8 +108,21 @@ export default async function pageQueryRoutes(app: FastifyInstance) {
     const { q, limit, cursor, spaceId, label } = req.query as { q: string; limit: number; cursor?: string; spaceId?: string; label?: string };
     const { o: offset } = decodeCursor(cursor, z.object({ o: z.number().int().min(0).max(1000) })) ?? { o: 0 };
     // Le classement est recalculé à chaque appel : le curseur est un décalage dans la liste filtrée (limité à 500 résultats).
-    const all = filterReadable(db, req.auth, searchPages(db, q, readableSpaceIds(db, req).filter((id) => !spaceId || id === spaceId), 500, 'AND', label === undefined ? null : normalizeLabel(label)))
+    const spaces = readableSpaceIds(db, req).filter((id) => !spaceId || id === spaceId);
+    const lbl = label === undefined ? null : normalizeLabel(label);
+    const all: (Omit<ReturnType<typeof searchPages>[number], 'text' | 'rank'> & { attachment?: { id: string; name: string } })[] = filterReadable(db, req.auth, searchPages(db, q, spaces, 500, 'AND', lbl))
       .map(({ text: _text, rank: _rank, ...r }) => r);
+    // Pièces jointes (texte des PDF, Word et fichiers texte, ou nom du fichier) : la page porteuse est ajoutée après les pages qui
+    // correspondent elles-mêmes, et seulement si elle est lisible (mêmes droits que pour le texte des pages).
+    const byId = new Map(all.map((r) => [r.id, r]));
+    for (const hit of filterReadable(db, req.auth, searchAttachments(db, q, spaces, 200, lbl))) {
+      const known = byId.get(hit.id);
+      if (known) { known.attachment ??= { id: hit.attachmentId, name: hit.attachmentName }; continue; }
+      const { attachmentId, attachmentName, rank: _rank, ...page } = hit;
+      const item = { ...page, attachment: { id: attachmentId, name: attachmentName } };
+      byId.set(hit.id, item);
+      all.push(item);
+    }
     const items = all.slice(offset, offset + limit);
     return { items, nextCursor: offset + limit < all.length ? encodeCursor({ o: offset + limit }) : null };
   });

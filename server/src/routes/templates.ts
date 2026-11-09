@@ -4,7 +4,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard } from '../auth/context.js';
-import { loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
+import { clonerFor, loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
 import { BUILTIN_TEMPLATES, builtinTemplate } from '../lib/builtin-templates.js';
 import { sanitizeDoc } from '../lib/content.js';
@@ -80,10 +80,18 @@ export default async function templateRoutes(app: FastifyInstance) {
     if (n >= MAX_PER_SPACE) throw new HttpError(400, `Un espace compte au plus ${MAX_PER_SPACE} modèles`);
     const id = newId();
     const now = Date.now();
-    const content = JSON.stringify(sanitizeDoc(JSON.parse(page.content)));
-    db.prepare('INSERT INTO page_templates (id, space_id, name, icon, content, created_at, created_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, page.space_id, body.name ?? (page.title.trim().slice(0, 80) || 'Sans titre'), page.icon, content, now, req.auth?.user.id ?? null, now);
-    audit(db, req, 'template.create', id, { pageId: page.id });
+    const doc = sanitizeDoc(JSON.parse(page.content));
+    // Les pièces jointes de la page sont copiées et rattachées au modèle : il ne dépend plus de la page (supprimée, restreinte ensuite).
+    const cloner = clonerFor(db, app.config, req);
+    try {
+      db.transaction(() => {
+        db.prepare('INSERT INTO page_templates (id, space_id, name, icon, content, created_at, created_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(id, page.space_id, body.name ?? (page.title.trim().slice(0, 80) || 'Sans titre'), page.icon, JSON.stringify(doc), now, req.auth?.user.id ?? null, now);
+        const copied = cloner.clone(doc, { templateId: id });
+        db.prepare('UPDATE page_templates SET content = ? WHERE id = ?').run(JSON.stringify(copied), id);
+      })();
+    } catch (err) { cloner.rollback(); throw err; }
+    audit(db, req, 'template.create', id, { pageId: page.id, attachments: cloner.copied });
     return reply.status(201).send(toItem(rowOf(id)!));
   });
 

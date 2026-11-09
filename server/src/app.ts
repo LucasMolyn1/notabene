@@ -14,8 +14,11 @@ import type { Config } from './config.js';
 import type { DB } from './db.js';
 import { OidcClient } from './auth/oidc.js';
 import { Mailer } from './lib/mail.js';
-import { startNotifications } from './lib/notifications.js';
+import { createNotifier, startNotifications } from './lib/notifications.js';
+import { REMINDER_INTERVAL, remindVerifications } from './lib/verifications.js';
 import { startWebhooks } from './lib/webhooks.js';
+import { AuditForwarder } from './lib/audit-forwarder.js';
+import auditRoutes from './routes/audit.js';
 import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
 import baseRoutes from './routes/bases.js';
@@ -25,7 +28,13 @@ import pageQueryRoutes from './routes/pages-query.js';
 import templateRoutes from './routes/templates.js';
 import seoRoutes from './routes/seo.js';
 import avatarRoutes from './routes/avatars.js';
+import attachmentRoutes from './routes/attachments.js';
+import { attachmentsDir, drainAttachmentGc } from './lib/attachments.js';
 import v3Routes from './routes/v3.js';
+import verificationRoutes from './routes/verifications.js';
+import readReceiptRoutes from './routes/read-receipts.js';
+import scimRoutes from './routes/scim.js';
+import scimAdminRoutes from './routes/scim-admin.js';
 import { sessionAuth as sessionAuthWithIdle, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
 import { SecretBox, safeEqual } from './lib/crypto.js';
@@ -34,9 +43,12 @@ import { HttpError } from './lib/http.js';
 import { problem, usesProblemFormat } from './lib/problem.js';
 import adminRoutes from './routes/admin.js';
 import aiRoutes from './routes/ai.js';
+import aiChatRoutes from './routes/ai-chat.js';
 import authRoutes from './routes/auth.js';
 import websocket from '@fastify/websocket';
 import collabRoutes from './routes/collab.js';
+import exportRoutes from './routes/export.js';
+import imageMigrationRoutes from './routes/image-migration.js';
 import coreRoutes from './routes/core.js';
 import groupRoutes from './routes/groups.js';
 import personalSpaceRoutes from './routes/personal-spaces.js';
@@ -66,6 +78,7 @@ declare module 'fastify' {
     rt: RuntimeSettings;
     mail: Mailer;
     updates: UpdateChecker;
+    auditForwarder: AuditForwarder;
   }
 }
 
@@ -83,9 +96,11 @@ export interface AppOptions {
   mailer?: Mailer;
   // Vérificateur de mise à jour injectable (tests) ; par défaut construit d'après UPDATE_CHECK.
   updateChecker?: UpdateChecker;
+  // Sortie standard du journal d'audit (tests) ; par défaut process.stdout quand AUDIT_STDOUT=true.
+  auditStdout?: (line: string) => void;
 }
 
-export async function buildApp({ config, db, logger = false, clientDir, ldap, ldapFactory, mailer, updateChecker }: AppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, db, logger = false, clientDir, ldap, ldapFactory, mailer, updateChecker, auditStdout }: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger === false ? false : {
       ...(typeof logger === 'object' ? logger : {}),
@@ -112,8 +127,22 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   app.decorate('presence', new Presence(bus));
   const stopNotifications = startNotifications(db, bus, app.mail, () => rt.get());
   app.addHook('onClose', async () => { stopNotifications(); });
+  // Rappels de vérification de page : une minute après le démarrage, puis chaque heure (une notification par changement d'état).
+  const notifier = createNotifier(db, bus, app.mail, () => rt.get());
+  const remind = () => { try { remindVerifications(db, notifier); } catch (err) { app.log.warn({ err }, 'rappels de vérification'); } };
+  const remindFirst = setTimeout(remind, 60_000).unref();
+  const remindEvery = setInterval(remind, REMINDER_INTERVAL).unref();
+  app.addHook('onClose', async () => { clearTimeout(remindFirst); clearInterval(remindEvery); });
   const stopWebhooks = startWebhooks(db, bus, box, config.WEBHOOK_ALLOW_PRIVATE);
   app.addHook('onClose', async () => { stopWebhooks(); });
+  // Journal d'audit vers la sortie standard (AUDIT_STDOUT) et vers le SIEM configuré (voir docs/AUDIT.md).
+  const forwarder = new AuditForwarder(db, () => rt.get(), {
+    allowPrivate: config.WEBHOOK_ALLOW_PRIVATE,
+    stdout: config.AUDIT_STDOUT ? (auditStdout ?? ((line) => { process.stdout.write(`${line}\n`); })) : null,
+  });
+  app.decorate('auditForwarder', forwarder);
+  forwarder.start();
+  app.addHook('onClose', async () => { forwarder.stop(); });
   app.decorate('oidc', new OidcClient(() => rt.get(), db));
   app.decorateRequest('auth', null);
 
@@ -194,6 +223,9 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   const cookieName = sessionCookieName(config.secureCookies);
   const publicOrigin = new URL(config.PUBLIC_URL).origin;
   app.addHook('onRequest', async (req) => {
+    // SCIM (/scim/v2) a sa propre authentification (jeton SCIM, routes/scim.ts) : ni session ni jeton d'API n'y sont résolus,
+    // donc aucun n'y donne accès. Ignorer cette résolution ne peut que retirer des droits, jamais en donner.
+    if ((req.routeOptions.url ?? '').startsWith('/scim/') || req.url.startsWith('/scim/')) return;
     const header = req.headers.authorization;
     const bearer = header === undefined ? undefined : /^Bearer\s+(\S+)$/.exec(header)?.[1];
     const cookie = req.cookies[cookieName];
@@ -218,6 +250,14 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
         throw new HttpError(403, 'Activez la double authentification pour continuer', { mfaSetupRequired: true });
       }
     }
+  });
+
+  // Une suppression (pièce jointe, page définitivement, corbeille, espace, compte) peut laisser des fichiers sans ligne : ils
+  // sont inscrits par un déclencheur dans attachment_gc et effacés ici, après la réponse.
+  const filesDir = attachmentsDir(config.DATA_DIR);
+  // Seulement après une suppression réussie et authentifiée : un visiteur ne déclenche aucun travail disque.
+  app.addHook('onResponse', async (req, reply) => {
+    if (req.method === 'DELETE' && req.auth && reply.statusCode >= 200 && reply.statusCode < 300) await drainAttachmentGc(db, filesDir).catch((err: unknown) => req.log.warn({ err }, 'nettoyage des pièces jointes'));
   });
 
   app.addHook('onSend', async (_req, reply, payload) => {
@@ -274,15 +314,24 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(templateRoutes);
     await scope.register(tokenRoutes);
     await scope.register(aiRoutes);
+    await scope.register(aiChatRoutes);
     await scope.register(adminRoutes);
+    await scope.register(auditRoutes);
     await scope.register(settingsRoutes, { ldapFactory });
     await scope.register(webhookRoutes);
     await scope.register(importRoutes);
     await scope.register(v3Routes);
+    await scope.register(verificationRoutes);
+    await scope.register(readReceiptRoutes);
+    await scope.register(scimAdminRoutes);
     await scope.register(aboutRoutes);
     await scope.register(avatarRoutes);
+    await scope.register(attachmentRoutes);
+    await scope.register(exportRoutes);
+    await scope.register(imageMigrationRoutes);
   }, { prefix: '/api/v3' });
   await app.register(mcpRoutes);
+  await app.register(scimRoutes, { prefix: '/scim/v2' });
   await app.register(versionRoutes);
   // Santé : la base doit répondre, sinon le conteneur doit être signalé défaillant.
   app.get('/healthz', { schema: { hide: true } }, async (_req, reply) => {
@@ -314,7 +363,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     if (req.url === '/' && (req.method === 'HEAD' || req.method === 'OPTIONS')) {
       return reply.header('allow', 'GET, HEAD, OPTIONS').status(req.method === 'HEAD' ? 200 : 204).send();
     }
-    const isApi = req.url.startsWith('/api/') || req.url.startsWith('/auth/');
+    const isApi = req.url.startsWith('/api/') || req.url.startsWith('/auth/') || req.url.startsWith('/scim/');
     if (hasClient && req.method === 'GET' && !isApi) {
       if (req.url.startsWith('/share/')) {
         // Page partagée publiquement : l'application, sans cache ni référent sortant ; indexable seulement si le partage l'autorise.

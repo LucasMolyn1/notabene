@@ -4,6 +4,8 @@ import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
 import { cleanup, openDb } from './db.js';
 import { seedDemo } from './seed.js';
+import { attachmentsDir, drainAttachmentGc, quarantineDir, sweepAttachments, sweepUnreferenced } from './lib/attachments.js';
+import { indexAll } from './lib/attachment-text.js';
 
 let config;
 try {
@@ -29,9 +31,37 @@ const retention = {
   notificationDays: config.NOTIFICATION_RETENTION_DAYS,
   auditIpDays: config.AUDIT_IP_RETENTION_DAYS,
   auditDays: config.AUDIT_RETENTION_DAYS,
+  aiChatDays: config.AI_CHAT_RETENTION_DAYS,
 };
 cleanup(db, retention);
-setInterval(() => cleanup(db, retention), 3_600_000).unref();
+// Pièces jointes : avant d'ouvrir le port, effacer les envois interrompus et les fichiers sans ligne en base ; ensuite, chaque heure,
+// les fichiers des pages purgées de la corbeille.
+const filesDir = attachmentsDir(config.DATA_DIR);
+const swept = await sweepAttachments(db, filesDir, quarantineDir(config.DATA_DIR));
+if (swept.temp) console.log(`Pièces jointes : ${swept.temp} envoi(s) interrompu(s) effacé(s).`);
+if (swept.quarantined) console.warn(`Pièces jointes : ${swept.quarantined} fichier(s) sans ligne en base déplacé(s) dans ${quarantineDir(config.DATA_DIR)} (à examiner, puis supprimer).`);
+// Chaque heure aussi : les pièces jointes qu'aucune version de leur page ne cite plus depuis 7 jours sont supprimées.
+setInterval(() => {
+  cleanup(db, retention);
+  try { sweepUnreferenced(db); } catch (err) { console.warn(`Pièces jointes non citées : ${(err as Error).message}`); }
+  void drainAttachmentGc(db, filesDir).catch(() => {});
+}, 3_600_000).unref();
+
+// Texte des pièces jointes pour la recherche : extrait en tâche de fond, une pièce jointe à la fois (désactivable : ATTACHMENT_INDEX=false).
+if (config.ATTACHMENT_INDEX) {
+  const limits = {
+    maxBytes: config.DOC_IMPORT_MAX_MB * 1024 * 1024, timeoutMs: config.DOC_IMPORT_TIMEOUT_SECONDS * 1000, maxPages: config.DOC_IMPORT_MAX_PAGES,
+    zipEntries: config.IMPORT_ZIP_MAX_ENTRIES, zipUncompressedBytes: config.IMPORT_ZIP_UNCOMPRESSED_MB * 1024 * 1024, zipRatio: config.IMPORT_ZIP_MAX_RATIO,
+  };
+  let busy = false;
+  const tick = () => {
+    if (busy) return;
+    busy = true;
+    void indexAll(db, filesDir, limits).catch(() => {}).finally(() => { busy = false; });
+  };
+  setInterval(tick, 10_000).unref();
+  setTimeout(tick, 5_000).unref();
+}
 
 const app = await buildApp({
   config,

@@ -1,6 +1,7 @@
 // Validation stricte des documents TipTap reçus : liste blanche de nœuds, de marques
 // et d'attributs, URL filtrées. Tout ce qui n'est pas explicitement autorisé est refusé
 // ou retiré, pour qu'aucun contenu stocké ne puisse porter de script.
+import { ATTACHMENT_ID, ATTACHMENT_MIMES } from './attachments.js';
 import { embedUrl } from './embed.js';
 import { HttpError } from './http.js';
 
@@ -50,6 +51,8 @@ const colwidth = (v: unknown) =>
 
 type AttrRules = Record<string, (v: unknown) => unknown>;
 
+const attachmentId = (v: unknown) => (typeof v === 'string' && ATTACHMENT_ID.test(v) ? v : undefined);
+
 const cell: AttrRules = { colspan: int(1, 64), rowspan: int(1, 64), colwidth };
 
 const NODES: Record<string, AttrRules> = {
@@ -98,7 +101,15 @@ const NODES: Record<string, AttrRules> = {
   plantuml: { code: str(50_000), width: nullable(int(120, 4000)) },
   excalidraw: { scene: str(MAX_DIAGRAM), svg: isSvgDataUrl, width: nullable(int(120, 4000)) },
   drawio: { xml: str(MAX_DIAGRAM), svg: isSvgDataUrl, width: nullable(int(120, 4000)) },
+  // Pièces jointes : seul l'identifiant compte (le fichier, son type et ses droits sont ceux de la ligne en base, revérifiés à chaque
+  // lecture). Nom, taille et type ne servent qu'à l'affichage. Un bloc sans identifiant valide est retiré.
+  attachment: { id: attachmentId, name: str(200), size: int(0, Number.MAX_SAFE_INTEGER), mime: oneOf(...ATTACHMENT_MIMES) },
+  video: { id: attachmentId, name: str(200), width: nullable(int(120, 4000)) },
+  audio: { id: attachmentId, name: str(200) },
 };
+
+/** Blocs qui désignent une pièce jointe par son identifiant. */
+export const ATTACHMENT_NODES = new Set(['attachment', 'video', 'audio']);
 
 const MARKS: Record<string, AttrRules> = {
   bold: {},
@@ -182,6 +193,7 @@ export function sanitizeDoc(input: unknown): DocNode {
     if (type === 'pageLink' && !attrs?.id) return null;
     if (type === 'mention' && !attrs?.id) return null;
     if (type === 'embed' && !attrs?.url) return null;
+    if (ATTACHMENT_NODES.has(type) && !attrs?.id) return null;
     if (type === 'baseBlock' && (!attrs?.id || ++baseBlocks > MAX_BASE_BLOCKS)) return null;
     if (Array.isArray(node.content)) {
       out.content = node.content.map((c) => walk(c, depth + 1, type)).filter((c): c is DocNode => c !== null);
@@ -225,6 +237,7 @@ export function docText(node: DocNode | undefined): string {
   if (node.type === 'text') return node.text ?? '';
   if (node.type === 'hardBreak') return ' ';
   if (node.type === 'mermaid' || node.type === 'plantuml' || node.type === 'math') return ` ${String(node.attrs?.code ?? '')} `;
+  if (ATTACHMENT_NODES.has(node.type)) return ` ${String(node.attrs?.name ?? '')} `;
   const sep = TEXT_BLOCKS.has(node.type) ? '' : ' ';
   const out = (node.content ?? []).map(docText).join(sep);
   return node.type === 'doc' ? out.replace(/\s+/g, ' ').trim() : out;

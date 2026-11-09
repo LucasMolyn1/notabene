@@ -9,7 +9,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/node_modules/**', 'dist/**', 'data/**', 'coverage/**', 'test-results/**', 'playwright-report/**', 'client/public/**'] },
+  { ignores: ['**/node_modules/**', 'dist/**', 'data/**', 'coverage/**', 'test-results/**', 'playwright-report/**', 'client/public/**', '.claude/**'] },
   js.configs.recommended,
   // Convention : « _nom » = valeur volontairement ignorée (retirer des clés d'un objet par déstructuration).
   { rules: { 'no-unused-vars': ['error', { ignoreRestSiblings: true, argsIgnorePattern: '^_' }] } },

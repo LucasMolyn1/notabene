@@ -5,12 +5,15 @@ import { session } from './session.js';
 import { newsPending } from './news.js';
 import { reauthNotice } from './provider-settings.js';
 import { beginView, setView, topbar } from './views.js';
-import { renderAudit, renderAuth, renderMail, renderSpaces, renderUsers } from './settings/access.js';
+import { renderAuth, renderMail, renderSpaces, renderUsers } from './settings/access.js';
+import { renderAudit, renderRetention, renderSiem } from './settings/audit.js';
 import { renderAbout, renderApi, renderAppearance, renderProfile, renderTokens } from './settings/account.js';
 import { renderAi } from './settings/ai.js';
 import { renderDiagrams, renderEmbed, renderEmbeds, renderTools, renderWebhooks } from './settings/features.js';
 import { renderImport, renderInstance } from './settings/instance.js';
+import { renderImages } from './settings/images.js';
 import { renderGroups } from './settings/groups.js';
+import { renderScim } from './settings/scim.js';
 import { renderShares } from './settings/shares.js';
 import { store } from './store.js';
 
@@ -32,11 +35,15 @@ const SECTIONS = [
   { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', admin: true, sensitive: true, render: renderAuth },
   { group: 'Administration', id: 'mail', label: 'E-mail', ico: 'mail', admin: true, sensitive: true, render: renderMail },
   { group: 'Administration', id: 'embeds', label: 'Contenus intégrés', ico: 'globe', admin: true, sensitive: true, render: renderEmbeds },
+  { group: 'Administration', id: 'scim', label: 'Provisionnement SCIM', ico: 'key', admin: true, sensitive: true, render: renderScim },
   { group: 'Administration', id: 'webhooks', label: 'Webhooks', ico: 'webhook', admin: true, render: renderWebhooks },
   { group: 'Administration', id: 'import', label: 'Import', ico: 'upload', admin: true, render: renderImport },
   { group: 'Administration', id: 'users', label: 'Utilisateurs', ico: 'users', admin: true, render: renderUsers },
   { group: 'Administration', id: 'audit', label: 'Journal d’audit', ico: 'file', admin: true, render: renderAudit },
+  { group: 'Administration', id: 'siem', label: 'Envoi au SIEM', ico: 'webhook', admin: true, sensitive: true, render: renderSiem },
+  { group: 'Administration', id: 'retention', label: 'Conservation', ico: 'history', admin: true, render: renderRetention },
   { group: 'Administration', id: 'instance', label: 'Instance', ico: 'settings', admin: true, render: renderInstance },
+  { group: 'Administration', id: 'images', label: 'Images des pages', ico: 'wand', admin: true, render: renderImages },
 ];
 
 export function showSettings(sectionId) {

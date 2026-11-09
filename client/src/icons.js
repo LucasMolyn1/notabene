@@ -48,7 +48,13 @@ const PATHS = {
   pdf: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/><path d="M10 12v5"/><path d="M8 15h4"/>',
   qrcode: '<rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4"/><rect x="20" y="20" width="2" height="2"/>',
   table: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>',
-  wand: '<path d="m15 4-1 1m-2 8-8 8 4 4 8-8M21.4 6.1a2 2 0 0 0-2.8 0L15 9.7 18.3 13l3.5-3.5a2 2 0 0 0-.4-3.4Z"/>',
+  paperclip: '<path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>',
+  video: '<rect width="15" height="14" x="2" y="5" rx="2"/><path d="m17 10 5-3v10l-5-3"/>',
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  verified: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
+  wand:'<path d="m15 4-1 1m-2 8-8 8 4 4 8-8M21.4 6.1a2 2 0 0 0-2.8 0L15 9.7 18.3 13l3.5-3.5a2 2 0 0 0-.4-3.4Z"/>',
 };
 
 export function icon(name, size = 16) {

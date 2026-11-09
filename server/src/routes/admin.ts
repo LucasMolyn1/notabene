@@ -3,13 +3,16 @@
 import { createReadStream, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { guard, requireAuth } from '../auth/context.js';
 import { assertBackupAllowed, backupName, backupTo, encryptFile } from '../backup.js';
+import { attachmentsDir } from '../lib/attachments.js';
 import { audit } from '../lib/audit.js';
+import { auditFilters, auditWhere, FilterError } from '../lib/audit-events.js';
 import { HttpError, idParams } from '../lib/http.js';
-import { eraseUser, exportUserData } from '../lib/personal-data.js';
+import { eraseUser, exportUserData, personalDataArchive, type PersonalData } from '../lib/personal-data.js';
 import { reauthInput, requireReauth } from '../lib/reauth.js';
 import { COMMIT, VERSION } from '../version.js';
 
@@ -63,15 +66,23 @@ export default async function adminRoutes(app: FastifyInstance) {
     ).all(Date.now()) as { id: string; name: string; email: string | null; role: string; created_at: number; last_login_at: number | null; tokens: number; disabled: number; totp_enabled: number; is_local: number }[])
       .map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, createdAt: u.created_at, lastLoginAt: u.last_login_at, tokens: u.tokens, disabled: !!u.disabled, mfa: !!u.totp_enabled, local: !!u.is_local })));
 
+  // Forme historique (tableau, `meta` en texte brut) gardée pour la compatibilité ; accepte les mêmes filtres.
+  // La liste paginée au format stable est GET /admin/audit/events (routes/audit.ts).
+  const legacyAuditQuery = auditFilters.extend({ limit: z.coerce.number().int().min(1).max(500).default(100) });
   app.get('/admin/audit', {
     preHandler: guard('admin'),
-    schema: { tags: ['admin'], summary: 'Journal d’audit', querystring: z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) }) },
+    schema: { tags: ['admin'], summary: 'Journal d’audit (forme historique)', querystring: legacyAuditQuery },
   }, async (req) => {
-    const { limit } = req.query as { limit: number };
+    const { limit, ...filters } = req.query as z.output<typeof legacyAuditQuery>;
+    let w: { sql: string; args: unknown[] };
+    try { w = auditWhere(Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined))); } catch (err) {
+      if (err instanceof FilterError) throw new HttpError(400, err.message);
+      throw err;
+    }
     return db.prepare(
       `SELECT a.id, a.at, a.action, a.target, a.ip, a.meta, u.name AS user FROM audit_log a
-       LEFT JOIN users u ON u.id = a.user_id ORDER BY a.id DESC LIMIT ?`,
-    ).all(limit);
+       LEFT JOIN users u ON u.id = a.user_id WHERE ${w.sql} ORDER BY a.id DESC LIMIT ?`,
+    ).all(...w.args, limit);
   });
 
   // Téléchargement d'une copie cohérente de la base (admin, session navigateur uniquement). Contient des secrets chiffrés et des hash de jetons.
@@ -126,11 +137,29 @@ export default async function adminRoutes(app: FastifyInstance) {
   const sendExport = (reply: FastifyReply, data: unknown, name: string) =>
     reply.header('content-type', 'application/json; charset=utf-8').header('content-disposition', `attachment; filename="${name}.json"`).send(JSON.stringify(data, null, 2));
 
+  // Même export, avec les fichiers des pièces jointes envoyées par la personne (archive ZIP, produite en flux).
+  // L'archive est construite avant les en-têtes : une archive trop volumineuse donne une vraie réponse 413.
+  const sendArchive = (reply: FastifyReply, data: PersonalData, name: string) => {
+    const archive = personalDataArchive(data, attachmentsDir(config.DATA_DIR));
+    return reply
+      .header('content-type', 'application/zip')
+      .header('content-disposition', `attachment; filename="${name}.zip"`)
+      .header('cache-control', 'private, no-store')
+      .header('x-content-type-options', 'nosniff')
+      .send(Readable.from(archive));
+  };
+
   // Droit d'accès et de portabilité : l'utilisateur télécharge ses propres données.
   app.get('/me/export', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } }, schema: { hide: true } }, async (req, reply) => {
     const auth = requireSession(req);
     audit(db, req, 'user.export', auth.user.id);
     return sendExport(reply, exportUserData(db, auth.user.id), 'mes-donnees-notabene');
+  });
+
+  app.get('/me/export/archive', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } }, schema: { hide: true } }, async (req, reply) => {
+    const auth = requireSession(req);
+    audit(db, req, 'user.export', auth.user.id, { archive: true });
+    return sendArchive(reply, exportUserData(db, auth.user.id)!, 'mes-donnees-notabene');
   });
 
   // Un administrateur peut répondre à une demande d'accès pour un compte.
@@ -140,6 +169,14 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (!data) throw new HttpError(404, 'Utilisateur introuvable');
     audit(db, req, 'user.export', id);
     return sendExport(reply, data, 'donnees-utilisateur');
+  });
+
+  app.get('/admin/users/:id/export/archive', { preHandler: guard('admin'), config: { rateLimit: { max: 20, timeWindow: '1 hour' } }, schema: { hide: true, params: idParams } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const data = exportUserData(db, id, req.auth!.user.id);
+    if (!data) throw new HttpError(404, 'Utilisateur introuvable');
+    audit(db, req, 'user.export', id, { archive: true });
+    return sendArchive(reply, data, 'donnees-utilisateur');
   });
 
   // Droit à l'effacement : anonymisation (voir lib/personal-data.ts). Un compte fédéré encore autorisé par l'annuaire

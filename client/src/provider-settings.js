@@ -1,4 +1,4 @@
-// Réglages modifiables à chaud (admin) : fournisseurs d'identité, SMTP, sites autorisés à intégrer le wiki.
+// Réglages modifiables à chaud (admin) : fournisseurs d'identité, SMTP, SIEM, sites autorisés à intégrer le wiki.
 // Chaque modification demande la ressaisie du mot de passe ; les fournisseurs se testent avant d'être enregistrés.
 import { h } from './util.js';
 import { api } from './api.js';
@@ -74,6 +74,30 @@ const FORMS = {
       { k: 'from', label: 'Expéditeur', type: 'text', ph: 'BeNote <wiki@exemple.fr>' },
     ],
   },
+  siem: {
+    title: 'Envoi au SIEM',
+    desc: 'Chaque évènement du journal d’audit est relayé vers votre collecteur (Wazuh, Graylog, Splunk…) par un webhook signé HMAC-SHA256. Un évènement de test doit être accepté avant l’enregistrement.',
+    testLabel: 'Tester l’envoi',
+    fields: [
+      { k: 'url', label: 'Adresse du collecteur', type: 'url', ph: 'https://siem.exemple.fr/notabene', hint: 'https obligatoire ; les adresses internes sont refusées.' },
+      { k: 'secret', label: 'Secret de signature', type: 'secret', hint: '16 caractères au moins. Chiffré, jamais réaffiché.' },
+      { k: 'actions', label: 'Familles d’actions à relayer', type: 'list', ph: 'auth\nsettings\nuser', hint: 'Une famille par ligne (auth, settings, user, token, space, page, audit…). Vide : toutes les actions.' },
+    ],
+    // Contrôles de saisie avant tout appel réseau ; le serveur revérifie tout.
+    validate: ({ config, secrets }, view) => {
+      const errors = {};
+      if (!config.enabled) return errors;
+      let url = null;
+      try { url = new URL(config.url); } catch { /* adresse invalide */ }
+      if (!config.url) errors.url = 'Adresse obligatoire.';
+      else if (!url || !['https:', 'http:'].includes(url.protocol)) errors.url = 'Adresse invalide : attendu https://hôte/chemin.';
+      if (secrets.secret ? secrets.secret.length < 16 : !view.secrets.secret?.set) errors.secret = 'Le secret doit compter au moins 16 caractères.';
+      const bad = config.actions.find((a) => !/^[a-z0-9_-][a-z0-9_.-]*$/i.test(a) || a.includes('..') || a.length > 100);
+      if (bad) errors.actions = `Famille invalide : « ${bad.slice(0, 40)} » (lettres, chiffres, points, tirets).`;
+      else if (config.actions.length > 50) errors.actions = '50 familles au plus.';
+      return errors;
+    },
+  },
 };
 
 const field = (label, control, hint) => h('label', { class: 'field' }, h('span', null, label), control, hint && h('small', null, hint));
@@ -136,7 +160,7 @@ export function askReauth(what, { strict = false } = {}) {
 }
 
 // Appel API protégé par la ressaisie : une erreur d'identité rouvre la boîte de dialogue.
-async function call(method, path, body, what) {
+export async function reauthCall(method, path, body, what) {
   const reauth = await askReauth(what);
   if (!reauth) return undefined;
   try {
@@ -158,6 +182,8 @@ function sectionForm(name, view, { onChange, extra = [] }) {
   const spec = FORMS[name];
   const disabled = view.locked;
   const inputs = {};
+  // Message d'erreur de saisie par champ (relié au contrôle par aria-describedby).
+  const errors = {};
   const rows = spec.fields.map((f) => {
     const value = view.values[f.k];
     let control;
@@ -171,7 +197,7 @@ function sectionForm(name, view, { onChange, extra = [] }) {
       control = h('select', { class: 'input' }, f.options.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
       inputs[f.k] = { get: () => control.value };
     } else if (f.type === 'list' || f.type === 'pem') {
-      control = h('textarea', { class: 'input', rows: f.type === 'pem' ? 5 : 3, spellcheck: 'false', placeholder: f.type === 'list' ? 'un groupe par ligne' : '-----BEGIN CERTIFICATE-----' });
+      control = h('textarea', { class: 'input', rows: f.type === 'pem' ? 5 : 3, spellcheck: 'false', placeholder: f.ph || (f.type === 'list' ? 'un groupe par ligne' : '-----BEGIN CERTIFICATE-----') });
       control.value = f.type === 'list' ? listToText(value) : (value ?? '');
       inputs[f.k] = { get: () => (f.type === 'list' ? textToList(control.value) : control.value.trim()) };
     } else if (f.type === 'secret') {
@@ -184,13 +210,21 @@ function sectionForm(name, view, { onChange, extra = [] }) {
       inputs[f.k] = { get: () => (f.type === 'number' ? Number(control.value) : control.value.trim()) };
     }
     control.disabled = disabled;
-    return field(f.label, control);
+    if (!spec.validate) return field(f.label, control, f.hint);
+    const id = `prov-${name}-${f.k}`;
+    const err = h('small', { id: `${id}-err`, class: 'field-error', hidden: true });
+    const hint = f.hint && h('small', { id: `${id}-hint` }, f.hint);
+    control.id = id;
+    control.setAttribute('aria-describedby', [hint && `${id}-hint`, `${id}-err`].filter(Boolean).join(' '));
+    errors[f.k] = { control, err };
+    // Libellé séparé (for) : l'aide et l'erreur ne s'ajoutent pas au nom accessible, elles sont annoncées comme description.
+    return h('div', { class: 'field' }, h('label', { for: id }, f.label), control, hint, err);
   });
 
   const enabled = h('input', { type: 'checkbox' });
   enabled.checked = view.enabled;
   enabled.disabled = disabled;
-  const result = h('div', { class: 'notice prov-result', hidden: true });
+  const result = h('div', { class: 'notice prov-result', role: 'status', hidden: true });
   const show = (ok, text) => { result.className = `notice prov-result ${ok ? 'success' : 'warning'}`; result.textContent = text; result.hidden = false; };
 
   const payload = () => {
@@ -204,7 +238,7 @@ function sectionForm(name, view, { onChange, extra = [] }) {
 
   let testId = null;
   const save = h('button', { class: 'btn btn-primary btn-sm', disabled: true }, 'Enregistrer');
-  const test = h('button', { class: 'btn btn-ghost btn-sm', disabled }, 'Tester la connexion');
+  const test = h('button', { class: 'btn btn-ghost btn-sm', disabled }, spec.testLabel || 'Tester la connexion');
   const needsTest = () => name !== 'embed';
   const sync = () => { save.disabled = disabled || (needsTest() && !testId); };
   const dirty = () => { testId = null; result.hidden = true; sync(); };
@@ -215,22 +249,39 @@ function sectionForm(name, view, { onChange, extra = [] }) {
   form.addEventListener('change', dirty);
   enabled.addEventListener('change', dirty);
 
+  // Erreurs de saisie : affichées sous chaque champ, le premier champ fautif reçoit le focus. Renvoie vrai si tout est valide.
+  const check = () => {
+    if (!spec.validate) return true;
+    const found = spec.validate(payload(), view);
+    let first = null;
+    for (const [k, { control, err }] of Object.entries(errors)) {
+      const msg = found[k];
+      err.textContent = msg || '';
+      err.hidden = !msg;
+      if (msg) { control.setAttribute('aria-invalid', 'true'); first ||= control; } else control.removeAttribute('aria-invalid');
+    }
+    first?.focus();
+    return !first;
+  };
+
   test.addEventListener('click', async () => {
-    const r = await call('post', `/admin/settings/${name}/test`, payload(), `tester la configuration ${spec.title}`);
+    if (!check()) return;
+    const r = await reauthCall('post', `/admin/settings/${name}/test`, payload(), `tester la configuration ${spec.title}`);
     if (!r) return;
     show(r.ok, r.message);
     testId = r.ok ? r.testId : null;
     sync();
   });
   save.addEventListener('click', async () => {
-    const r = await call('put', `/admin/settings/${name}`, { ...payload(), testId }, `enregistrer ${spec.title}`);
+    if (!check()) return;
+    const r = await reauthCall('put', `/admin/settings/${name}`, { ...payload(), testId }, `enregistrer ${spec.title}`);
     if (!r) return;
     toast('Configuration enregistrée');
     onChange();
   });
   const reset = view.source === 'db' && !disabled && h('button', {
     class: 'btn btn-ghost btn-sm',
-    onClick: async () => { if (await call('post', `/admin/settings/${name}/reset`, {}, 'revenir aux valeurs de l’environnement')) { toast('Retour à l’environnement'); onChange(); } },
+    onClick: async () => { if (await reauthCall('post', `/admin/settings/${name}/reset`, {}, 'revenir aux valeurs de l’environnement')) { toast('Retour à l’environnement'); onChange(); } },
   }, 'Revenir au .env');
   sync();
   if (!needsTest()) test.hidden = true;
@@ -241,18 +292,18 @@ function sectionForm(name, view, { onChange, extra = [] }) {
 const sourcePill = (view) => h('span', { class: `pill ${view.source === 'db' ? 'accent' : ''}` }, view.source === 'db' ? 'Défini dans l’interface' : 'Défini dans l’environnement');
 const statePill = (view) => h('span', { class: `pill ${view.enabled ? 'ok' : 'off'}` }, view.enabled ? 'Actif' : 'Inactif');
 
-// Carte d'un fournisseur ou du SMTP.
+// Carte d'un fournisseur, du SMTP ou du SIEM.
 export function providerCard(name, data, { card, copyable, refresh, kvRows = [] }) {
   const view = data.sections[name];
   const extra = [];
   if (name === 'smtp' && view.enabled) {
     extra.push(h('button', {
       class: 'btn btn-ghost btn-sm',
-      onClick: async () => { if (await call('post', '/admin/settings/smtp/send-test', {}, 'envoyer un e-mail de test')) toast('E-mail de test envoyé'); },
+      onClick: async () => { if (await reauthCall('post', '/admin/settings/smtp/send-test', {}, 'envoyer un e-mail de test')) toast('E-mail de test envoyé'); },
     }, 'Envoyer un e-mail de test'));
   }
   const { form, actions, result } = sectionForm(name, view, { onChange: refresh, extra });
-  const info = kvRows.length && h('div', { class: 'stack' }, kvRows.map(([label, value]) => h('div', { class: 'row wrap' }, h('small', { class: 'muted' }, `${label} : `), copyable(value))));
+  const info = kvRows.length > 0 && h('div', { class: 'stack' }, kvRows.map(([label, value]) => h('div', { class: 'row wrap' }, h('small', { class: 'muted' }, `${label} : `), copyable(value))));
   return card(FORMS[name].title, FORMS[name].desc,
     h('div', { class: 'row wrap' }, statePill(view), sourcePill(view)),
     view.locked && h('div', { class: 'notice info' }, 'Configuration verrouillée (CONFIG_LOCKED) : modifiable uniquement dans l’environnement du déploiement.'),
@@ -269,7 +320,7 @@ export function embedHostsCard(data, { card, refresh }) {
   const save = h('button', { class: 'btn btn-primary btn-sm', disabled: view.locked }, 'Enregistrer');
   save.addEventListener('click', async () => {
     const hosts = textToList(area.value);
-    if (await call('put', '/admin/settings/embeds', { config: { enabled: true, hosts } }, 'modifier les hôtes intégrables')) { toast('Hôtes intégrables mis à jour'); refresh(); }
+    if (await reauthCall('put', '/admin/settings/embeds', { config: { enabled: true, hosts } }, 'modifier les hôtes intégrables')) { toast('Hôtes intégrables mis à jour'); refresh(); }
   });
   return card('Hôtes autorisés', 'Un nom de domaine par ligne, exact (pas de joker, de chemin ni de port). Appliqué immédiatement, sans redémarrage (en-tête CSP frame-src).',
     h('div', { class: 'row wrap' }, sourcePill(view)),
@@ -286,7 +337,7 @@ export function embedOriginsCard(data, { card, refresh }) {
   const save = h('button', { class: 'btn btn-primary btn-sm', disabled: view.locked }, 'Enregistrer');
   save.addEventListener('click', async () => {
     const origins = textToList(area.value);
-    if (await call('put', '/admin/settings/embed', { config: { enabled: true, origins } }, 'modifier les sites autorisés')) { toast('Sites autorisés mis à jour'); refresh(); }
+    if (await reauthCall('put', '/admin/settings/embed', { config: { enabled: true, origins } }, 'modifier les sites autorisés')) { toast('Sites autorisés mis à jour'); refresh(); }
   });
   return card('2. Sites autorisés', 'Origines autorisées à afficher BeNote en iframe (en-tête CSP frame-ancestors). Appliqué immédiatement, sans redémarrage. Format : https://domaine, sans chemin ni joker.',
     h('div', { class: 'row wrap' }, sourcePill(view)),

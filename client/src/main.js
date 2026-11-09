@@ -20,6 +20,7 @@ import { showMfaSetup, showResetPassword } from './local-auth.js';
 import { refreshUnread } from './notifications.js';
 import { onCommentEvent } from './comments.js';
 import { showShare } from './share.js';
+import { toggleChat } from './ai-chat.js';
 import * as A from './actions.js';
 import { pagePath, parseRoute, spacePath, upgradeLegacyHash } from './urls.js';
 
@@ -71,6 +72,7 @@ function onKey(e) {
   if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); A.search(); }
   else if (mod && e.key === '\\') { e.preventDefault(); A.toggleSidebar(); }
   else if (e.altKey && !mod && e.code === 'KeyN' && !app.embed && session.can('write')) { e.preventDefault(); A.newPage(prefs.space); }
+  else if (e.altKey && !mod && !e.shiftKey && e.code === 'KeyI' && !app.embed && session.can('ai')) { e.preventDefault(); toggleChat(); }
 }
 
 // Les liens internes (/p/…, /s/…, /settings…) naviguent sans recharger la page ; un clic avec Ctrl, Maj ou la molette garde son sens habituel.
@@ -137,6 +139,10 @@ async function boot() {
     if (type === 'page.permissions') { store.scheduleRefresh(evt); return; }
     if (type === 'base.changed') { window.dispatchEvent(new CustomEvent('notabene:base', { detail: evt })); return; }
     if (type === 'page.labels') { window.dispatchEvent(new CustomEvent('notabene:labels', { detail: evt })); return; }
+    // Sans « state » : la pastille relit le statut (les droits de chacun en dépendent).
+    if (type === 'page.verification') { window.dispatchEvent(new CustomEvent('notabene:verification', { detail: { pageId: evt.pageId } })); return; }
+    // Demande d'accusé de lecture posée ou retirée (jamais un accusé) : le bandeau relit son état.
+    if (type === 'page.read-receipt') { window.dispatchEvent(new CustomEvent('notabene:read-receipt', { detail: { pageId: evt.pageId } })); return; }
     // Nos propres sauvegardes reviennent aussi : inutile de recharger si la version est déjà connue.
     if (type === 'page.updated' && (store.page(evt.pageId)?.version ?? 0) >= (evt.version ?? 0)) return;
     store.scheduleRefresh(evt);

@@ -5,11 +5,12 @@ import { session } from '../session.js';
 import { openModal, toast } from '../ui.js';
 import { pickBase } from './base-block.js';
 import { allowedHosts, embedUrl } from './embed.js';
+import { uploadFiles } from './attachments.js';
 import { DEFAULT_MATH, DEFAULT_MERMAID, DEFAULT_PLANTUML, openDrawio, openExcalidraw } from '../diagrams.js';
 
 // ---- Images ---------------------------------------------------------------
 
-// Redimensionne et compresse : les images vivent dans localStorage, donc on reste léger.
+// Repli sans page (aucune pièce jointe possible) : image redimensionnée et compressée, enregistrée en base64 dans le contenu.
 async function imageToDataURL(file, maxSize = 1400) {
   const raw = await new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -105,12 +106,23 @@ const SLASH_ITEMS = [
     },
   },
   {
-    group: 'Médias', title: 'Image', desc: 'Importer depuis votre ordinateur', ico: 'upload', keys: 'image photo upload',
-    run: async (editor, range) => {
-      editor.chain().focus().deleteRange(range).run();
-      const file = await pickFile('image/*');
-      if (file) insertImageFile(editor, file);
-    },
+    group: 'Médias', title: 'Image', desc: 'Importer depuis votre ordinateur (PNG, JPEG, GIF, WebP)', ico: 'upload', keys: 'image photo upload',
+    run: (editor, range, ctx) => pickAndSend(editor, range, ctx, 'image', 'image/png,image/jpeg,image/gif,image/webp'),
+  },
+  {
+    group: 'Médias', title: 'Fichier', desc: 'Joindre un fichier à télécharger', ico: 'paperclip', keys: 'fichier file piece jointe attachment pdf document upload',
+    when: (ctx) => !!ctx.pageId,
+    run: (editor, range, ctx) => pickAndSend(editor, range, ctx, 'file', ''),
+  },
+  {
+    group: 'Médias', title: 'Vidéo', desc: 'Lire une vidéo MP4 ou WebM dans la page', ico: 'video', keys: 'video film mp4 webm',
+    when: (ctx) => !!ctx.pageId,
+    run: (editor, range, ctx) => pickAndSend(editor, range, ctx, 'video', 'video/mp4,video/webm'),
+  },
+  {
+    group: 'Médias', title: 'Audio', desc: 'Écouter un son (MP3, Ogg, WAV) dans la page', ico: 'music', keys: 'audio son musique mp3 ogg wav podcast',
+    when: (ctx) => !!ctx.pageId,
+    run: (editor, range, ctx) => pickAndSend(editor, range, ctx, 'audio', 'audio/mpeg,audio/ogg,audio/wav,.mp3,.ogg,.oga,.wav'),
   },
   {
     group: 'Bases', title: 'Base', desc: 'Afficher une base (tableau) dans la page', ico: 'table', keys: 'base tableau database table',
@@ -146,6 +158,16 @@ const SLASH_ITEMS = [
     },
   },
 ];
+
+// Choix d'un fichier puis envoi en pièce jointe de la page, inséré à l'emplacement de la commande.
+async function pickAndSend(editor, range, ctx, expect, accept) {
+  editor.chain().focus().deleteRange(range).run();
+  const pos = editor.state.selection.from;
+  const file = await pickFile(accept);
+  if (!file) return;
+  if (!ctx.pageId) { if (expect === 'image') insertImageFile(editor, file); return; }
+  uploadFiles(editor, [file], { pageId: ctx.pageId, pos, expect, signals: ctx.uploads });
+}
 
 // Demande l'adresse à intégrer ; elle doit être en https et sur un hôte autorisé par un administrateur.
 function askEmbedUrl(onOk) {
@@ -193,7 +215,7 @@ export function createSlashMenu(editor, ctx) {
 
   function filter(q) {
     const nq = norm(q);
-    const available = SLASH_ITEMS.filter((it) => !it.when || it.when());
+    const available = SLASH_ITEMS.filter((it) => !it.when || it.when(ctx));
     if (!nq) return available;
     return available.filter((it) => norm(`${it.title} ${it.keys} ${it.group}`).includes(nq));
   }

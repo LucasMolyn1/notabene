@@ -44,6 +44,94 @@ export const api = {
   del: (path) => request('DELETE', v3(path)),
 };
 
+/**
+ * Envoi d'un fichier (multipart, un seul champ « file ») avec suivi de progression et annulation.
+ * XMLHttpRequest plutôt que fetch : seul lui expose la progression de l'envoi.
+ * @param {string} path chemin v3 (par exemple « /pages/<id>/attachments »)
+ * @param {File} file
+ * @param {{ onProgress?: (ratio: number) => void, signal?: AbortSignal }} [options]
+ * @returns {Promise<any>}
+ */
+export function upload(path, file, options = {}) {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return sendBody(path, form, options);
+}
+
+/**
+ * Envoi d'un corps brut (par exemple une archive ZIP en application/zip), avec progression et annulation.
+ * @param {string} path chemin v3, paramètres de requête compris
+ * @param {Blob} blob
+ * @param {{ contentType: string, onProgress?: (ratio: number) => void, onSent?: () => void, signal?: AbortSignal }} options
+ * @returns {Promise<any>}
+ */
+export function uploadRaw(path, blob, options) {
+  return sendBody(path, blob, options);
+}
+
+/**
+ * @param {string} path
+ * @param {FormData | Blob} body
+ * @param {{ contentType?: string, onProgress?: (ratio: number) => void, onSent?: () => void, signal?: AbortSignal }} options
+ * @returns {Promise<any>}
+ */
+function sendBody(path, body, { contentType, onProgress, onSent, signal } = {}) {
+  const url = v3(path);
+  if (!SAFE_URL.test(url) || url.includes('..') || url.includes('//')) return Promise.reject(new ApiError(400, 'Adresse de requête invalide', null));
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    const done = () => signal?.removeEventListener('abort', abort);
+    xhr.open('POST', url);
+    if (csrf) xhr.setRequestHeader('X-CSRF-Token', csrf);
+    if (contentType) xhr.setRequestHeader('Content-Type', contentType);
+    xhr.upload.addEventListener('progress', (e) => { if (e.lengthComputable && e.total > 0) onProgress?.(e.loaded / e.total); });
+    xhr.upload.addEventListener('load', () => onSent?.());
+    xhr.addEventListener('load', () => {
+      done();
+      let data;
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { data = null; }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new ApiError(xhr.status, data?.detail || data?.message || `Erreur ${xhr.status}`, data));
+    });
+    xhr.addEventListener('error', () => { done(); reject(new ApiError(0, 'Connexion interrompue', null)); });
+    xhr.addEventListener('abort', () => { done(); reject(new ApiError(0, 'Envoi annulé', { aborted: true })); });
+    if (signal?.aborted) { reject(new ApiError(0, 'Envoi annulé', { aborted: true })); return; }
+    signal?.addEventListener('abort', abort);
+    xhr.send(body);
+  });
+}
+
+/**
+ * Téléchargement d'un fichier préparé par le serveur (GET, cookie de session same-origin, comme `request`).
+ * Renvoie le contenu, le nom proposé (ASCII sûr, sinon `fallback`) et les en-têtes ; une erreur HTTP lève une ApiError.
+ * @param {string} path chemin v3, paramètres de requête compris
+ * @param {string} fallback nom de fichier de repli
+ * @returns {Promise<{ blob: Blob, name: string, headers: Headers }>}
+ */
+export async function getFile(path, fallback) {
+  const url = v3(path);
+  if (!SAFE_URL.test(url) || url.includes('..') || url.includes('//')) throw new ApiError(400, 'Adresse de requête invalide', null);
+  let res;
+  try {
+    res = await fetch(url, { credentials: 'same-origin' });
+  } catch {
+    throw new ApiError(0, 'Connexion impossible', null);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, (typeof data?.detail === 'string' && data.detail) || data?.message || `Erreur ${res.status}`, data);
+  }
+  const name = /filename="([\w.-]+)"/.exec(res.headers.get('content-disposition') || '')?.[1] || fallback;
+  return { blob: await res.blob(), name, headers: res.headers };
+}
+
+// Chaîne de requête compatible avec SAFE_URL : les caractères que encodeURIComponent laisse passer (!'()*~) sont encodés aussi.
+export const queryString = (params) => Object.entries(params)
+  .filter(([, v]) => v !== undefined && v !== null && v !== '')
+  .map(([k, v]) => `${k}=${encodeURIComponent(String(v)).replace(/[!'()*~]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`)
+  .join('&');
+
 // Alias conservé pour les modules écrits avant la migration.
 export const api3 = api;
 
@@ -61,7 +149,7 @@ export async function listAll(path) {
 }
 
 // Flux d'événements temps réel (reconnexion automatique gérée par EventSource).
-const EVENT_TYPES = ['page.created', 'page.updated', 'page.moved', 'page.trashed', 'page.restored', 'page.deleted', 'space.changed', 'presence', 'notification', 'page.permissions', 'page.labels', 'base.changed', 'comment.created', 'comment.updated', 'comment.deleted'];
+const EVENT_TYPES = ['page.created', 'page.updated', 'page.moved', 'page.trashed', 'page.restored', 'page.deleted', 'space.changed', 'presence', 'notification', 'page.permissions', 'page.labels', 'page.verification', 'page.read-receipt', 'base.changed', 'comment.created', 'comment.updated', 'comment.deleted'];
 
 export function openEvents(onEvent) {
   const source = new EventSource(v3('/events'));
@@ -76,8 +164,11 @@ export function openEvents(onEvent) {
 // Réponse de l'IA diffusée en SSE sur une requête POST (questions, assistant de rédaction).
 export const streamAsk = (question, handlers) => streamSse('/ai/ask', { question }, handlers);
 export const streamAssist = (body, handlers) => streamSse('/ai/assist', body, handlers);
+// Assistant conversationnel : { message, conversationId?, pageId? }.
+export const streamChat = (body, handlers) => streamSse('/ai/chat', body, handlers);
 
-async function streamSse(path, body, { onSources, onDelta, onNotice, onError, onDone, signal }) {
+// onError reçoit le message et le statut HTTP (0 : coupure réseau ou erreur annoncée dans le flux).
+async function streamSse(path, body, { onConversation = undefined, onSources, onDelta, onNotice = undefined, onError, onDone, signal }) {
   let res;
   try {
     res = await fetch(v3(path), {
@@ -88,12 +179,12 @@ async function streamSse(path, body, { onSources, onDelta, onNotice, onError, on
       body: JSON.stringify(body),
     });
   } catch {
-    if (!signal?.aborted) onError?.('Connexion impossible');
+    if (!signal?.aborted) onError?.('Connexion impossible', 0);
     return;
   }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    onError?.(data.detail || data.message || `Erreur ${res.status}`);
+    onError?.(data.detail || data.message || `Erreur ${res.status}`, res.status);
     return;
   }
   const reader = res.body.getReader();
@@ -112,14 +203,15 @@ async function streamSse(path, body, { onSources, onDelta, onNotice, onError, on
         const data = /^data: (.+)$/m.exec(block)?.[1];
         if (!event || !data) continue;
         const payload = JSON.parse(data);
-        if (event === 'sources') onSources?.(payload);
+        if (event === 'conversation') onConversation?.(payload);
+        else if (event === 'sources') onSources?.(payload);
         else if (event === 'delta') onDelta?.(payload.text);
         else if (event === 'notice') onNotice?.(payload.message);
-        else if (event === 'error') onError?.(payload.message);
+        else if (event === 'error') onError?.(payload.message, 0);
         else if (event === 'done') onDone?.();
       }
     }
   } catch {
-    if (!signal?.aborted) onError?.('Flux interrompu');
+    if (!signal?.aborted) onError?.('Flux interrompu', 0);
   }
 }

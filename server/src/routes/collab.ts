@@ -2,7 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Auth } from '../auth/context.js';
 import { requireScope } from '../auth/context.js';
-import { loadWritablePage } from '../lib/access.js';
+import { collabClonerFor, loadWritablePage } from '../lib/access.js';
 import { canWritePage } from '../lib/page-acl.js';
 import { getPageRow } from '../lib/pages.js';
 import { CollabHub } from '../lib/collab.js';
@@ -23,7 +23,8 @@ export default async function collabRoutes(app: FastifyInstance) {
     const auth: Auth = { user: { id: conn.userId, name: row.name, email: row.email, role: row.role }, via: 'session', scopes: new Set(['read', 'write']) };
     return canWritePage(db, auth, pageId);
   };
-  const hub = new CollabHub(db, app.bus, authorize);
+  // Pièces jointes citées depuis une autre page : copiées seulement si toutes les personnes qui ont modifié peuvent les lire.
+  const hub = new CollabHub(db, app.bus, authorize, (editors, author) => collabClonerFor(db, config, editors, author));
   app.decorate('collab', hub);
   app.addHook('onClose', async () => hub.shutdown());
 

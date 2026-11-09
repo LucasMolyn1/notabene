@@ -9,7 +9,8 @@ import { isBlockedAddress, safeFetch } from './net-guard.js';
 
 export const WEBHOOK_EVENTS = ['page.created', 'page.updated', 'page.trashed', 'page.restored', 'page.deleted', 'page.moved', 'space.changed', 'page.permissions', 'comment.created', 'comment.updated', 'comment.deleted'] as const;
 
-const MAX_FAILURES = 10;
+// Échecs consécutifs avant désactivation automatique (webhooks et SIEM).
+export const MAX_FAILURES = 10;
 
 // Vérifie le schéma et refuse les adresses internes (sauf WEBHOOK_ALLOW_PRIVATE).
 export async function assertSafeUrl(raw: string, allowPrivate: boolean): Promise<URL> {
@@ -29,13 +30,12 @@ export const sign = (secret: string, timestamp: string, body: string) =>
 
 interface Row { id: string; url: string; secret: string; events: string; failures: number }
 
-export async function deliver(db: DB, box: SecretBox, allowPrivate: boolean, hook: Row, event: string, payload: unknown): Promise<number> {
-  const body = JSON.stringify({ event, at: new Date().toISOString(), data: payload });
+// Envoi signé commun aux webhooks et au SIEM : en-têtes X-Notabene-*, signature `sha256=HMAC(secret, "<horodatage>.<corps>")`.
+// Renvoie le statut HTTP, ou 0 si l'adresse est refusée, injoignable, redirigée ou trop lente.
+export async function postSigned(rawUrl: string, secret: string, event: string, body: string, allowPrivate: boolean, extraHeaders: Record<string, string> = {}): Promise<number> {
   const ts = String(Math.floor(Date.now() / 1000));
-  let status: number;
   try {
-    const url = await assertSafeUrl(hook.url, allowPrivate);
-    const secret = box.open(hook.secret, `webhook:${hook.id}`);
+    const url = await assertSafeUrl(rawUrl, allowPrivate);
     // Connexion épinglée sur l'adresse vérifiée (net-guard) : pas de rebinding DNS entre le contrôle et l'envoi.
     const res = await safeFetch(url, {
       method: 'POST',
@@ -44,13 +44,26 @@ export async function deliver(db: DB, box: SecretBox, allowPrivate: boolean, hoo
       headers: {
         'content-type': 'application/json',
         'user-agent': 'Notabene-Webhook/1',
+        ...extraHeaders,
         'x-notabene-event': event,
         'x-notabene-timestamp': ts,
         'x-notabene-signature': `sha256=${sign(secret, ts, body)}`,
       },
       body,
     }, allowPrivate);
-    status = res.status;
+    // Corps de la réponse ignoré (et libéré) : rien du collecteur n'est relu ni journalisé.
+    await res.body?.cancel().catch(() => {});
+    return res.status;
+  } catch {
+    return 0;
+  }
+}
+
+export async function deliver(db: DB, box: SecretBox, allowPrivate: boolean, hook: Row, event: string, payload: unknown): Promise<number> {
+  const body = JSON.stringify({ event, at: new Date().toISOString(), data: payload });
+  let status: number;
+  try {
+    status = await postSigned(hook.url, box.open(hook.secret, `webhook:${hook.id}`), event, body, allowPrivate);
   } catch {
     status = 0;
   }
@@ -63,7 +76,7 @@ export async function deliver(db: DB, box: SecretBox, allowPrivate: boolean, hoo
 // Ne transmet que des identifiants et titres : jamais le contenu des pages.
 export function startWebhooks(db: DB, bus: EventBus, box: SecretBox, allowPrivate: boolean) {
   return bus.subscribe((e: AppEvent) => {
-    if (e.type === 'presence') return;
+    if (e.type === 'presence' || e.quiet) return;
     // Rien d'un espace personnel ne sort vers un service externe.
     const spaceId = e.spaceId ?? (e.pageId ? (db.prepare('SELECT space_id FROM pages WHERE id = ?').get(e.pageId) as { space_id: string } | undefined)?.space_id : undefined);
     if (spaceId && db.prepare("SELECT 1 FROM spaces WHERE id = ? AND kind = 'personal'").get(spaceId)) return;

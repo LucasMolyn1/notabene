@@ -1,7 +1,7 @@
-// Sauvegarde et restauration de la base SQLite.
-// CLI : node dist/server/backup.js backup [dossier] | verify <fichier> | restore <fichier> --yes | keygen
-// Chiffrement : BACKUP_AGE_RECIPIENT (clé publique age) chiffre chaque sauvegarde ; la clé privée n'est nécessaire
-// qu'à la vérification et à la restauration (BACKUP_AGE_IDENTITY_FILE).
+// Sauvegarde et restauration de la base SQLite et des pièces jointes (DATA_DIR/attachments, voir lib/attachment-backup.ts).
+// CLI : node dist/server/backup.js backup [dossier] | verify <fichier> | restore <fichier> --yes [--allow-missing] | keygen
+// Chiffrement : BACKUP_AGE_RECIPIENT (clé publique age) chiffre chaque sauvegarde, base et fichiers ; la clé privée n'est
+// nécessaire qu'à la vérification et à la restauration (BACKUP_AGE_IDENTITY_FILE).
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { Decrypter, Encrypter, generateIdentity, identityToRecipient } from 'age-encryption';
@@ -9,6 +9,11 @@ import { basename, dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import Database from 'better-sqlite3';
 import type { DB } from './db.js';
+import {
+  attachmentsBackupDir, backupAttachments, previousAttachmentsBackup, restoreAttachments, verifyAttachments,
+  type AttachmentBackupReport, type AttachmentCheck, type AttachmentRestoreReport,
+} from './lib/attachment-backup.js';
+import { attachmentsDir, quarantineDir } from './lib/attachments.js';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 export const backupName = (d = new Date()) =>
@@ -90,11 +95,24 @@ export function verifyBackup(file: string): { users: number; pages: number; vers
   }
 }
 
-// Conserve les `keep` sauvegardes les plus récentes du dossier.
+const BACKUP_FILE = /^(notabene-\d{8}-\d{6})\.db(\.age)?$/;
+const BACKUP_ATTACHMENTS = /^(notabene-\d{8}-\d{6})\.attachments$/;
+const BACKUP_PARTIAL = /^\.notabene-\d{8}-\d{6}\.partiel$/;
+const DAY = 86_400_000;
+
+// Conserve les `keep` sauvegardes les plus récentes du dossier, avec leurs pièces jointes. Retire aussi les dossiers de pièces
+// jointes sans base (sauvegarde interrompue) et les dossiers de travail abandonnés depuis plus d'un jour.
 export function pruneBackups(dir: string, keep: number): string[] {
-  const files = readdirSync(dir).filter((f) => /^notabene-\d{8}-\d{6}\.db(\.age)?$/.test(f)).sort();
+  const entries = readdirSync(dir);
+  const files = entries.filter((f) => BACKUP_FILE.test(f)).sort();
   const old = files.slice(0, Math.max(0, files.length - keep));
+  const kept = new Set(files.slice(old.length).map((f) => BACKUP_FILE.exec(f)![1]));
   for (const f of old) for (const ext of ['', '-wal', '-shm']) rmSync(resolve(dir, f + ext), { force: true });
+  for (const e of entries) {
+    const att = BACKUP_ATTACHMENTS.exec(e);
+    const stale = BACKUP_PARTIAL.test(e) && Date.now() - statSync(resolve(dir, e)).mtimeMs > DAY;
+    if ((att && !kept.has(att[1]!)) || stale) rmSync(resolve(dir, e), { recursive: true, force: true });
+  }
   return old;
 }
 
@@ -112,6 +130,78 @@ export function restoreFrom(file: string, target: string): { previous: string | 
   return { previous };
 }
 
+const identityFrom = (env: NodeJS.ProcessEnv) => (env.BACKUP_AGE_IDENTITY_FILE ? readFileSync(env.BACKUP_AGE_IDENTITY_FILE, 'utf8') : undefined);
+
+/**
+ * Sauvegarde complète : copie cohérente de la base, puis des pièces jointes qu'elle référence, chiffrées si BACKUP_AGE_RECIPIENT.
+ * Tout est préparé dans un dossier de travail (`.notabene-X.partiel`) puis mis en place : le dossier des pièces jointes d'abord,
+ * la base en dernier. Une base présente dans le dossier signifie donc une sauvegarde terminée.
+ */
+export async function createBackup(db: DB, opts: { dataDir: string; dir: string; env?: NodeJS.ProcessEnv; now?: Date }) {
+  const env = opts.env ?? process.env;
+  assertBackupAllowed(env);
+  const recipient = env.BACKUP_AGE_RECIPIENT || undefined;
+  const name = backupName(opts.now);
+  const stem = name.slice(0, -'.db'.length);
+  mkdirSync(opts.dir, { recursive: true, mode: 0o700 });
+  const staging = resolve(opts.dir, `.${stem}.partiel`);
+  mkdirSync(staging, { mode: 0o700 }); // échoue si une sauvegarde de la même seconde est en cours
+  try {
+    let file = resolve(staging, name);
+    await backupTo(db, file);
+    const stagedFiles = resolve(staging, `${stem}.attachments`);
+    const attachments: AttachmentBackupReport = await backupAttachments({
+      live: db, snapshot: file, source: attachmentsDir(opts.dataDir), dest: stagedFiles, recipient,
+      previous: previousAttachmentsBackup(opts.dir, recipient ?? null),
+    });
+    const info = verifyBackup(file);
+    if (recipient) file = await encryptFile(file, recipient);
+    const filesDir = resolve(opts.dir, `${stem}.attachments`);
+    renameSync(stagedFiles, filesDir);
+    const final = resolve(opts.dir, basename(file));
+    renameSync(file, final);
+    return { file: final, attachmentsDir: filesDir, encrypted: !!recipient, info, attachments };
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+/** Vérification complète d'une sauvegarde : base, puis présence et empreinte de chaque pièce jointe. */
+export async function verifyFullBackup(file: string, env: NodeJS.ProcessEnv = process.env): Promise<ReturnType<typeof verifyBackup> & { attachments: AttachmentCheck }> {
+  const src = await readableBackup(file, env);
+  try {
+    const info = verifyBackup(src.path);
+    return { ...info, attachments: await verifyAttachments(src.path, attachmentsBackupDir(file), identityFrom(env)) };
+  } finally {
+    src.cleanup();
+  }
+}
+
+/**
+ * Restauration complète (serveur arrêté) : pièces jointes d'abord, ajoutées au dossier vivant sans rien écraser, puis la base.
+ * S'il manque des fichiers ou que certains sont altérés, la base n'est pas remplacée, sauf `allowMissing`.
+ */
+export async function restoreBackup(file: string, opts: { dataDir: string; env?: NodeJS.ProcessEnv; allowMissing?: boolean }): Promise<{ previous: string | null; attachments: AttachmentRestoreReport }> {
+  const env = opts.env ?? process.env;
+  const src = await readableBackup(file, env);
+  try {
+    verifyBackup(src.path);
+    const attachments = await restoreAttachments({
+      dbFile: src.path, from: attachmentsBackupDir(file), to: attachmentsDir(opts.dataDir), quarantine: quarantineDir(opts.dataDir), identity: identityFrom(env),
+    });
+    const bad = attachments.missing.length + attachments.corrupt.length;
+    if (bad && !opts.allowMissing) {
+      throw new Error(`Restauration interrompue, base actuelle conservée : ${attachments.missing.length} pièce(s) jointe(s) absente(s) et ${attachments.corrupt.length} altérée(s) dans la sauvegarde (${list([...attachments.missing, ...attachments.corrupt])}). Relancez avec --allow-missing pour restaurer quand même.`);
+    }
+    const { previous } = restoreFrom(src.path, resolve(opts.dataDir, 'notabene.db'));
+    return { previous, attachments };
+  } finally {
+    src.cleanup();
+  }
+}
+
+const list = (ids: string[]) => `${ids.slice(0, 10).join(', ')}${ids.length > 10 ? `, et ${ids.length - 10} autre(s)` : ''}`;
+
 async function main(argv: string[]) {
   const [cmd, arg] = argv;
   const dataDir = resolve(process.env.DATA_DIR ?? './data');
@@ -122,38 +212,43 @@ async function main(argv: string[]) {
     const k = await newBackupKeys();
     console.log(`Clé publique (à mettre dans BACKUP_AGE_RECIPIENT sur le serveur) :\n${k.recipient}\n\nClé privée (à garder HORS du serveur, par exemple dans un gestionnaire de secrets ; sans elle, les sauvegardes sont perdues) :\n${k.identity}`);
   } else if (cmd === 'backup') {
-    assertBackupAllowed(process.env);
     const dir = resolve(arg ?? resolve(dataDir, 'backups'));
     const db = new Database(dbFile, { fileMustExist: true });
     try {
-      let file = resolve(dir, backupName());
-      await backupTo(db, file);
-      const info = verifyBackup(file);
-      if (process.env.BACKUP_AGE_RECIPIENT) file = await encryptFile(file, process.env.BACKUP_AGE_RECIPIENT);
-      console.log(`Sauvegarde créée${process.env.BACKUP_AGE_RECIPIENT ? ' (chiffrée)' : ''} : ${file} (${Math.round(statSync(file).size / 1024)} Ko, ${info.pages} pages, ${info.users} utilisateurs)`);
+      const r = await createBackup(db, { dataDir, dir });
+      const a = r.attachments;
+      console.log(`Sauvegarde créée${r.encrypted ? ' (chiffrée)' : ''} : ${r.file} (${Math.round(statSync(r.file).size / 1024)} Ko, ${r.info.pages} pages, ${r.info.users} utilisateurs, ${a.files} pièce(s) jointe(s) : ${a.copied} copiée(s), ${a.reused} reprise(s) de la sauvegarde précédente)`);
+      if (a.dropped.length) console.log(`Pièces jointes supprimées pendant la sauvegarde, retirées de la copie : ${a.dropped.length}`);
+      if (a.missing.length || a.corrupt.length) {
+        console.error(`ATTENTION : sauvegarde incomplète. Fichiers absents du disque : ${a.missing.length}${a.missing.length ? ` (${list(a.missing)})` : ''} ; altérés : ${a.corrupt.length}${a.corrupt.length ? ` (${list(a.corrupt)})` : ''}.`);
+        process.exitCode = 3;
+      }
       const removed = pruneBackups(dir, keep);
       if (removed.length) console.log(`Anciennes sauvegardes supprimées : ${removed.length} (conservées : ${keep})`);
     } finally {
       db.close();
     }
   } else if (cmd === 'verify' && arg) {
-    const src = await readableBackup(resolve(arg));
-    try {
-      const info = verifyBackup(src.path);
-      console.log(`OK : ${basename(arg)} (${info.pages} pages, ${info.users} utilisateurs, schéma v${info.version})`);
-    } finally { src.cleanup(); }
+    const r = await verifyFullBackup(resolve(arg));
+    const a = r.attachments;
+    if (a.missing.length || a.corrupt.length) {
+      console.error(`PROBLÈME : ${basename(arg)} : base saine (${r.pages} pages, schéma v${r.version}), mais ${a.missing.length} pièce(s) jointe(s) absente(s)${a.missing.length ? ` (${list(a.missing)})` : ''} et ${a.corrupt.length} altérée(s)${a.corrupt.length ? ` (${list(a.corrupt)})` : ''} sur ${a.files}.`);
+      process.exitCode = 1;
+    } else {
+      console.log(`OK : ${basename(arg)} (${r.pages} pages, ${r.users} utilisateurs, schéma v${r.version}, ${a.files} pièce(s) jointe(s) vérifiée(s))`);
+    }
   } else if (cmd === 'restore' && arg) {
     if (!argv.includes('--yes')) {
       console.error('La restauration remplace la base actuelle. Arrêtez le serveur puis relancez avec --yes.');
       process.exit(2);
     }
-    const src = await readableBackup(resolve(arg));
-    try {
-      const { previous } = restoreFrom(src.path, dbFile);
-      console.log(`Base restaurée depuis ${arg}.${previous ? ` Ancienne base conservée : ${previous}` : ''} Redémarrez le serveur.`);
-    } finally { src.cleanup(); }
+    const r = await restoreBackup(resolve(arg), { dataDir, allowMissing: argv.includes('--allow-missing') });
+    const a = r.attachments;
+    console.log(`Base restaurée depuis ${arg}.${r.previous ? ` Ancienne base conservée : ${r.previous}.` : ''}`);
+    console.log(`Pièces jointes : ${a.restored} restaurée(s), ${a.kept} déjà en place${a.quarantined.length ? `, ${a.quarantined.length} différente(s) mise(s) en quarantaine (${quarantineDir(dataDir)})` : ''}${a.missing.length + a.corrupt.length ? `, ${a.missing.length + a.corrupt.length} manquante(s) ou altérée(s)` : ''}.`);
+    console.log('Redémarrez le serveur. Les fichiers que la base restaurée ne connaît pas seront mis en quarantaine au démarrage.');
   } else {
-    console.error('Usage : backup [dossier] | verify <fichier> | restore <fichier> --yes | keygen');
+    console.error('Usage : backup [dossier] | verify <fichier> | restore <fichier> --yes [--allow-missing] | keygen');
     process.exit(1);
   }
 }

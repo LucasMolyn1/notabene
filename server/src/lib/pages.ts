@@ -1,6 +1,7 @@
 // Accès aux pages : arborescence, versions, corbeille, recherche plein texte.
 // Toutes les requêtes sont préparées ; les contrôles d'accès se font dans les routes.
 import type { DB } from '../db.js';
+import type { AttachmentCloner } from './attachments.js';
 import { type DocNode, docText, emptyDoc, sanitizeDoc } from './content.js';
 import { copyBaseData } from './bases.js';
 import { HttpError, newId } from './http.js';
@@ -128,7 +129,8 @@ export interface CreatePageInput {
   kind?: 'doc' | 'base';
 }
 
-export function createPage(db: DB, input: CreatePageInput, userId: string | null) {
+// `cloner` : copie les pièces jointes citées par le contenu et les rattache à la nouvelle page (copie, duplication, modèle).
+export function createPage(db: DB, input: CreatePageInput, userId: string | null, cloner?: AttachmentCloner) {
   return db.transaction(() => {
     const parentId = input.parentId ?? null;
     assertParent(db, input.spaceId, parentId);
@@ -147,6 +149,11 @@ export function createPage(db: DB, input: CreatePageInput, userId: string | null
       `INSERT INTO pages (id, space_id, parent_id, position, title, icon, content, text, created_at, created_by, updated_at, updated_by, kind)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(id, input.spaceId, parentId, position, input.title ?? '', input.icon ?? '', JSON.stringify(doc), docText(doc), now, userId, now, userId, input.kind ?? 'doc');
+    if (cloner) {
+      // La page doit exister avant ses pièces jointes (clé étrangère) : le contenu réécrit est enregistré ensuite.
+      const copied = cloner.clone(doc, { pageId: id });
+      if (JSON.stringify(copied) !== JSON.stringify(doc)) db.prepare('UPDATE pages SET content = ? WHERE id = ?').run(JSON.stringify(copied), id);
+    }
     const row = getPageRow(db, id)!;
     recordVersion(db, row, userId, true);
     return row;
@@ -161,7 +168,9 @@ export interface UpdatePageInput {
   baseVersion?: number;
 }
 
-export function updatePage(db: DB, id: string, input: UpdatePageInput, userId: string | null) {
+// `cloner` : une pièce jointe d'une autre page (ou d'un modèle) citée par le contenu est copiée dans cette page si l'auteur peut la
+// lire, sinon la citation est retirée. La page ne dépend ainsi jamais des fichiers d'une autre page.
+export function updatePage(db: DB, id: string, input: UpdatePageInput, userId: string | null, cloner?: AttachmentCloner) {
   return db.transaction(() => {
     const current = getPageRow(db, id);
     if (!current || current.deleted_at) throw new HttpError(404, 'Page introuvable');
@@ -179,7 +188,8 @@ export function updatePage(db: DB, id: string, input: UpdatePageInput, userId: s
     if (input.icon !== undefined) next.icon = input.icon;
     if (input.fullWidth !== undefined) next.full_width = input.fullWidth ? 1 : 0;
     if (input.content !== undefined) {
-      const doc = sanitizeDoc(input.content);
+      let doc = sanitizeDoc(input.content);
+      if (cloner) doc = cloner.clone(doc, { pageId: id }, { dropUnreadable: true });
       next.content = JSON.stringify(doc);
       next.text = docText(doc);
     }
@@ -218,7 +228,7 @@ export function movePage(db: DB, id: string, input: { parentId: string | null; i
   })();
 }
 
-export function duplicatePage(db: DB, id: string, userId: string | null) {
+export function duplicatePage(db: DB, id: string, userId: string | null, cloner?: AttachmentCloner) {
   const src = getPageRow(db, id);
   if (!src || src.deleted_at) throw new HttpError(404, 'Page introuvable');
   return db.transaction(() => {
@@ -230,7 +240,7 @@ export function duplicatePage(db: DB, id: string, userId: string | null) {
       content: JSON.parse(src.content),
       afterId: id,
       kind: src.kind,
-    }, userId);
+    }, userId, cloner);
     if (src.kind === 'base') copyBaseData(db, id, copy.id, userId);
     // La copie reste aussi restreinte que la source : sinon dupliquer une page cachée la rendrait visible à tout le parent.
     db.prepare('INSERT INTO page_acl (page_id, user_id, level) SELECT ?, user_id, level FROM page_acl WHERE page_id = ?').run(copy.id, id);

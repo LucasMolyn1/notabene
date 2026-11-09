@@ -2,6 +2,7 @@
 // Principe : une configuration dangereuse empêche le serveur de démarrer.
 import { isIP } from 'node:net';
 import { z } from 'zod';
+import { auditFamily } from './lib/audit-events.js';
 import { normalizeEmbedHost, sameSiteAsSelf, selfHost } from './lib/embed.js';
 
 const bool = (def: 'true' | 'false') =>
@@ -67,6 +68,12 @@ const schema = z
     // Fige la configuration des fournisseurs et de l'intégration : seules les variables d'environnement comptent,
     // les réglages saisis dans l'interface sont ignorés (et non modifiables).
     CONFIG_LOCKED: bool('false'),
+    // Provisionnement SCIM 2.0 (désactivé par défaut) : valeurs de départ, remplaçables depuis l'interface sauf avec CONFIG_LOCKED.
+    // Le rôle attribué aux comptes créés par SCIM n'est jamais « admin ». Voir docs/SCIM.md.
+    SCIM_ENABLED: bool('false'),
+    SCIM_DEFAULT_ROLE: z.enum(['reader', 'editor']).default('reader'),
+    // Requêtes SCIM par minute et par adresse IP (le fournisseur synchronise compte par compte).
+    SCIM_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(100_000).default(600),
 
     // Clé maîtresse (32 octets en base64) : chiffre les secrets stockés en base (clé LLM…).
     ENCRYPTION_KEY: z.string().refine((v) => Buffer.from(v, 'base64').length === 32, {
@@ -93,7 +100,16 @@ const schema = z
     NOTIFICATION_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(90),
     AUDIT_IP_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(90),
     AUDIT_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(365),
+    // Conversations du chat IA sans activité depuis ce nombre de jours : supprimées (pas de désactivation possible).
+    AI_CHAT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
     SESSION_IDLE_MINUTES: z.coerce.number().min(5).max(24 * 60).default(120),
+    // Journal d'audit : une ligne JSON par évènement sur la sortie standard (collecteurs de journaux), voir docs/AUDIT.md.
+    AUDIT_STDOUT: bool('false'),
+    // Envoi du journal d'audit vers un SIEM (webhook signé). Valeurs de départ, remplaçables depuis l'interface (section « siem »).
+    SIEM_URL: optionalUrl,
+    SIEM_SECRET: z.string().min(16, 'au moins 16 caractères').max(4000).optional(),
+    // Familles d'actions à envoyer (ex. auth,settings) ; vide : toutes.
+    SIEM_ACTIONS: csv('').pipe(z.array(auditFamily).max(50)),
     // Documentation interactive de l'API : auth (connectés seulement, défaut), public, off.
     API_DOCS: z.enum(['auth', 'public', 'off']).default('auth'),
 
@@ -154,6 +170,27 @@ const schema = z
     // Hôtes dont le contenu peut être intégré dans une page (iframe). Vide : aucune intégration (par défaut).
     CONTENT_EMBED_HOSTS: csv(''),
     SEED_DEMO: bool('true'),
+    // Pièces jointes : taille maximale d'un fichier et volume total de l'instance, en mégaoctets.
+    ATTACHMENT_MAX_MB: z.coerce.number().int().min(1).max(1024).default(25),
+    ATTACHMENTS_TOTAL_MB: z.coerce.number().int().min(1).max(10_485_760).default(5120),
+    // Volume de pièces jointes envoyées par une même personne (Mo), et silence maximal pendant un envoi (secondes).
+    ATTACHMENT_USER_MB: z.coerce.number().int().min(1).max(10_485_760).default(1024),
+    ATTACHMENT_UPLOAD_IDLE_SECONDS: z.coerce.number().int().min(1).max(600).default(30),
+    ATTACHMENT_INDEX: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+    // Volume de pièces jointes copiées par une seule opération (copie, duplication, modèle), en Mo : la copie bloque le serveur.
+    ATTACHMENT_COPY_MAX_MB: z.coerce.number().int().min(1).max(1024).default(100),
+    // Import d'archives ZIP (Notion) : taille de l'archive envoyée (Mo, gardée en mémoire), volume décompressé total (Mo),
+    // nombre d'entrées, et taux de compression maximal d'une entrée de plus de 1 Mio (au-delà : archive refusée, bombe ZIP).
+    IMPORT_ZIP_MAX_MB: z.coerce.number().int().min(1).max(2048).default(200),
+    IMPORT_ZIP_UNCOMPRESSED_MB: z.coerce.number().int().min(1).max(20_480).default(1024),
+    IMPORT_ZIP_MAX_ENTRIES: z.coerce.number().int().min(1).max(100_000).default(10_000),
+    IMPORT_ZIP_MAX_RATIO: z.coerce.number().int().min(2).max(10_000).default(100),
+    DOC_IMPORT_MAX_MB: z.coerce.number().int().min(1).max(200).default(30),
+    DOC_IMPORT_TIMEOUT_SECONDS: z.coerce.number().int().min(5).max(300).default(30),
+    DOC_IMPORT_MAX_PAGES: z.coerce.number().int().min(1).max(5000).default(500),
+    // Export ZIP d'une page et de ses sous-pages ou d'un espace : nombre de pages et volume total (Mo) au plus.
+    EXPORT_MAX_PAGES: z.coerce.number().int().min(1).max(100_000).default(5000),
+    EXPORT_MAX_MB: z.coerce.number().int().min(1).max(4000).default(2048),
   })
   .superRefine((c, ctx) => {
     if (c.DEV_LOGIN && c.NODE_ENV === 'production') {

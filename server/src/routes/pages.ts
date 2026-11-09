@@ -5,7 +5,8 @@ import { can, guard, requireAuth } from '../auth/context.js';
 import { mentionIds } from '../lib/content.js';
 import { copyTree } from '../lib/page-copy.js';
 import { readersAmong } from '../lib/mentions.js';
-import { loadReadablePage, loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
+import { clonerFor, loadReadablePage, loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
+import type { AttachmentCloner } from '../lib/attachments.js';
 import { assertMoveKeepsRestriction, canReadPage, canWritePage, filterReadable, governingPage } from '../lib/page-acl.js';
 import { audit } from '../lib/audit.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
@@ -44,11 +45,18 @@ export default async function pageRoutes(app: FastifyInstance) {
   // Une page modifiable doit d'abord être lisible (sinon 404).
   const writable = (req: FastifyRequest, id: string, opts?: { allowTrashed?: boolean }) => loadWritablePage(db, req, id, opts);
 
+  // Copie des pièces jointes : si la création échoue (transaction annulée), les fichiers déjà copiés sont effacés.
+  const withCloner = <T>(req: FastifyRequest, fn: (cloner: AttachmentCloner) => T): T => {
+    const cloner = clonerFor(db, app.config, req);
+    try { return fn(cloner); } catch (err) { cloner.rollback(); throw err; }
+  };
+
   app.post('/pages', { preHandler: guard('write'), schema: { tags, summary: 'Créer une page', body: createBody } }, async (req, reply) => {
     const body = req.body as z.output<typeof createBody>;
     requireSpaceRole(db, req, body.spaceId, 'edit'); // 404 si l'espace n'est pas visible, 403 en lecture seule
     if (body.parentId && !canWritePage(db, req.auth, body.parentId)) throw new HttpError(403, 'Accès en lecture seule sur la page parente');
-    const row = createPage(db, body, userId(req));
+    // Contenu venu d'un modèle ou d'une autre page : les pièces jointes citées (et lisibles) sont copiées dans la nouvelle page.
+    const row = withCloner(req, (cloner) => createPage(db, body, userId(req), cloner));
     bus.publish({ type: 'page.created', spaceId: row.space_id, pageId: row.id, version: row.version, by: by(req) });
     return reply.status(201).send(toPage(row));
   });
@@ -93,10 +101,15 @@ export default async function pageRoutes(app: FastifyInstance) {
     return toMeta(row);
   });
 
-  app.post('/pages/:id/duplicate', { preHandler: guard('write'), schema: { tags, summary: 'Dupliquer une page', params: idParams } }, async (req, reply) => {
+  // Débit limité : une duplication copie les fichiers de la page (de façon synchrone, plafonnée par opération).
+  app.post('/pages/:id/duplicate', {
+    preHandler: guard('write'),
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    schema: { tags, summary: 'Dupliquer une page', params: idParams },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string };
     writable(req, id);
-    const row = duplicatePage(db, id, userId(req));
+    const row = withCloner(req, (cloner) => duplicatePage(db, id, userId(req), cloner));
     bus.publish({ type: 'page.created', spaceId: row.space_id, pageId: row.id, by: by(req) });
     return reply.status(201).send(toMeta(row));
   });
@@ -112,8 +125,13 @@ export default async function pageRoutes(app: FastifyInstance) {
     const body = req.body as z.output<typeof copyBody>;
     requireSpaceRole(db, req, body.spaceId, 'edit');
     if (body.parentId && !canWritePage(db, req.auth, body.parentId)) throw new HttpError(403, 'Accès en lecture seule sur la page parente');
-    const result = copyTree(db, src.id, { spaceId: body.spaceId, parentId: body.parentId ?? null }, userId(req), (pid) => canReadPage(db, req.auth, pid));
-    audit(db, req, 'page.copy', src.id, { to: body.spaceId, pages: result.count, skipped: result.skipped });
+    let files = 0;
+    const result = withCloner(req, (cloner) => {
+      const r = copyTree(db, src.id, { spaceId: body.spaceId, parentId: body.parentId ?? null }, userId(req), (pid) => canReadPage(db, req.auth, pid), cloner);
+      files = cloner.copied;
+      return r;
+    });
+    audit(db, req, 'page.copy', src.id, { to: body.spaceId, pages: result.count, skipped: result.skipped, attachments: files });
     bus.publish({ type: 'space.changed', spaceId: body.spaceId, by: by(req) });
     return reply.status(201).send({ page: toMeta(result.root), count: result.count, skipped: result.skipped });
   });
@@ -197,7 +215,7 @@ export default async function pageRoutes(app: FastifyInstance) {
     const { id, versionId } = req.params as { id: string; versionId: number };
     writable(req, id);
     const v = getVersion(db, id, versionId);
-    const row: PageRow = updatePage(db, id, { title: v.title, content: v.content }, userId(req));
+    const row: PageRow = withCloner(req, (cloner) => updatePage(db, id, { title: v.title, content: v.content }, userId(req), cloner));
     bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: id, version: row.version, by: by(req) });
     return toMeta(row);
   });

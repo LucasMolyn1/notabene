@@ -13,3 +13,5 @@ client/public/plantuml/
 coverage/
 test-results/
 playwright-report/
+# GIF de démonstration : vidéos et GIF non versionnés sans accord
+tools/demo-gif/out/

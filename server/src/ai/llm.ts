@@ -15,10 +15,30 @@ export class LlmError extends Error {
   }
 }
 
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface Prompt {
   system: string;
   user: string;
   maxTokens?: number;
+  /** Tours précédents d'une conversation (du plus ancien au plus récent), envoyés avant `user`. */
+  history?: ChatTurn[];
+}
+
+// Messages envoyés au fournisseur : l'historique puis le message courant. La conversation commence toujours par la personne,
+// et deux tours consécutifs du même rôle (réponse précédente perdue) sont fusionnés : certains fournisseurs exigent l'alternance.
+export function promptMessages(prompt: Prompt): ChatTurn[] {
+  const out: ChatTurn[] = [];
+  for (const turn of [...(prompt.history ?? []), { role: 'user' as const, content: prompt.user }]) {
+    if (!out.length && turn.role !== 'user') continue;
+    const last = out[out.length - 1];
+    if (last && last.role === turn.role) last.content += `\n\n${turn.content}`;
+    else out.push({ role: turn.role, content: turn.content });
+  }
+  return out;
 }
 
 // Modèles Claude acceptant le repli serveur automatique en cas de refus.
@@ -39,7 +59,7 @@ async function* streamAnthropic(s: AiSettings, prompt: Prompt, signal: AbortSign
     model: s.model,
     max_tokens: prompt.maxTokens ?? 16_000,
     system: prompt.system,
-    messages: [{ role: 'user' as const, content: prompt.user }],
+    messages: promptMessages(prompt),
     ...(EFFORT_MODELS.test(s.model) ? { output_config: { effort: 'medium' as const } } : {}),
   };
 
@@ -63,9 +83,17 @@ async function* streamAnthropic(s: AiSettings, prompt: Prompt, signal: AbortSign
     if (err instanceof Anthropic.NotFoundError) throw new LlmError(`Modèle introuvable : ${s.model}`, 502);
     if (err instanceof Anthropic.RateLimitError) throw new LlmError('Limite de débit du fournisseur atteinte, réessayez plus tard', 503);
     if (err instanceof Anthropic.APIConnectionError) throw new LlmError('Fournisseur injoignable', 504);
-    if (err instanceof Anthropic.APIError) throw new LlmError(`Erreur du fournisseur (${err.status ?? 'inconnue'})`, 502);
+    if (err instanceof Anthropic.APIError) throw new LlmError(genericProviderMessage(err.status), 502);
     throw err;
   }
+}
+
+/** Message clair pour les statuts HTTP courants autres que 401, 404 et 429 (traités à part). */
+function genericProviderMessage(status: number | undefined): string {
+  if (status === 402) return 'Crédits insuffisants chez le fournisseur, ou modèle non inclus dans votre offre (erreur 402). Ajoutez des crédits ou choisissez un modèle gratuit.';
+  if (status === 400 || status === 422) return `Requête refusée par le fournisseur (erreur ${status}) : vérifiez le nom du modèle et l’URL de base.`;
+  if (status !== undefined && status >= 500) return `Le fournisseur est indisponible (erreur ${status}), réessayez plus tard.`;
+  return `Erreur du fournisseur (${status ?? 'inconnue'})`;
 }
 
 async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: AbortSignal): AsyncGenerator<string> {
@@ -81,7 +109,7 @@ async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: Ab
         model: s.model,
         stream: true,
         max_tokens: prompt.maxTokens ?? 4000,
-        messages: [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }],
+        messages: [{ role: 'system', content: prompt.system }, ...promptMessages(prompt)],
       }),
     }, s.allowPrivate) as unknown as Response;
   } catch {
@@ -91,7 +119,7 @@ async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: Ab
   if (res.status === 401 || res.status === 403) throw new LlmError('Clé d’API refusée par le fournisseur', 502);
   if (res.status === 404) throw new LlmError(`Modèle ou endpoint introuvable : ${s.model}`, 502);
   if (res.status === 429) throw new LlmError('Limite de débit du fournisseur atteinte, réessayez plus tard', 503);
-  if (!res.ok || !res.body) throw new LlmError(`Erreur du fournisseur (${res.status})`, 502);
+  if (!res.ok || !res.body) throw new LlmError(genericProviderMessage(res.status), 502);
 
   const decoder = new TextDecoder();
   let buffer = '';

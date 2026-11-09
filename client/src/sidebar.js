@@ -9,6 +9,8 @@ import { prefs, savePrefs, currentTheme } from './prefs.js';
 import { avatarEl } from './avatar.js';
 import { openMenu, pageIcon } from './ui.js';
 import * as A from './actions.js';
+import { openDocumentImport, openNotionImport } from './notion-import.js';
+import { openReviewList } from './verification.js';
 
 let dragId = null;
 
@@ -30,6 +32,10 @@ function spaceMenu(anchor, space) {
       label: s.name, icon: s.icon || 'folder', checked: s.id === space.id,
       onClick: () => { prefs.space = s.id; savePrefs(); A.go(`/s/${s.id}`); },
     })),
+    session.user && { sep: true },
+    session.user && { label: 'Exporter l’espace en ZIP', icon: 'download', onClick: () => A.openZipExport({ spaceId: space.id }) },
+    session.user && session.can('write') && store.canWriteIn(space.id) && { label: 'Importer depuis Notion', icon: 'upload', onClick: () => openNotionImport(space.id) },
+    session.user && session.can('write') && store.canWriteIn(space.id) && { label: 'Importer un document (Word, PDF)', icon: 'upload', onClick: () => openDocumentImport(space.id) },
     (admin || canCreatePersonal || store.canManage(space.id)) && { sep: true },
     canCreatePersonal && { label: 'Créer mon espace personnel', icon: 'home', onClick: () => A.createPersonalSpace() },
     admin && { label: 'Nouvel espace', icon: 'plus', onClick: () => A.spaceForm() },
@@ -50,6 +56,7 @@ function pageMenu(anchor, page) {
     { label: 'Copier le lien', icon: 'link', onClick: () => A.copyLink(page.id) },
     { label: 'Exporter en Markdown', icon: 'download', onClick: () => A.exportMarkdown(page.id) },
     { label: 'Exporter en PDF', icon: 'pdf', onClick: () => A.exportPDF(page.id) },
+    session.user && { label: 'Exporter en ZIP', icon: 'download', onClick: () => A.openZipExport({ pageId: page.id }) },
     others.length && { sep: true },
     ...others.map((s) => ({ label: `Déplacer vers ${s.name}`, icon: 'folder', onClick: () => A.moveToSpace(page.id, s.id) })),
     ...others.map((s) => ({ label: `Copier vers ${s.name}`, icon: 'copy', onClick: () => A.copyToSpace(page.id, s.id) })),
@@ -319,6 +326,7 @@ export function renderSidebar() {
       // Administrateur : une nouvelle version existe. Le lien mène aux nouveautés (et aux consignes de mise à jour).
       session.updateAvailable && h('a', { class: 'update-banner', href: '/settings/about' }, icon('sparkle', 16),
         h('span', null, h('strong', null, `Version ${session.update.latest.version} disponible`), h('small', null, 'Voir les nouveautés'))),
+      session.user && navBtn('verified', 'Pages à revoir', openReviewList),
       canWrite && navBtn('trash', 'Corbeille', A.openTrash),
       session.user && navBtn('settings', 'Paramètres', () => A.go('/settings'), { active: location.pathname.startsWith('/settings'), badge: newsPending(session.version) || session.updateAvailable || undefined }),
       accountBox()));
