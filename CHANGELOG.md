@@ -4,7 +4,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
-## [Non publié]
+## [3.14.1] - 2026-11-09
 
 ### Ajouté
 - **Blocs synchronisés** : un bloc « source » (menu `/`, « Bloc synchronisé ») se place dans une page ; ses copies (« Copie d'un bloc synchronisé », ou collage du lien copié) l'affichent en lecture seule dans d'autres pages, toujours à jour. Une copie ne stocke que l'identifiant du bloc, jamais son contenu : si la source est introuvable, supprimée ou illisible pour la personne, la copie affiche le même bloc neutre, sans titre ni indice de la page. `GET /api/v3/synced-blocks/:id` (même contrôle de lecture que la page source, 404 identique dans tous les cas). Aucune fuite par la recherche, l'IA, les notifications, les versions ni l'export des données ; les exports, la page partagée et le rendu pour moteurs de recherche ne résolvent une copie que si la source est lisible dans ce contexte. Identifiants réservés à vie (une page ne peut pas reprendre celui d'une autre), régénérés à la duplication, à la copie vers un espace, aux modèles et aux imports ; imbrication interdite, 20 blocs par page, 200 identifiants par page. En co-édition, un conflit d'identifiant ou un dépassement ne bloque jamais l'enregistrement. Migration v30.
@@ -15,6 +15,7 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 - **Paramètres** : le contenu des pages de paramètres occupe toute la largeur de l'écran (il était limité à 760 px).
 
 ### Corrigé
+- **Sélecteur d'icône d'un espace** : le menu d'icônes s'ouvrait derrière la boîte de dialogue « Paramètres de l'espace » (et restait inerte) ; tout menu ouvert depuis une boîte de dialogue s'y affiche maintenant. Le bouton d'icône a un nom accessible, et la case « Autoriser le partage public par lien » ne colle plus son explication.
 - **Notes de version tronquées** : chaque ligne de notes (écran « À propos », mise à jour disponible) était coupée à 600 caractères ; la limite passe à 4 000.
 
 ## [3.14.0] - 2026-11-09
