@@ -121,19 +121,18 @@ export default async function scimRoutes(app: FastifyInstance) {
 
   // 3. Jeton SCIM, avant la lecture du corps. Un échec est journalisé au plus une fois par minute et par adresse.
   const lastFailure = new Map<string, number>();
+  const rejectToken = (req: FastifyRequest): never => {
+    const now = Date.now();
+    if ((lastFailure.get(req.ip) ?? 0) < now - 60_000) {
+      if (lastFailure.size > 1000) lastFailure.clear();
+      lastFailure.set(req.ip, now);
+      audit(db, req, 'scim.auth.failed', null, { via: 'scim' });
+    }
+    throw new ScimError(401, null, 'Authentification requise : jeton SCIM invalide, expiré ou révoqué');
+  };
   app.addHook('preParsing', async (req, _reply, payload) => {
     const m = /^Bearer\s+(\S+)$/.exec(req.headers.authorization ?? '');
-    const client = m ? verifyScimToken(db, m[1]!) : null;
-    if (!client) {
-      const now = Date.now();
-      if ((lastFailure.get(req.ip) ?? 0) < now - 60_000) {
-        if (lastFailure.size > 1000) lastFailure.clear();
-        lastFailure.set(req.ip, now);
-        audit(db, req, 'scim.auth.failed', null, { via: 'scim' });
-      }
-      throw new ScimError(401, null, 'Authentification requise : jeton SCIM invalide, expiré ou révoqué');
-    }
-    clients.set(req, client);
+    clients.set(req, (m && verifyScimToken(db, m[1]!)) || rejectToken(req));
     return payload;
   });
 
