@@ -42,3 +42,16 @@ describe('largeur des blocs redimensionnés', () => {
   });
 });
 
+
+describe('liste de cases (texte coché non barré)', () => {
+  const list = (attrs: Record<string, unknown>) => ({ type: 'doc', content: [{ type: 'taskList', attrs, content: [{ type: 'taskItem', attrs: { checked: true }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Fait' }] }] }] }] });
+  it('conserve l’attribut booléen checklist', () => {
+    expect(sanitizeDoc(list({ checklist: true })).content?.[0]?.attrs).toEqual({ checklist: true });
+  });
+  it('ignore une valeur qui n’est pas un booléen et les attributs inconnus', () => {
+    expect(sanitizeDoc(list({ checklist: 'oui', onclick: 'x()' })).content?.[0]?.attrs ?? {}).toEqual({});
+  });
+  it('s’exporte comme une liste de tâches ordinaire', () => {
+    expect(toMarkdown('T', null, sanitizeDoc(list({ checklist: true })), () => null)).toContain('- [x] Fait');
+  });
+});
