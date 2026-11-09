@@ -172,7 +172,7 @@ export function eraseUser(db: DB, userId: string, closedBy: string | null = null
     db.prepare('DELETE FROM page_read_receipts WHERE user_id = ?').run(userId);
     db.prepare('UPDATE page_read_requests SET requested_by = NULL WHERE requested_by = ?').run(userId);
     // Le journal garde la trace des actions, sans la personne ni son adresse IP.
-    db.prepare('UPDATE audit_log SET user_id = NULL, ip = NULL WHERE user_id = ?').run(userId);
+    db.prepare('UPDATE audit_log SET user_id = NULL, ip = NULL, token_id = NULL, token_name = NULL WHERE user_id = ?').run(userId);
     // Les connexions sont journalisées avant que l'identité soit posée sur la requête : la personne n'y figure que comme cible.
     db.prepare('UPDATE audit_log SET target = NULL, meta = NULL, ip = NULL WHERE target IN (?, ?)').run(userId, u.sub);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);

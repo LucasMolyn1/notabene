@@ -27,7 +27,7 @@ Format stable, commun à la liste paginée, à l'export, au SIEM et à la sortie
 | `timestamp` | date ISO 8601 en UTC, à la milliseconde |
 | `action` | nom de l'action, par familles séparées par des points (`auth.login`, `settings.smtp`, `space.member.set`…) |
 | `outcome` | `failure` pour `auth.denied` et toute action terminée par `.failed`, sinon `success` |
-| `actor` | auteur (`id`, `name`, `name` à `null` si le compte a été effacé) ; `null` pour une action du système (purge, ligne de commande) |
+| `actor` | auteur (`id`, `name`, `name` à `null` si le compte a été effacé) ; `via` (`type: "token"`, `id`, `name`) quand l'action vient d'un jeton d'API : le compte reste celui du propriétaire du jeton, `via.name` est le nom donné au jeton (ajout compatible du schéma 1, absent pour une session navigateur) ; `null` pour une action du système (purge, ligne de commande) |
 | `target` | identifiant de l'objet visé (page, espace, compte, section de réglages…) ou `null` |
 | `ip` | adresse du client, ou `null` après `AUDIT_IP_RETENTION_DAYS` |
 | `meta` | détails techniques, ou `null` |
@@ -57,7 +57,7 @@ Réponse : `{ "items": [évènements], "nextCursor": "…" | null }`.
 `GET /admin/audit/export?format=csv|json` avec les mêmes filtres. Le fichier est produit en flux, par lots, du plus récent au plus ancien, plafonné à 100 000 lignes. En-têtes : `X-Export-Rows` (lignes exportées), `X-Export-Truncated` (`true` si le plafond est atteint : resserrez les dates). Dix exports au plus par tranche de dix minutes.
 
 - **JSON** : un tableau d'évènements au format ci-dessus.
-- **CSV** (UTF-8 avec BOM, séparateur virgule, toutes les cellules entre guillemets) : colonnes `id, timestamp, action, outcome, actor_id, actor_name, target, ip, meta` (`meta` en JSON). Une cellule qui commence par `=`, `+`, `-`, `@`, une tabulation ou un retour chariot est préfixée d'une apostrophe, pour qu'un tableur ne l'exécute pas comme une formule.
+- **CSV** (UTF-8 avec BOM, séparateur virgule, toutes les cellules entre guillemets) : colonnes `id, timestamp, action, outcome, actor_id, actor_name, target, ip, meta, via_token` (`meta` en JSON ; `via_token` : nom du jeton d'API utilisé, vide pour une session navigateur). Une cellule qui commence par `=`, `+`, `-`, `@`, une tabulation ou un retour chariot est préfixée d'une apostrophe, pour qu'un tableur ne l'exécute pas comme une formule.
 
 L'export est lui-même journalisé (`audit.export`, avec le format, le nombre de lignes et les noms des filtres employés) et ne figure pas dans son propre résultat. Un fichier exporté contient des adresses IP : il sort du périmètre des purges automatiques.
 
