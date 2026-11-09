@@ -4,7 +4,7 @@
 // d'ancre de commentaire.
 import type { DB } from '../db.js';
 import type { DocNode } from './content.js';
-import { entriesOf, governingPage } from './page-acl.js';
+import { canReadPage, entriesOf, governingPage } from './page-acl.js';
 
 const KEY = 'public_sharing';
 export const MAX_SHARED_DESCENDANTS = 500;
@@ -91,18 +91,39 @@ export function sharedDescendants(db: DB, rootId: string): { id: string; parentI
  * dans le partage devient un texte neutre (aucun titre), les ancres de commentaires disparaissent.
  */
 export function publicDoc(node: DocNode, shared: Set<string>): DocNode {
-  if (node.type === 'mention') return { type: 'text', text: '@personne' };
+  return publicNodes(node, shared)[0] ?? { type: 'doc', content: [] };
+}
+
+// Un bloc synchronisé se fond dans la page publique : la source et une copie résolue (expandSyncedCopies) deviennent leurs blocs,
+// sans identifiant de bloc ; une copie non résolue devient un bloc neutre.
+function publicNodes(node: DocNode, shared: Set<string>): DocNode[] {
+  if (node.type === 'mention') return [{ type: 'text', text: '@personne' }];
   if (node.type === 'pageLink') {
     const id = String(node.attrs?.id ?? '');
-    return shared.has(id) ? node : { type: 'text', text: 'page non partagée' };
+    return [shared.has(id) ? node : { type: 'text', text: 'page non partagée' }];
   }
   // Une base n'est jamais publique : le bloc disparaît, avec l'identifiant qu'il porte.
-  if (node.type === 'baseBlock') return { type: 'paragraph', content: [{ type: 'text', text: 'base non partagée' }] };
+  if (node.type === 'baseBlock') return [{ type: 'paragraph', content: [{ type: 'text', text: 'base non partagée' }] }];
+  if (node.type === 'syncedCopy' && !node.content?.length) return [{ type: 'paragraph', content: [{ type: 'text', text: 'Contenu indisponible' }] }];
+  if (node.type === 'syncedSource' || node.type === 'syncedCopy') return (node.content ?? []).flatMap((c) => publicNodes(c, shared));
   const out: DocNode = { ...node };
   if (node.marks) {
     const marks = node.marks.filter((m) => m.type !== 'commentAnchor');
     if (marks.length) out.marks = marks; else delete out.marks;
   }
-  if (node.content) out.content = node.content.map((c) => publicDoc(c, shared));
-  return out;
+  if (node.content) out.content = node.content.flatMap((c) => publicNodes(c, shared));
+  return [out];
+}
+
+/**
+ * Lecture d'une source synchronisée par un visiteur anonyme : page hors corbeille, dans un espace public et non restreinte
+ * (comme /pages/:id sans compte), ou page publiée par le partage consulté (`shared`).
+ */
+export function anonymousCanRead(db: DB, pageId: string, shared: Set<string> = new Set()): boolean {
+  const page = db.prepare(
+    `SELECT p.deleted_at, p.kind, s.visibility FROM pages p JOIN spaces s ON s.id = p.space_id WHERE p.id = ?`,
+  ).get(pageId) as { deleted_at: number | null; kind: string; visibility: string } | undefined;
+  const open = canReadPage(db, null, pageId);
+  if (!page || page.deleted_at || page.kind !== 'doc') return false;
+  return shared.has(pageId) || (page.visibility === 'public' && open);
 }

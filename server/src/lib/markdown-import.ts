@@ -352,7 +352,7 @@ export function importMarkdown(db: DB, input: { spaceId: string; files: ImportFi
       if (stats.images > imagesBefore) notes.add(`${stats.images - imagesBefore} image(s) par chemin non importée(s)`);
       if (p.body.trim() && (doc.content ?? []).every((n) => n.type === 'paragraph' && !n.content?.length)) notes.add('page vide après conversion : contenu non reconnu');
       if (notes.size) stats.notes!.push({ path: p.path, notes: [...notes] });
-      updatePage(db, id, { content: doc, title: p.meta.title || undefined }, input.userId, input.cloner);
+      updatePage(db, id, { content: doc, title: p.meta.title || undefined }, input.userId, input.cloner, { freshSyncedIds: true });
     }
   })();
   return stats;

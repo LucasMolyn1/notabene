@@ -404,6 +404,22 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
 .diff-chg { border-left-color: var(--border-strong); }
 .diff-w-del { background: color-mix(in srgb, #e5484d 26%, transparent); text-decoration: line-through; }
 .diff-w-add { background: color-mix(in srgb, #30a46c 28%, transparent); text-decoration: none; }
+/* Blocs synchronisés : source (bordure pleine, en-tête discret) et copie en lecture seule (bordure pointillée) */
+.synced-source, .synced-copy { margin: 10px 0; border-radius: 8px; min-width: 0; }
+.synced-source { border: 1px solid var(--border-strong); }
+.synced-source:focus-within { border-color: var(--accent); }
+.synced-source.ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 2px; }
+.synced-copy { border: 1px dashed var(--border-strong); background: var(--bg-soft); }
+.synced-copy.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+.synced-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; padding: 4px 6px 4px 10px; font-size: 12.5px; color: var(--text-2); user-select: none; }
+.synced-label { display: inline-flex; align-items: center; gap: 4px; }
+.synced-action { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--text-2); font: inherit; cursor: pointer; }
+.synced-action:hover, .synced-action:focus-visible { background: var(--hover); color: var(--text); border-color: var(--border); }
+.synced-body { min-width: 0; padding: 0 12px 4px; overflow-wrap: anywhere; }
+.synced-body > :first-child, .synced-prose > :first-child { margin-top: 0; }
+.synced-prose { outline: none; }
+.synced-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.synced-note p { margin: 0; }
 /* Blocs : dépliable, colonnes, formule ; couleurs ; alignement */
 .details { display: grid; grid-template-columns: 28px 1fr; align-items: start; margin: 8px 0; padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px; }
 .details-toggle { display: grid; place-items: center; width: 28px; height: 28px; margin-top: 1px; border-radius: 6px; color: var(--text-2); }

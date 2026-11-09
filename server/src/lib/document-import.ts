@@ -154,7 +154,7 @@ export async function importDocument(db: DB, input: DocumentImportInput): Promis
     };
     try {
       const raw = markdownToDoc(out.markdown, { resolveLink: () => null, resolveImage, from: input.filename, stats, notes });
-      updatePage(db, page.id, { content: sanitizeDoc(mergeText(raw)) }, input.userId, input.cloner);
+      updatePage(db, page.id, { content: sanitizeDoc(mergeText(raw)) }, input.userId, input.cloner, { freshSyncedIds: true });
     } catch (err) {
       if (!(err instanceof HttpError)) throw err;
       notes.add(`contenu non importé (${err.message}) : page créée vide`);

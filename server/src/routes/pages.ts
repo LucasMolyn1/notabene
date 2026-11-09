@@ -11,6 +11,7 @@ import { assertMoveKeepsRestriction, canReadPage, canWritePage, filterReadable, 
 import { audit } from '../lib/audit.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { toMarkdown } from '../lib/markdown.js';
+import { expandSyncedCopies } from '../lib/synced-blocks.js';
 import {
   createPage, destroyPage, duplicatePage, getPageRow, getVersion, listPages, listVersions,
   movePage, type PageRow, restorePage, toMeta, toPage, trashPage, updatePage,
@@ -73,7 +74,8 @@ export default async function pageRoutes(app: FastifyInstance) {
       return p && visible.has(p.space_id) && !p.deleted_at && canReadPage(db, req.auth, id) ? p.title || 'Sans titre' : null;
     };
     // Les personnes mentionnées ne sont nommées qu'à une personne connectée, et seulement si elles peuvent lire la page.
-    const doc = JSON.parse(row.content);
+    // Copies synchronisées : contenu de la source seulement si l'appelant peut la lire (mêmes règles que /pages/:id).
+    const doc = expandSyncedCopies(db, JSON.parse(row.content), (pid) => { try { loadReadablePage(db, req, pid); return true; } catch { return false; } });
     const names = can(req.auth, 'read') ? new Map(readersAmong(db, row.id, mentionIds(doc), 200).map((u) => [u.id, u.name])) : new Map<string, string>();
     return reply.type('text/markdown; charset=utf-8').send(toMarkdown(row.title, row.icon, doc, titleOf, (id) => names.get(id) ?? null));
   });

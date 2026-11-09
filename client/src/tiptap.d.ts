@@ -16,5 +16,9 @@ declare module '@tiptap/core' {
       removeCommentAnchor: (id: string) => ReturnType;
       setCommentStates: (live: string[], resolved: string[]) => ReturnType;
     };
+    syncedBlocks: {
+      insertSyncedSource: () => ReturnType;
+      insertSyncedCopy: (blockId: string) => ReturnType;
+    };
   }
 }

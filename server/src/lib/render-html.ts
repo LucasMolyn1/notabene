@@ -44,6 +44,9 @@ export function renderHtml(doc: DocNode, titleOf: TitleOf, mentionName: MentionN
       case 'math': return `<pre><code>${escapeHtml(String(a.code ?? ''))}</code></pre>`;
       case 'details': { const [summary, body] = node.content ?? []; return `<details><summary>${inline(summary?.content)}</summary>${(body?.content ?? []).map(block).join('')}</details>`; }
       case 'columns': return `<div>${(node.content ?? []).map((c) => `<div>${children(c)}</div>`).join('')}</div>`;
+      // Bloc synchronisé : copie rendue seulement si son contenu a été résolu pour ce lecteur (expandSyncedCopies), sinon bloc neutre.
+      case 'syncedSource': return `<div>${children(node)}</div>`;
+      case 'syncedCopy': return node.content?.length ? `<div>${children(node)}</div>` : '<p>Bloc synchronisé non disponible</p>';
       case 'mermaid': case 'plantuml': return `<pre><code>${escapeHtml(String(a.code ?? ''))}</code></pre>`;
       case 'horizontalRule': return '<hr>';
       // Pièce jointe : lien de téléchargement seulement (aucun lecteur intégré) ; le fichier n'est servi qu'à qui peut lire sa page.

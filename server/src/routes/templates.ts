@@ -10,6 +10,7 @@ import { BUILTIN_TEMPLATES, builtinTemplate } from '../lib/builtin-templates.js'
 import { sanitizeDoc } from '../lib/content.js';
 import { HttpError, idSchema, newId } from '../lib/http.js';
 import { governingPage } from '../lib/page-acl.js';
+import { freshSources } from '../lib/synced-blocks.js';
 
 const MAX_PER_SPACE = 50;
 const idParams = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'identifiant invalide') });
@@ -80,7 +81,9 @@ export default async function templateRoutes(app: FastifyInstance) {
     if (n >= MAX_PER_SPACE) throw new HttpError(400, `Un espace compte au plus ${MAX_PER_SPACE} modèles`);
     const id = newId();
     const now = Date.now();
-    const doc = sanitizeDoc(JSON.parse(page.content));
+    // Sources synchronisées : identifiants neufs (le modèle n'en réserve aucun ; une page créée depuis le modèle en reçoit encore
+    // d'autres). Les copies gardent leur identifiant : leur contenu n'est lu qu'à l'affichage, avec les droits du lecteur.
+    const doc = freshSources(sanitizeDoc(JSON.parse(page.content)));
     // Les pièces jointes de la page sont copiées et rattachées au modèle : il ne dépend plus de la page (supprimée, restreinte ensuite).
     const cloner = clonerFor(db, app.config, req);
     try {

@@ -143,6 +143,8 @@ async function boot() {
     if (type === 'page.verification') { window.dispatchEvent(new CustomEvent('notabene:verification', { detail: { pageId: evt.pageId } })); return; }
     // Demande d'accusé de lecture posée ou retirée (jamais un accusé) : le bandeau relit son état.
     if (type === 'page.read-receipt') { window.dispatchEvent(new CustomEvent('notabene:read-receipt', { detail: { pageId: evt.pageId } })); return; }
+    // Les copies de blocs synchronisés se relisent (au plus toutes les 30 s), sans savoir quelle page porte leur source.
+    if (type === 'page.updated') window.dispatchEvent(new CustomEvent('notabene:page-updated'));
     // Nos propres sauvegardes reviennent aussi : inutile de recharger si la version est déjà connue.
     if (type === 'page.updated' && (store.page(evt.pageId)?.version ?? 0) >= (evt.version ?? 0)) return;
     store.scheduleRefresh(evt);

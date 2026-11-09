@@ -65,6 +65,10 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
         return `<details>\n<summary>${inline(summary?.content).replace(/[<>]/g, '')}</summary>\n\n${blocks(body?.content)}\n\n</details>`;
       }
       case 'columns': return blocks((node.content ?? []).flatMap((c) => c.content ?? []));
+      // Bloc synchronisé : la source se rend comme son contenu ; une copie seulement si son contenu a été résolu pour ce lecteur
+      // (lib/synced-blocks.ts, expandSyncedCopies), sinon un bloc neutre sans rien de la source.
+      case 'syncedSource': return blocks(node.content);
+      case 'syncedCopy': return node.content?.length ? blocks(node.content) : '_[Bloc synchronisé non disponible]_';
       case 'excalidraw': return '_[Dessin Excalidraw]_';
       case 'drawio': return '_[Diagramme Draw.io]_';
       case 'horizontalRule': return '---';
