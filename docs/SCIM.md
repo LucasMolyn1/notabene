@@ -55,6 +55,8 @@ Variables d'environnement (valeurs de départ, seules prises en compte avec `CON
 
 Exemple : Notabene sur `https://wiki.example.com`.
 
+
+Statut : la conformité est vérifiée par les tests automatiques de Notabene, mais le provisionnement n'a pas été essayé contre une instance réelle d'Authentik ni d'un autre fournisseur. Les réglages ci-dessous viennent de la documentation du fournisseur : essayez sur un compte de test avant de généraliser.
 1. Dans Notabene, activer SCIM et créer un jeton (rôle conseillé : lecteur).
 2. Dans Authentik, **Applications → Providers → Create → SCIM Provider** :
 
