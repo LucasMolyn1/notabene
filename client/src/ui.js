@@ -35,7 +35,9 @@ export function closePopover() {
 export function openPopover(anchor, content, { align = 'left', className = '' } = {}) {
   closePopover();
   const el = h('div', { class: `popover ${className}` }, content);
-  document.body.append(el);
+  // Dans une boîte de dialogue ouverte (couche supérieure du navigateur), le menu doit s'y trouver : placé dans <body>, il
+  // s'afficherait derrière la boîte et resterait inerte.
+  (anchor.closest('dialog[open]') ?? document.body).append(el);
   const r = anchor.getBoundingClientRect();
   const w = el.offsetWidth;
   const ht = el.offsetHeight;
