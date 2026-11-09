@@ -24,7 +24,8 @@
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "audit:deps": "npm audit --omit=dev --audit-level=high",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "demo:gif": "npm run build && tsx tools/demo-gif/demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
