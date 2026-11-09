@@ -15,13 +15,14 @@ export interface AuditEvent {
   timestamp: string;
   action: string;
   outcome: 'success' | 'failure';
-  actor: { id: string; name: string | null } | null;
+  // `via` : jeton d'API utilisé quand l'action vient d'un outil (absent pour une session navigateur). Ajout compatible du schéma 1.
+  actor: { id: string; name: string | null; via?: { type: 'token'; id: string; name: string | null } } | null;
   target: string | null;
   ip: string | null;
   meta: Record<string, unknown> | null;
 }
 
-export interface AuditRow { id: number; at: number; user_id: string | null; user_name: string | null; action: string; target: string | null; ip: string | null; meta: string | null }
+export interface AuditRow { id: number; at: number; user_id: string | null; user_name: string | null; action: string; target: string | null; ip: string | null; meta: string | null; token_id?: string | null; token_name?: string | null }
 
 // Échec : refus d'accès et actions terminées par `.failed` (connexion, ressaisie, test de configuration…).
 export const outcomeOf = (action: string): AuditEvent['outcome'] => (action === 'auth.denied' || action.endsWith('.failed') ? 'failure' : 'success');
@@ -66,7 +67,7 @@ export const toAuditEvent = (r: AuditRow): AuditEvent => ({
   timestamp: new Date(r.at).toISOString(),
   action: r.action,
   outcome: outcomeOf(r.action),
-  actor: r.user_id ? { id: r.user_id, name: r.user_name ?? null } : null,
+  actor: r.user_id ? { id: r.user_id, name: r.user_name ?? null, ...(r.token_id ? { via: { type: 'token' as const, id: r.token_id, name: r.token_name ?? null } } : {}) } : null,
   target: r.target,
   ip: r.ip,
   meta: sanitizeMeta(r.meta),
@@ -121,7 +122,7 @@ export function auditWhere(f: AuditFilters): { sql: string; args: unknown[] } {
   return { sql: parts.length ? parts.join(' AND ') : '1', args };
 }
 
-const SELECT = `SELECT a.id, a.at, a.user_id, u.name AS user_name, a.action, a.target, a.ip, a.meta FROM audit_log a LEFT JOIN users u ON u.id = a.user_id`;
+const SELECT = `SELECT a.id, a.at, a.user_id, u.name AS user_name, a.action, a.target, a.ip, a.meta, a.token_id, a.token_name FROM audit_log a LEFT JOIN users u ON u.id = a.user_id`;
 
 // Lignes plus anciennes que `beforeId` (exclu), de la plus récente à la plus ancienne.
 export function auditPage(db: DB, f: AuditFilters, beforeId: number | null, limit: number): AuditRow[] {
@@ -159,14 +160,14 @@ export function eventJson(e: AuditEvent): string {
   if (Buffer.byteLength(json) <= MAX_EVENT_BYTES) return json;
   return JSON.stringify({
     ...e, action: clip(e.action)!, target: clip(e.target), ip: clip(e.ip, 64),
-    actor: e.actor ? { id: clip(e.actor.id)!, name: clip(e.actor.name) } : null, meta: { truncated: true },
+    actor: e.actor ? { id: clip(e.actor.id)!, name: clip(e.actor.name), ...(e.actor.via ? { via: { type: 'token' as const, id: clip(e.actor.via.id)!, name: clip(e.actor.via.name) } } : {}) } : null, meta: { truncated: true },
   });
 }
 
 export const auditMaxId = (db: DB) => (db.prepare('SELECT COALESCE(MAX(id), 0) AS n FROM audit_log').get() as { n: number }).n;
 
 // ---- Export CSV ----------------------------------------------------------------------------------
-export const CSV_COLUMNS = ['id', 'timestamp', 'action', 'outcome', 'actor_id', 'actor_name', 'target', 'ip', 'meta'] as const;
+export const CSV_COLUMNS = ['id', 'timestamp', 'action', 'outcome', 'actor_id', 'actor_name', 'target', 'ip', 'meta', 'via_token'] as const;
 
 // Cellule CSV (RFC 4180, toujours entre guillemets). Une valeur qui commence par = + - @, une tabulation ou un retour
 // chariot est préfixée d'une apostrophe : un tableur ne l'exécute pas comme une formule (injection CSV).
@@ -178,4 +179,4 @@ export function csvCell(v: unknown): string {
 }
 
 export const csvLine = (e: AuditEvent) =>
-  [e.id, e.timestamp, e.action, e.outcome, e.actor?.id, e.actor?.name, e.target, e.ip, e.meta ? JSON.stringify(e.meta) : null].map(csvCell).join(',');
+  [e.id, e.timestamp, e.action, e.outcome, e.actor?.id, e.actor?.name, e.target, e.ip, e.meta ? JSON.stringify(e.meta) : null, e.actor?.via?.name].map(csvCell).join(',');

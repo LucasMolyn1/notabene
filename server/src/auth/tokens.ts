@@ -34,9 +34,9 @@ export function createApiToken(db: DB, userId: string, input: { name: string; sc
 export function verifyApiToken(db: DB, token: string): Auth | null {
   if (!TOKEN_PATTERN.test(token)) return null;
   const row = db.prepare(
-    `SELECT t.id, t.scopes, t.expires_at, t.revoked_at, t.last_used_at, u.id AS user_id, u.name, u.email, u.role
+    `SELECT t.id, t.name AS token_name, t.scopes, t.expires_at, t.revoked_at, t.last_used_at, u.id AS user_id, u.name, u.email, u.role
      FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ? AND u.disabled = 0`,
-  ).get(sha256(token)) as (TokenRow & { email: string | null; role: Role }) | undefined;
+  ).get(sha256(token)) as (TokenRow & { email: string | null; role: Role; token_name: string }) | undefined;
   const now = Date.now();
   if (!row || row.revoked_at || row.expires_at <= now) return null;
   if (!row.last_used_at || now - row.last_used_at > 60_000) {
@@ -48,6 +48,7 @@ export function verifyApiToken(db: DB, token: string): Auth | null {
     via: 'token',
     scopes: new Set(scopes),
     tokenId: row.id,
+    tokenName: row.token_name,
   };
 }
 

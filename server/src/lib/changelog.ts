@@ -10,7 +10,9 @@ export interface Release {
   sections: { title: string; items: string[] }[];
 }
 
-const plain = (s: string) => s.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[`*]/g, '').trim().slice(0, 600);
+// Une ligne de notes de version reste lisible en entier (certaines dépassent 600 caractères) ; le plafond ne sert qu'à borner la réponse.
+const MAX_ITEM = 4000;
+const plain = (s: string) => s.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[`*]/g, '').trim().slice(0, MAX_ITEM);
 
 export function parseChangelog(md: string): Release[] {
   const releases: Release[] = [];
