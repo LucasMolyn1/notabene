@@ -665,6 +665,8 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
   content: ''; width: 9px; height: 5px; border: 2px solid #fff; border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px);
 }
 .prose li[data-checked='true'] > div { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--text-3); }
+/* Liste de cases : une case cochée ne barre ni n'estompe le texte. */
+.prose ul[data-type='taskList'][data-checklist='true'] li[data-checked='true'] > div { color: inherit; text-decoration: none; }
 
 .prose .tableWrapper { overflow-x: auto; margin: 1.2em 0; }
 .prose table { border-collapse: collapse; width: 100%; font-size: 14.5px; table-layout: fixed; }

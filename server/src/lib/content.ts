@@ -70,7 +70,8 @@ const NODES: Record<string, AttrRules> = {
   bulletList: {},
   orderedList: { start: int(0, 1_000_000), type: nullable(oneOf('1', 'a', 'A', 'i', 'I')) },
   listItem: {},
-  taskList: {},
+  // `checklist` : liste de cases dont le texte coché n'est pas barré (affichage seulement, aucune autre incidence).
+  taskList: { checklist: bool },
   taskItem: { checked: bool },
   codeBlock: { language: nullable((v) => (typeof v === 'string' && /^[\w+#.-]{0,32}$/.test(v) ? v : undefined)) },
   horizontalRule: {},

@@ -40,7 +40,19 @@ function baseExtensions({ collab = false, shareToken = null } = {}) {
     DetailsContent,
     Columns,
     Column,
-    TaskList,
+    TaskList.extend({
+      // Liste de cases : le texte des éléments cochés n'est pas barré (attribut d'affichage, enregistré dans la page).
+      addAttributes() {
+        return {
+          ...this.parent?.(),
+          checklist: {
+            default: false,
+            parseHTML: (el) => el.getAttribute('data-checklist') === 'true',
+            renderHTML: (attrs) => (attrs.checklist ? { 'data-checklist': 'true' } : {}),
+          },
+        };
+      },
+    }),
     TaskItem.configure({ nested: true }),
     ResizableImage.configure({ allowBase64: true, shareToken }),
     FileBlock.configure({ shareToken }),

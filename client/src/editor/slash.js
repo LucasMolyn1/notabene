@@ -57,6 +57,11 @@ const SLASH_ITEMS = [
   { group: 'Texte', title: 'Titre 3', desc: 'Petit titre', glyph: 'H3', keys: 'h3 heading', run: chainCmd((c) => c.setHeading({ level: 3 })) },
   { group: 'Listes', title: 'Liste à puces', desc: 'Liste non ordonnée', glyph: '•', keys: 'bullet ul', run: chainCmd((c) => c.toggleBulletList()) },
   { group: 'Listes', title: 'Liste numérotée', desc: 'Liste ordonnée', glyph: '1.', keys: 'ordered ol', run: chainCmd((c) => c.toggleOrderedList()) },
+  { group: 'Listes', title: 'Liste de cases', desc: 'Cases à cocher, texte jamais barré', glyph: '☐', keys: 'cases checklist cocher liste', run: (editor, range) => {
+    const c = editor.chain().focus().deleteRange(range);
+    // Dans une liste de tâches existante : on la convertit au lieu de la défaire.
+    (editor.isActive('taskList') ? c : c.toggleTaskList()).updateAttributes('taskList', { checklist: true }).run();
+  } },
   { group: 'Listes', title: 'Liste de tâches', desc: 'Cases à cocher', glyph: '☑', keys: 'todo checklist taches', run: chainCmd((c) => c.toggleTaskList()) },
   { group: 'Blocs', title: 'Citation', desc: 'Mettre une citation en avant', glyph: '❝', keys: 'quote blockquote', run: chainCmd((c) => c.toggleBlockquote()) },
   { group: 'Blocs', title: 'Bloc de code', desc: 'Code avec police à chasse fixe', glyph: '</>', keys: 'code pre', run: chainCmd((c) => c.toggleCodeBlock()) },
