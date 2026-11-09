@@ -142,6 +142,9 @@ export function upsertUser(db: DB, input: { sub: string; email: string | null; n
   if (existing) {
     db.prepare('UPDATE users SET email = ?, name = ?, role = ?, last_login_at = ? WHERE id = ?')
       .run(input.email, input.name, input.role, now, existing.id);
+    // Promu administrateur : retiré des groupes gérés par SCIM, que le fournisseur ne peut plus modifier pour lui (compte
+    // invisible par SCIM). Un administrateur a de toute façon accès à tout.
+    if (input.role === 'admin') db.prepare('DELETE FROM group_members WHERE user_id = ? AND group_id IN (SELECT group_id FROM scim_groups)').run(existing.id);
     return existing.id;
   }
   const id = newId();

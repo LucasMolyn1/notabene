@@ -18,12 +18,15 @@ export const AUDIT_LABELS = {
   'user.export': 'Données d’un compte exportées', 'user.erase': 'Compte supprimé',
   'images.migration.dryrun': 'Conversion des images simulée', 'images.migration.start': 'Conversion des images lancée', 'images.migration.revert': 'Conversion des images annulée', 'images.migration.end': 'Conversion des images terminée',
   'audit.export': 'Export du journal', 'audit.siem.disabled': 'Envoi SIEM désactivé après des échecs',
+  'scim.user.create': 'SCIM : compte créé', 'scim.user.update': 'SCIM : compte modifié', 'scim.user.deactivate': 'SCIM : compte désactivé', 'scim.user.delete': 'SCIM : compte détaché',
+  'scim.group.create': 'SCIM : groupe créé', 'scim.group.update': 'SCIM : groupe modifié', 'scim.group.delete': 'SCIM : groupe supprimé', 'scim.auth.failed': 'SCIM : jeton refusé',
+  'scim.settings': 'SCIM modifié', 'scim.token.create': 'Jeton SCIM créé', 'scim.token.revoke': 'Jeton SCIM révoqué',
 };
 
 // Familles proposées dans le filtre (le serveur filtre par préfixe quand la valeur finit par un point).
 const FAMILIES = [
   ['auth.', 'Authentification'], ['settings.', 'Réglages'], ['user.', 'Comptes'], ['token.', 'Jetons d’API'], ['space.', 'Espaces'],
-  ['page.', 'Pages'], ['trash.', 'Corbeille'], ['ai.', 'IA'], ['audit.', 'Journal d’audit'], ['images.', 'Images'], ['import.', 'Import'], ['backup.', 'Sauvegardes'],
+  ['page.', 'Pages'], ['trash.', 'Corbeille'], ['ai.', 'IA'], ['audit.', 'Journal d’audit'], ['images.', 'Images'], ['import.', 'Import'], ['backup.', 'Sauvegardes'], ['scim.', 'SCIM'],
 ];
 
 const plural = (n, word) => `${n} ${word}${n > 1 ? 's' : ''}`;
