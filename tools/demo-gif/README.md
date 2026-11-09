@@ -23,4 +23,4 @@ Variables des étapes IA (fournisseur compatible OpenAI) : `DEMO_IA_CLE` (obliga
 
 ## Sorties
 
-`tools/demo-gif/out/` (ignoré par git) : `notabene-demo.mp4` (complet, 1440 px), `notabene-demo.gif` (scènes clés, 960 px) et les deux vidéos sources. Le GIF du README est une copie dans `docs/images/` ; le MP4 s'héberge par glisser-déposer dans l'éditeur GitHub.
+`tools/demo-gif/out/` (ignoré par git) : `notabene-demo.mp4` (complet, 1440 px), `notabene-demo.gif` (scènes clés, 960 px) et les deux vidéos sources. Le GIF du README est une copie dans `docs/images/` ; le MP4 du README est une copie dans `docs/images/` (GitHub l'ouvre avec un lecteur vidéo).
