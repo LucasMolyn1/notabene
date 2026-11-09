@@ -68,7 +68,7 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
       // Bloc synchronisé : la source se rend comme son contenu ; une copie seulement si son contenu a été résolu pour ce lecteur
       // (lib/synced-blocks.ts, expandSyncedCopies), sinon un bloc neutre sans rien de la source.
       case 'syncedSource': return blocks(node.content);
-      case 'syncedCopy': return node.content?.length ? blocks(node.content) : '_[Bloc synchronisé non disponible]_';
+      case 'syncedCopy': return node.content?.length ? blocks(node.content) : '_[Contenu indisponible]_';
       case 'excalidraw': return '_[Dessin Excalidraw]_';
       case 'drawio': return '_[Diagramme Draw.io]_';
       case 'horizontalRule': return '---';

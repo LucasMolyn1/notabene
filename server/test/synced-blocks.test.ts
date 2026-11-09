@@ -355,7 +355,7 @@ describe('fuites : recherche, export, partage public, SEO', () => {
     const other = await call(await login('ed2'), 'GET', `/api/v3/pages/${holder}/export`);
     expect(other.statusCode).toBe(200);
     expect(other.body).not.toContain('motsecret');
-    expect(other.body).toContain('Bloc synchronisé non disponible');
+    expect(other.body).toContain('Contenu indisponible');
     // Export JSON : la copie reste une référence, jamais son contenu.
     expect((await call(ed1, 'GET', `/api/v3/pages/${holder}/export?format=json`)).body).not.toContain('motsecret');
     const zipText = async (s: S, format: string) => {
@@ -367,7 +367,7 @@ describe('fuites : recherche, export, partage public, SEO', () => {
       const theirs = await zipText(await login('ed2'), format);
       expect(theirs).toContain('page porteuse');
       expect(theirs).not.toContain('motsecret');
-      expect(theirs).toContain('Bloc synchronisé non disponible');
+      expect(theirs).toContain('Contenu indisponible');
       expect(await zipText(ed1, format)).toContain('motsecret confidentiel');
     }
   });
@@ -442,7 +442,7 @@ describe('fuites : recherche, export, partage public, SEO', () => {
     expect(html).toContain('vitrine');
     expect(html).toContain('texte ouvert');
     expect(html).not.toContain('motsecret');
-    expect(html).toContain('Bloc synchronisé non disponible');
+    expect(html).toContain('Contenu indisponible');
   });
 });
 
