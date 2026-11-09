@@ -33,6 +33,8 @@ import { attachmentsDir, drainAttachmentGc } from './lib/attachments.js';
 import v3Routes from './routes/v3.js';
 import verificationRoutes from './routes/verifications.js';
 import readReceiptRoutes from './routes/read-receipts.js';
+import scimRoutes from './routes/scim.js';
+import scimAdminRoutes from './routes/scim-admin.js';
 import { sessionAuth as sessionAuthWithIdle, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
 import { SecretBox, safeEqual } from './lib/crypto.js';
@@ -221,6 +223,9 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   const cookieName = sessionCookieName(config.secureCookies);
   const publicOrigin = new URL(config.PUBLIC_URL).origin;
   app.addHook('onRequest', async (req) => {
+    // SCIM (/scim/v2) a sa propre authentification (jeton SCIM, routes/scim.ts) : ni session ni jeton d'API n'y sont résolus,
+    // donc aucun n'y donne accès. Ignorer cette résolution ne peut que retirer des droits, jamais en donner.
+    if ((req.routeOptions.url ?? '').startsWith('/scim/') || req.url.startsWith('/scim/')) return;
     const header = req.headers.authorization;
     const bearer = header === undefined ? undefined : /^Bearer\s+(\S+)$/.exec(header)?.[1];
     const cookie = req.cookies[cookieName];
@@ -318,6 +323,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(v3Routes);
     await scope.register(verificationRoutes);
     await scope.register(readReceiptRoutes);
+    await scope.register(scimAdminRoutes);
     await scope.register(aboutRoutes);
     await scope.register(avatarRoutes);
     await scope.register(attachmentRoutes);
@@ -325,6 +331,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(imageMigrationRoutes);
   }, { prefix: '/api/v3' });
   await app.register(mcpRoutes);
+  await app.register(scimRoutes, { prefix: '/scim/v2' });
   await app.register(versionRoutes);
   // Santé : la base doit répondre, sinon le conteneur doit être signalé défaillant.
   app.get('/healthz', { schema: { hide: true } }, async (_req, reply) => {
@@ -356,7 +363,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     if (req.url === '/' && (req.method === 'HEAD' || req.method === 'OPTIONS')) {
       return reply.header('allow', 'GET, HEAD, OPTIONS').status(req.method === 'HEAD' ? 200 : 204).send();
     }
-    const isApi = req.url.startsWith('/api/') || req.url.startsWith('/auth/');
+    const isApi = req.url.startsWith('/api/') || req.url.startsWith('/auth/') || req.url.startsWith('/scim/');
     if (hasClient && req.method === 'GET' && !isApi) {
       if (req.url.startsWith('/share/')) {
         // Page partagée publiquement : l'application, sans cache ni référent sortant ; indexable seulement si le partage l'autorise.

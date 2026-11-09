@@ -38,6 +38,13 @@ export default async function groupRoutes(app: FastifyInstance) {
     if (isEveryone(g.id)) throw new HttpError(403, 'Le groupe « Tout le monde » ne se modifie pas');
     return g;
   };
+  // Groupe géré par SCIM (routes/scim.ts) : son nom et son adhésion viennent du fournisseur d'identité ; les modifier ici
+  // créerait un conflit avec la prochaine synchronisation. La suppression reste possible (le fournisseur le recrée au besoin).
+  const scimManaged = (id: string) => !!db.prepare('SELECT 1 FROM scim_groups WHERE group_id = ?').get(id);
+  const notScim = (g: GroupRow): GroupRow => {
+    if (scimManaged(g.id)) throw new HttpError(409, 'Ce groupe est géré par SCIM : modifiez-le chez le fournisseur d’identité');
+    return g;
+  };
   // Un changement d'adhésion change les droits de personnes dont la session est ouverte : flux temps réel et co-édition revérifiés.
   const accessChanged = () => { app.bus.publish({ type: 'space.changed' }); app.collab?.evictAll(); };
   const count = (id: string) => (db.prepare('SELECT COUNT(*) AS n FROM group_members WHERE group_id = ?').get(id) as { n: number }).n;
@@ -52,9 +59,10 @@ export default async function groupRoutes(app: FastifyInstance) {
     const admin = req.auth!.user.role === 'admin' && req.auth!.scopes.has('admin');
     if (!admin && ![...spaceRoles(db, req.auth).values()].includes('full')) throw new HttpError(403, 'Réservé aux administrateurs et aux gestionnaires d’espace');
     const rows = db.prepare('SELECT * FROM groups ORDER BY (id = \'everyone\') DESC, name COLLATE NOCASE').all() as GroupRow[];
+    const scim = new Set((db.prepare('SELECT group_id FROM scim_groups').all() as { group_id: string }[]).map((r) => r.group_id));
     const counts = new Map((db.prepare('SELECT group_id, COUNT(*) AS n FROM group_members GROUP BY group_id').all() as { group_id: string; n: number }[]).map((r) => [r.group_id, r.n]));
     // Les effectifs ne regardent que les administrateurs ; les gestionnaires ne voient que les noms.
-    return rows.map((g) => (admin ? toGroup(g, g.id === 'everyone' ? undefined : counts.get(g.id) ?? 0) : toGroup({ ...g, external_id: null })));
+    return rows.map((g) => (admin ? { ...toGroup(g, g.id === 'everyone' ? undefined : counts.get(g.id) ?? 0), scim: scim.has(g.id) } : toGroup({ ...g, external_id: null })));
   });
 
   app.post('/groups', {
@@ -80,7 +88,7 @@ export default async function groupRoutes(app: FastifyInstance) {
     preHandler: guard('admin'),
     schema: { tags, summary: 'Modifier un groupe (administrateur)', params: idParams, body: patchBody },
   }, async (req) => {
-    const g = editable((req.params as { id: string }).id);
+    const g = notScim(editable((req.params as { id: string }).id));
     const body = req.body as z.output<typeof patchBody>;
     if (body.externalId !== undefined && g.source === 'local') throw new HttpError(400, 'Ce groupe n’est pas lié à un fournisseur');
     if (body.name !== undefined) uniqueName(body.name, g.id);
@@ -119,7 +127,7 @@ export default async function groupRoutes(app: FastifyInstance) {
     const items = db.prepare(
       'SELECT u.id, u.name, u.email, u.disabled FROM group_members m JOIN users u ON u.id = m.user_id WHERE m.group_id = ? ORDER BY u.name COLLATE NOCASE LIMIT ?',
     ).all(g.id, MAX_GROUP_MEMBERS) as { id: string; name: string; email: string | null; disabled: number }[];
-    return { everyone: false, synced: g.source !== 'local', items: items.map((u) => ({ id: u.id, name: u.name, email: u.email, disabled: !!u.disabled })) };
+    return { everyone: false, synced: g.source !== 'local' || scimManaged(g.id), scim: scimManaged(g.id), items: items.map((u) => ({ id: u.id, name: u.name, email: u.email, disabled: !!u.disabled })) };
   });
 
   app.put('/groups/:id/members/:userId', {
@@ -128,7 +136,7 @@ export default async function groupRoutes(app: FastifyInstance) {
     schema: { tags, summary: 'Ajouter une personne à un groupe local (administrateur)', params: memberParams },
   }, async (req, reply) => {
     const { id, userId } = req.params as z.output<typeof memberParams>;
-    const g = editable(id);
+    const g = notScim(editable(id));
     if (g.source !== 'local') throw new HttpError(409, 'L’adhésion de ce groupe vient du fournisseur d’identité');
     if (!db.prepare('SELECT 1 FROM users WHERE id = ? AND disabled = 0').get(userId)) throw new HttpError(404, 'Utilisateur introuvable ou désactivé');
     if (count(g.id) >= MAX_GROUP_MEMBERS) throw new HttpError(400, `Au plus ${MAX_GROUP_MEMBERS} membres par groupe`);
@@ -144,7 +152,7 @@ export default async function groupRoutes(app: FastifyInstance) {
     schema: { tags, summary: 'Retirer une personne d’un groupe local (administrateur)', params: memberParams },
   }, async (req, reply) => {
     const { id, userId } = req.params as z.output<typeof memberParams>;
-    const g = editable(id);
+    const g = notScim(editable(id));
     if (g.source !== 'local') throw new HttpError(409, 'L’adhésion de ce groupe vient du fournisseur d’identité');
     db.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').run(g.id, userId);
     audit(db, req, 'group.member.remove', g.id, { userId });

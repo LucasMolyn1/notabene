@@ -41,6 +41,9 @@ export function exportUserData(db: DB, userId: string, requesterId: string = use
     profile: {
       id: u.id, name: u.name, email: u.email, role: u.role, identity: u.is_local ? 'compte local' : 'fournisseur externe (SSO, LDAP)',
       createdAt: u.created_at, lastLoginAt: u.last_login_at, disabled: !!u.disabled, mfaEnabled: !!u.totp_enabled,
+      // Compte provisionné par SCIM : nom d'utilisateur et identifiant transmis par le fournisseur d'identité.
+      scim: ((r) => (r ? { userName: r.user_name, externalId: r.external_id, linkedAt: r.created_at, removedAt: r.deleted_at } : null))(
+        one<{ user_name: string; external_id: string | null; created_at: number; deleted_at: number | null } | undefined>('SELECT user_name, external_id, created_at, deleted_at FROM scim_users WHERE user_id = ?', userId)),
     },
     tokens: all<{ name: string; prefix: string; scopes: string; created_at: number; expires_at: number; last_used_at: number | null; revoked_at: number | null }>(
       'SELECT name, prefix, scopes, created_at, expires_at, last_used_at, revoked_at FROM api_tokens WHERE user_id = ? ORDER BY created_at', userId)

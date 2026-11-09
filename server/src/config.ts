@@ -68,6 +68,12 @@ const schema = z
     // Fige la configuration des fournisseurs et de l'intégration : seules les variables d'environnement comptent,
     // les réglages saisis dans l'interface sont ignorés (et non modifiables).
     CONFIG_LOCKED: bool('false'),
+    // Provisionnement SCIM 2.0 (désactivé par défaut) : valeurs de départ, remplaçables depuis l'interface sauf avec CONFIG_LOCKED.
+    // Le rôle attribué aux comptes créés par SCIM n'est jamais « admin ». Voir docs/SCIM.md.
+    SCIM_ENABLED: bool('false'),
+    SCIM_DEFAULT_ROLE: z.enum(['reader', 'editor']).default('reader'),
+    // Requêtes SCIM par minute et par adresse IP (le fournisseur synchronise compte par compte).
+    SCIM_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(100_000).default(600),
 
     // Clé maîtresse (32 octets en base64) : chiffre les secrets stockés en base (clé LLM…).
     ENCRYPTION_KEY: z.string().refine((v) => Buffer.from(v, 'base64').length === 32, {

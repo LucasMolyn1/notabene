@@ -160,7 +160,7 @@ export function askReauth(what, { strict = false } = {}) {
 }
 
 // Appel API protégé par la ressaisie : une erreur d'identité rouvre la boîte de dialogue.
-async function call(method, path, body, what) {
+export async function reauthCall(method, path, body, what) {
   const reauth = await askReauth(what);
   if (!reauth) return undefined;
   try {
@@ -266,7 +266,7 @@ function sectionForm(name, view, { onChange, extra = [] }) {
 
   test.addEventListener('click', async () => {
     if (!check()) return;
-    const r = await call('post', `/admin/settings/${name}/test`, payload(), `tester la configuration ${spec.title}`);
+    const r = await reauthCall('post', `/admin/settings/${name}/test`, payload(), `tester la configuration ${spec.title}`);
     if (!r) return;
     show(r.ok, r.message);
     testId = r.ok ? r.testId : null;
@@ -274,14 +274,14 @@ function sectionForm(name, view, { onChange, extra = [] }) {
   });
   save.addEventListener('click', async () => {
     if (!check()) return;
-    const r = await call('put', `/admin/settings/${name}`, { ...payload(), testId }, `enregistrer ${spec.title}`);
+    const r = await reauthCall('put', `/admin/settings/${name}`, { ...payload(), testId }, `enregistrer ${spec.title}`);
     if (!r) return;
     toast('Configuration enregistrée');
     onChange();
   });
   const reset = view.source === 'db' && !disabled && h('button', {
     class: 'btn btn-ghost btn-sm',
-    onClick: async () => { if (await call('post', `/admin/settings/${name}/reset`, {}, 'revenir aux valeurs de l’environnement')) { toast('Retour à l’environnement'); onChange(); } },
+    onClick: async () => { if (await reauthCall('post', `/admin/settings/${name}/reset`, {}, 'revenir aux valeurs de l’environnement')) { toast('Retour à l’environnement'); onChange(); } },
   }, 'Revenir au .env');
   sync();
   if (!needsTest()) test.hidden = true;
@@ -299,7 +299,7 @@ export function providerCard(name, data, { card, copyable, refresh, kvRows = [] 
   if (name === 'smtp' && view.enabled) {
     extra.push(h('button', {
       class: 'btn btn-ghost btn-sm',
-      onClick: async () => { if (await call('post', '/admin/settings/smtp/send-test', {}, 'envoyer un e-mail de test')) toast('E-mail de test envoyé'); },
+      onClick: async () => { if (await reauthCall('post', '/admin/settings/smtp/send-test', {}, 'envoyer un e-mail de test')) toast('E-mail de test envoyé'); },
     }, 'Envoyer un e-mail de test'));
   }
   const { form, actions, result } = sectionForm(name, view, { onChange: refresh, extra });
@@ -320,7 +320,7 @@ export function embedHostsCard(data, { card, refresh }) {
   const save = h('button', { class: 'btn btn-primary btn-sm', disabled: view.locked }, 'Enregistrer');
   save.addEventListener('click', async () => {
     const hosts = textToList(area.value);
-    if (await call('put', '/admin/settings/embeds', { config: { enabled: true, hosts } }, 'modifier les hôtes intégrables')) { toast('Hôtes intégrables mis à jour'); refresh(); }
+    if (await reauthCall('put', '/admin/settings/embeds', { config: { enabled: true, hosts } }, 'modifier les hôtes intégrables')) { toast('Hôtes intégrables mis à jour'); refresh(); }
   });
   return card('Hôtes autorisés', 'Un nom de domaine par ligne, exact (pas de joker, de chemin ni de port). Appliqué immédiatement, sans redémarrage (en-tête CSP frame-src).',
     h('div', { class: 'row wrap' }, sourcePill(view)),
@@ -337,7 +337,7 @@ export function embedOriginsCard(data, { card, refresh }) {
   const save = h('button', { class: 'btn btn-primary btn-sm', disabled: view.locked }, 'Enregistrer');
   save.addEventListener('click', async () => {
     const origins = textToList(area.value);
-    if (await call('put', '/admin/settings/embed', { config: { enabled: true, origins } }, 'modifier les sites autorisés')) { toast('Sites autorisés mis à jour'); refresh(); }
+    if (await reauthCall('put', '/admin/settings/embed', { config: { enabled: true, origins } }, 'modifier les sites autorisés')) { toast('Sites autorisés mis à jour'); refresh(); }
   });
   return card('2. Sites autorisés', 'Origines autorisées à afficher BeNote en iframe (en-tête CSP frame-ancestors). Appliqué immédiatement, sans redémarrage. Format : https://domaine, sans chemin ni joker.',
     h('div', { class: 'row wrap' }, sourcePill(view)),

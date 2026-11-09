@@ -13,6 +13,7 @@ import { renderDiagrams, renderEmbed, renderEmbeds, renderTools, renderWebhooks 
 import { renderImport, renderInstance } from './settings/instance.js';
 import { renderImages } from './settings/images.js';
 import { renderGroups } from './settings/groups.js';
+import { renderScim } from './settings/scim.js';
 import { renderShares } from './settings/shares.js';
 import { store } from './store.js';
 
@@ -34,6 +35,7 @@ const SECTIONS = [
   { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', admin: true, sensitive: true, render: renderAuth },
   { group: 'Administration', id: 'mail', label: 'E-mail', ico: 'mail', admin: true, sensitive: true, render: renderMail },
   { group: 'Administration', id: 'embeds', label: 'Contenus intégrés', ico: 'globe', admin: true, sensitive: true, render: renderEmbeds },
+  { group: 'Administration', id: 'scim', label: 'Provisionnement SCIM', ico: 'key', admin: true, sensitive: true, render: renderScim },
   { group: 'Administration', id: 'webhooks', label: 'Webhooks', ico: 'webhook', admin: true, render: renderWebhooks },
   { group: 'Administration', id: 'import', label: 'Import', ico: 'upload', admin: true, render: renderImport },
   { group: 'Administration', id: 'users', label: 'Utilisateurs', ico: 'users', admin: true, render: renderUsers },

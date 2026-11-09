@@ -747,6 +747,46 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX page_read_receipts_user ON page_read_receipts(user_id);
   CREATE INDEX page_read_receipts_order ON page_read_receipts(page_id, acked_at DESC, user_id);
   `,
+  // 29 : provisionnement SCIM 2.0 (routes/scim.ts). `scim_tokens` : jetons dédiés du fournisseur d'identité (hachés, révocables,
+  // sans lien avec les jetons d'API). `scim_users` : comptes gérés par SCIM (nom d'utilisateur SCIM, identifiant externe) ; le
+  // compte lui-même reste dans `users`. `scim_groups` : groupes gérés par SCIM (provenance), stockés dans `groups` avec la source
+  // `local` : la contrainte CHECK de `groups` n'est pas modifiée, ce qui évite de reconstruire une table référencée.
+  // Aucune donnée existante modifiée. Retour arrière : DROP TABLE scim_groups; DROP TABLE scim_users; DROP TABLE scim_tokens;
+  `
+  CREATE TABLE scim_tokens (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    token_hash   TEXT NOT NULL UNIQUE,
+    prefix       TEXT NOT NULL,
+    created_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at   INTEGER NOT NULL,
+    expires_at   INTEGER NOT NULL,
+    last_used_at INTEGER,
+    revoked_at   INTEGER
+  );
+
+  -- disabled_by_scim : le compte a été désactivé par SCIM (seul cas où SCIM peut le réactiver). deleted_at : supprimé par SCIM
+  -- (compte désactivé, ressource invisible) ; la ligne est gardée pour qu'un nouveau provisionnement sache qui l'a désactivé.
+  CREATE TABLE scim_users (
+    user_id          TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    user_name        TEXT NOT NULL COLLATE NOCASE,
+    external_id      TEXT,
+    disabled_by_scim INTEGER NOT NULL DEFAULT 0,
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL,
+    deleted_at       INTEGER
+  );
+  CREATE UNIQUE INDEX scim_users_name ON scim_users(user_name) WHERE deleted_at IS NULL;
+  CREATE UNIQUE INDEX scim_users_external ON scim_users(external_id) WHERE external_id IS NOT NULL AND deleted_at IS NULL;
+
+  CREATE TABLE scim_groups (
+    group_id    TEXT PRIMARY KEY REFERENCES groups(id) ON DELETE CASCADE,
+    external_id TEXT,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+  );
+  CREATE UNIQUE INDEX scim_groups_external ON scim_groups(external_id) WHERE external_id IS NOT NULL;
+  `,
 ];
 
 export function openDb(file: string): DB {
