@@ -4,6 +4,10 @@ Le projet s'appelle **NotaBene** ; **BeNote** en est le nom commercial, celui qu
 
 Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com) : espaces, pages imbriquées, éditeur riche, diagrammes, recherche par IA et API REST. Conçu *secure by design* et déployable autant de fois que nécessaire à partir de ce dépôt.
 
+![Démonstration de BeNote : menu `/`, co-édition en temps réel, assistant de rédaction, partage par lien public](docs/images/notabene-demo.gif)
+
+[Démo complète en vidéo (1 min)](docs/images/notabene-demo.mp4)
+
 ## Fonctionnalités
 
 | Domaine | Ce qui est inclus |
