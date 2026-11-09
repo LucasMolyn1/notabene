@@ -8,7 +8,7 @@ import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
 import { DrawIo, Excalidraw, MathBlock, Mermaid, PlantUml } from './diagrams.js';
-import { Column, Columns, ColoredHighlight, Details, DetailsContent, DetailsSummary, TextAlign, TextColor } from './editor/blocks.js';
+import { Column, Columns, ColoredHighlight, ContainerDelete, Details, DetailsContent, DetailsSummary, TextAlign, TextColor } from './editor/blocks.js';
 import { CodeBlockEditor } from './editor/code-block.js';
 import { ResizableImage } from './editor/image.js';
 import { AudioBlock, FileBlock, uploadFiles, VideoBlock } from './editor/attachments.js';
@@ -35,6 +35,7 @@ function baseExtensions({ collab = false, shareToken = null } = {}) {
     ColoredHighlight,
     TextColor,
     TextAlign,
+    ContainerDelete,
     Details,
     DetailsSummary,
     DetailsContent,

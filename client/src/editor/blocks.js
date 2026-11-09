@@ -2,7 +2,7 @@
 // Le contenu ne porte que des noms (palette fixe, alignement) : toute valeur de style vit dans la feuille de l'application.
 import { Extension, Mark, Node, mergeAttributes } from '@tiptap/core';
 import Highlight from '@tiptap/extension-highlight';
-import { TextSelection } from '@tiptap/pm/state';
+import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import { h } from '../util.js';
 import { icon } from '../icons.js';
 
@@ -183,6 +183,73 @@ export const Columns = Node.create({
         type: 'columns',
         content: Array.from({ length: Math.min(4, Math.max(2, count)) }, () => ({ type: 'column', content: [{ type: 'paragraph' }] })),
       }),
+    };
+  },
+});
+
+// ---- Suppression des blocs conteneurs --------------------------------------------
+
+// Ces blocs sont « isolating » : Retour arrière au début de leur premier paragraphe ne les quitte pas. Sans règle propre, un bloc
+// synchronisé, dépliable ou une colonne ne se supprime donc pas au clavier. Un paragraphe vide qui est tout le contenu du bloc :
+// 1re frappe = le bloc entier est sélectionné, 2e frappe = il est supprimé (aucun texte n'est perdu sans ce double geste).
+// Si le bloc entier ne contient aucun texte, il est supprimé d'emblée.
+const CONTAINERS = new Set(['syncedSource', 'details', 'columns']);
+
+function deleteEmptyContainer(editor) {
+  const { state, view } = editor;
+  const { selection } = state;
+  if (selection instanceof NodeSelection && CONTAINERS.has(selection.node.type.name)) {
+    view.dispatch(state.tr.deleteSelection().scrollIntoView());
+    return true;
+  }
+  if (!selection.empty) return false;
+  const $from = selection.$from;
+  const para = $from.parent;
+  const isBody = (n) => n.type.name === 'detailsContent' || n.type.name === 'column' || n.type.name === 'syncedSource';
+  // Titre vide d'un bloc dépliable dont tout le contenu est vide : Retour arrière supprime le bloc.
+  if (para.type.name === 'detailsSummary' && para.content.size === 0) {
+    const box = $from.node($from.depth - 1);
+    if (box.type.name !== 'details' || box.textContent !== '' || hasAtom(box)) return false;
+    const pos = $from.before($from.depth - 1);
+    view.dispatch(state.tr.delete(pos, pos + box.nodeSize).scrollIntoView());
+    return true;
+  }
+  // Curseur « entre blocs » (GapCursor) au début d'un corps de bloc : même geste qu'un paragraphe vide qui en est le seul contenu.
+  const atGap = isBody(para) && para.childCount === 1 && para.firstChild.type.name === 'paragraph' && para.firstChild.content.size === 0;
+  if (!atGap && (para.type.name !== 'paragraph' || para.content.size !== 0)) return false;
+  // Plus haut conteneur dont ce paragraphe vide est le seul contenu de la partie éditable.
+  for (let d = atGap ? $from.depth : $from.depth - 1; d > 0; d--) {
+    const node = $from.node(d);
+    const name = node.type.name;
+    if (name === 'detailsContent' || name === 'column' || name === 'syncedSource') {
+      if (node.childCount !== 1) return false;
+      let top = d;
+      if (name !== 'syncedSource') top = d - 1;
+      const box = $from.node(top);
+      if (!CONTAINERS.has(box.type.name)) return false;
+      const pos = $from.before(top);
+      // Colonnes : on ne supprime que si toutes les colonnes sont vides (sinon on perdrait le contenu des autres).
+      const blank = box.textContent === '' && !hasAtom(box);
+      if (!blank && box.type.name === 'columns') return false;
+      const tr = state.tr;
+      if (blank) tr.delete(pos, pos + box.nodeSize);
+      else tr.setSelection(NodeSelection.create(state.doc, pos));
+      view.dispatch(tr.scrollIntoView());
+      return true;
+    }
+  }
+  return false;
+}
+
+const hasAtom = (node) => { let found = false; node.descendants((n) => { if (n.isAtom && !n.isText) found = true; return !found; }); return found; };
+
+export const ContainerDelete = Extension.create({
+  name: 'containerDelete',
+  priority: 1000,
+  addKeyboardShortcuts() {
+    return {
+      Backspace: ({ editor }) => deleteEmptyContainer(editor),
+      Delete: ({ editor }) => deleteEmptyContainer(editor),
     };
   },
 });
