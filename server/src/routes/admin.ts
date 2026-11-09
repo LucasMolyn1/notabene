@@ -80,7 +80,7 @@ export default async function adminRoutes(app: FastifyInstance) {
       throw err;
     }
     return db.prepare(
-      `SELECT a.id, a.at, a.action, a.target, a.ip, a.meta, u.name AS user FROM audit_log a
+      `SELECT a.id, a.at, a.action, a.target, a.ip, a.meta, u.name AS user, a.token_name AS via_token FROM audit_log a
        LEFT JOIN users u ON u.id = a.user_id WHERE ${w.sql} ORDER BY a.id DESC LIMIT ?`,
     ).all(...w.args, limit);
   });

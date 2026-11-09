@@ -804,6 +804,12 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX synced_blocks_page ON synced_blocks(page_id) WHERE page_id IS NOT NULL;
   `,
+  // v31 : le journal d'audit retient le jeton d'API qui a agi (identifiant et nom donné par la personne), en plus du compte.
+  // Additive ; retour arrière : les colonnes sont simplement ignorées par une version antérieure.
+  `
+  ALTER TABLE audit_log ADD COLUMN token_id TEXT;
+  ALTER TABLE audit_log ADD COLUMN token_name TEXT;
+  `,
 ];
 
 export function openDb(file: string): DB {

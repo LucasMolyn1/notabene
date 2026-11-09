@@ -86,7 +86,7 @@ export function renderAudit(el) {
   const row = (e) => {
     const at = Date.parse(e.timestamp);
     const meta = e.meta && Object.keys(e.meta).length ? JSON.stringify(e.meta) : '';
-    const who = e.actor ? (e.actor.name || e.actor.id) : 'Système';
+    const who = e.actor ? `${e.actor.name || e.actor.id}${e.actor.via ? ` (jeton « ${e.actor.via.name || 'sans nom'} »)` : ''}` : 'Système';
     return h('li', { class: 'table-row wrap' },
       h('span', { class: 'audit-time', title: fullDate(at) }, h('time', { datetime: e.timestamp }, timeAgo(at))),
       h('span', { class: 'grow' },

@@ -21,6 +21,8 @@ export interface Auth {
   csrf?: string;
   sessionHash?: string;
   tokenId?: string;
+  // Nom donné au jeton par son propriétaire : l'audit l'affiche pour distinguer un outil d'une personne.
+  tokenName?: string;
   // Compte local sans MFA alors que LOCAL_REQUIRE_MFA est actif : seules l'activation de la MFA et /me restent permises.
   mfaPending?: boolean;
 }

@@ -8,6 +8,7 @@ import { loadConfig } from '../src/config.js';
 import { type DB, openDb } from '../src/db.js';
 import { csvCell, sanitizeMeta, toAuditEvent } from '../src/lib/audit-events.js';
 import { backoffMs } from '../src/lib/audit-forwarder.js';
+import { createApiToken } from '../src/auth/tokens.js';
 import { hashPassword } from '../src/lib/password.js';
 import { sign } from '../src/lib/webhooks.js';
 
@@ -133,6 +134,37 @@ describe('journal d’audit : filtres et curseur', () => {
   });
 });
 
+describe('journal d’audit : jeton d’API', () => {
+  it('retient le jeton qui a agi, sans le confondre avec une session navigateur', async () => {
+    await boot();
+    const admin = await addUser('a@example.com', 'admin');
+    const s = await login('a@example.com');
+    const created = createApiToken(db, admin, { name: 'Hermes', scopes: ['read', 'write', 'admin'], expiresInDays: 30 });
+    // Action faite par un outil avec son jeton, puis la même par la personne dans son navigateur.
+    const viaToken = await app.inject({ method: 'POST', url: '/api/v3/spaces', headers: { authorization: `Bearer ${created.token}` }, payload: { name: 'Espace de l’outil', icon: 'folder', visibility: 'private', access: 'everyone' } });
+    expect(viaToken.statusCode).toBeLessThan(300);
+    const viaSession = await api(s, 'POST', '/spaces', { name: 'Espace du navigateur', icon: 'folder', visibility: 'private', access: 'everyone' });
+    expect(viaSession.statusCode).toBeLessThan(300);
+
+    const items = (await api(s, 'GET', '/admin/audit/events?action=space.create')).json().items as { actor: { id: string; name: string; via?: { type: string; id: string; name: string } }; target: string }[];
+    const tool = items.find((e) => e.target === viaToken.json().id)!;
+    const browser = items.find((e) => e.target === viaSession.json().id)!;
+    expect(tool.actor).toMatchObject({ id: admin, name: 'a', via: { type: 'token', id: created.id, name: 'Hermes' } });
+    expect(browser.actor.via).toBeUndefined();
+    // Le nom du jeton survit à sa révocation et à sa suppression ; le secret ne figure jamais dans l'évènement.
+    db.prepare('DELETE FROM api_tokens WHERE id = ?').run(created.id);
+    const again = (await api(s, 'GET', '/admin/audit/events?action=space.create')).json();
+    expect(JSON.stringify(again)).toContain('Hermes');
+    expect(JSON.stringify(again)).not.toContain(created.token);
+    // CSV : colonne dédiée.
+    const csv = await app.inject({ method: 'GET', url: '/api/v3/admin/audit/export?format=csv&action=space.create', ...s });
+    expect(csv.body).toContain('via_token');
+    expect(csv.body).toContain('"Hermes"');
+    // Effacer un compte retire aussi le nom du jeton du journal.
+    expect(toAuditEvent({ id: 1, at: T0, user_id: admin, user_name: 'a', action: 'x', target: null, ip: null, meta: null, token_id: null, token_name: 'Hermes' }).actor?.via).toBeUndefined();
+  });
+});
+
 describe('journal d’audit : contenu transmis', () => {
   it('retire secrets et textes de `meta`, garde booléens et nombres', () => {
     expect(sanitizeMeta(JSON.stringify({ password: 'p', apiKey: 'k', token: 't', clientSecret: 's', title: 'T', content: 'c', message: 'm', keyChanged: true, password2: 1, count: 3, role: 'admin' })))
@@ -175,7 +207,7 @@ describe('journal d’audit : export', () => {
     expect(res.headers['x-export-rows']).toBe('2');
     expect(res.headers['x-export-truncated']).toBe('false');
     const lines = res.body.replace(/^\uFEFF/, '').trim().split('\r\n');
-    expect(lines[0]).toBe('id,timestamp,action,outcome,actor_id,actor_name,target,ip,meta');
+    expect(lines[0]).toBe('id,timestamp,action,outcome,actor_id,actor_name,target,ip,meta,via_token');
     expect(lines).toHaveLength(3);
     expect(lines[2]).toContain(`"'=HYPERLINK(""https://evil.example"",""x"")"`);
     expect(lines.slice(1).every((l) => !/(^|,)"[=+\-@]/.test(l))).toBe(true);

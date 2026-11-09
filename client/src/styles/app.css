@@ -1093,7 +1093,7 @@ select.input { height: 36px; }
 /* ==========================================================================
    Page Paramètres
    ========================================================================== */
-.settings { display: grid; grid-template-columns: 220px minmax(0, 760px); gap: 40px; justify-content: center; padding: 40px 32px 96px; }
+.settings { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; padding: 40px clamp(24px, 4vw, 72px) 96px; }
 .set-nav { position: sticky; top: 24px; align-self: start; display: grid; gap: 1px; max-height: calc(100vh - 120px); max-height: calc(100dvh - 120px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding-right: 4px; }
 .set-nav-group { padding: 14px 10px 6px; font-size: 11.5px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
 .set-nav-group:first-child { padding-top: 0; }

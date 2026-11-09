@@ -102,7 +102,7 @@ test('journal : export CSV réel, export tronqué et limite atteinte', async ({ 
   const file = await download;
   expect(file.suggestedFilename()).toMatch(/^journal-audit-\d{4}-\d{2}-\d{2}\.csv$/);
   const csv = await readFile((await file.path())!, 'utf8');
-  expect(csv.replace(/^\uFEFF/, '').split('\r\n')[0]).toBe('id,timestamp,action,outcome,actor_id,actor_name,target,ip,meta');
+  expect(csv.replace(/^\uFEFF/, '').split('\r\n')[0]).toBe('id,timestamp,action,outcome,actor_id,actor_name,target,ip,meta,via_token');
   await expect(page.getByText(/Export CSV prêt/)).toBeVisible();
 
   // Export tronqué (simulé) : les filtres saisis partent avec la demande et l'interface le signale.
