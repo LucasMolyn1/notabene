@@ -14,6 +14,7 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 - **Paramètres** : le contenu des pages de paramètres occupe toute la largeur de l'écran (il était limité à 760 px).
 
 ### Corrigé
+- **Sélecteur d'icône d'un espace** : le menu d'icônes s'ouvrait derrière la boîte de dialogue « Paramètres de l'espace » (et restait inerte) ; tout menu ouvert depuis une boîte de dialogue s'y affiche maintenant. Le bouton d'icône a un nom accessible, et la case « Autoriser le partage public par lien » ne colle plus son explication.
 - **Notes de version tronquées** : chaque ligne de notes (écran « À propos », mise à jour disponible) était coupée à 600 caractères ; la limite passe à 4 000.
 
 ## [3.14.0] - 2026-11-09
