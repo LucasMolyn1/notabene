@@ -19,6 +19,7 @@ import { assistantButton } from './ai-chat.js';
 import { rememberMentionNames } from './editor/mention.js';
 import { labelBar } from './labels.js';
 import { openVerification, verificationBadge } from './verification.js';
+import { openReadReceipt, readReceiptBar } from './read-receipt.js';
 import { api, listAll } from './api.js';
 import { permissionsButton } from './permissions.js';
 import { shareButton } from './share-dialog.js';
@@ -133,9 +134,11 @@ function mountPage(page) {
   const labels = labelBar(id, { initial: page.labels ?? [], canWrite: canWrite && !app.embed });
   // Statut de vérification, sous le titre (masqué sans vérification configurée et dans une intégration).
   const verification = app.embed ? null : verificationBadge(id);
+  // Accusé de lecture, sous la vérification (masqué sans demande et dans une intégration).
+  const readReceipt = app.embed ? null : readReceiptBar(id);
   const editorHost = h('div', { class: 'editor-host' });
   const tocEl = h('aside', { class: 'toc', 'aria-label': 'Sommaire' });
-  const article = h('article', { class: 'page' }, h('div', { class: 'page-head' }, iconBtn, addIconBtn), titleEl, verification?.el, labels.el, metaEl, editorHost);
+  const article = h('article', { class: 'page' }, h('div', { class: 'page-head' }, iconBtn, addIconBtn), titleEl, verification?.el, readReceipt?.el, labels.el, metaEl, editorHost);
   const wrap = h('div', { class: 'page-wrap' }, article, tocEl);
   const scroller = h('div', { class: 'scroller' }, wrap);
 
@@ -384,6 +387,8 @@ function mountPage(page) {
       ] : []),
       canWrite && { label: 'Pleine largeur', icon: 'width', checked: !!p.fullWidth, onClick: () => A.attempt(() => store.updatePage(id, { fullWidth: !p.fullWidth })) },
       session.user && { label: 'Vérification', icon: 'verified', onClick: () => openVerification(id) },
+      // Sans demande en cours, l'entrée n'est proposée qu'aux personnes qui peuvent modifier la page.
+      session.user && (canWrite || readReceipt?.state()?.requested) && { label: 'Accusé de lecture', icon: 'eye', onClick: () => openReadReceipt(id) },
       { label: 'Copier le lien', icon: 'link', onClick: () => A.copyLink(id) },
       { label: 'Intégrer (iframe)', icon: 'code', onClick: () => A.showEmbed(id) },
       { sep: true },
@@ -440,6 +445,7 @@ function mountPage(page) {
       refreshDerived.cancel();
       labels.destroy();
       verification?.destroy();
+      readReceipt?.destroy();
       anchors.destroy();
       window.removeEventListener('beforeunload', beforeUnload);
       editor.destroy();

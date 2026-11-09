@@ -112,6 +112,26 @@ for (const scheme of ['light', 'dark'] as const) {
       expect(found).toEqual([]);
     });
 
+    test('accusé de lecture : bandeau et fenêtre', async ({ page, browser }) => {
+      const admin = await adminContext(browser);
+      const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+      const created = await (await api(admin.request, 'POST', '/pages', { spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: `A11y accusé ${scheme}` })).json();
+      expect((await api(admin.request, 'PUT', `/pages/${created.id}/read-receipt`)).ok()).toBeTruthy();
+      await admin.close();
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.goto(`/p/${created.id}`);
+      await page.locator('.rr-ack').waitFor();
+      const found = await violations(page, 'bandeau d’accusé (demandé)');
+      await page.locator('.rr-ack').click();
+      await page.locator('.rr-bar[data-state="done"]').waitFor();
+      found.push(...await violations(page, 'bandeau d’accusé (lu)'));
+      await page.getByRole('region', { name: 'Accusé de lecture' }).getByRole('button', { name: 'Détails de l’accusé de lecture' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Accusé de lecture' });
+      await dialog.getByRole('list', { name: 'Personnes qui ont confirmé la lecture' }).waitFor();
+      found.push(...await violations(page, 'fenêtre d’accusé de lecture'));
+      expect(found).toEqual([]);
+    });
+
     test('modèles : liste de choix', async ({ page }) => {
       await loginUi(page, ADMIN.email, ADMIN.password);
       await page.getByRole('complementary', { name: 'Navigation' }).getByRole('button', { name: 'Depuis un modèle' }).click();

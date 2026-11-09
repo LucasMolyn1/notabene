@@ -724,6 +724,29 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE notifications_v27 RENAME TO notifications;
   CREATE INDEX notifications_user ON notifications(user_id, created_at DESC);
   `,
+  // 28 : accusé de lecture. `page_read_requests` : une demande par page (auteur de la demande, NULL si son compte est effacé).
+  // `page_read_receipts` : accusés EXPLICITES (bouton « J'ai lu »), jamais un suivi d'ouverture ; date de l'accusé et date de
+  // modification de la page à cet instant (pour signaler une page modifiée depuis). Un accusé n'existe pas sans demande :
+  // supprimé avec la demande, donc avec la page (ON DELETE CASCADE), et avec le compte. Aucune purge automatique.
+  // Retour arrière : DROP TABLE page_read_receipts; DROP TABLE page_read_requests;
+  `
+  CREATE TABLE page_read_requests (
+    page_id      TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE,
+    requested_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at   INTEGER NOT NULL
+  );
+  CREATE INDEX page_read_requests_by ON page_read_requests(requested_by) WHERE requested_by IS NOT NULL;
+
+  CREATE TABLE page_read_receipts (
+    page_id         TEXT NOT NULL REFERENCES page_read_requests(page_id) ON DELETE CASCADE,
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    acked_at        INTEGER NOT NULL,
+    page_updated_at INTEGER NOT NULL,
+    PRIMARY KEY (page_id, user_id)
+  );
+  CREATE INDEX page_read_receipts_user ON page_read_receipts(user_id);
+  CREATE INDEX page_read_receipts_order ON page_read_receipts(page_id, acked_at DESC, user_id);
+  `,
 ];
 
 export function openDb(file: string): DB {

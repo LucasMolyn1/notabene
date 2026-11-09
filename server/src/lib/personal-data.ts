@@ -61,6 +61,13 @@ export function exportUserData(db: DB, userId: string, requesterId: string = use
     verificationsPerformed: filterReadable(db, subject, all<{ id: string; title: string; verified_at: number }>(
       'SELECT p.id, p.title, v.verified_at FROM page_verifications v JOIN pages p ON p.id = v.page_id WHERE v.verified_by = ? AND p.deleted_at IS NULL ORDER BY v.verified_at', userId))
       .filter((p) => !hidden(p.id)).map((p) => ({ pageId: p.id, title: p.title, verifiedAt: p.verified_at })),
+    // Accusés de lecture : ceux de la personne et les demandes qu'elle a faites (pages qu'elle lit encore).
+    readReceipts: filterReadable(db, subject, all<{ id: string; title: string; acked_at: number }>(
+      'SELECT p.id, p.title, r.acked_at FROM page_read_receipts r JOIN pages p ON p.id = r.page_id WHERE r.user_id = ? AND p.deleted_at IS NULL ORDER BY r.acked_at', userId))
+      .filter((p) => !hidden(p.id)).map((p) => ({ pageId: p.id, title: p.title, ackedAt: p.acked_at })),
+    readReceiptRequests: filterReadable(db, subject, all<{ id: string; title: string; created_at: number }>(
+      'SELECT p.id, p.title, q.created_at FROM page_read_requests q JOIN pages p ON p.id = q.page_id WHERE q.requested_by = ? AND p.deleted_at IS NULL ORDER BY q.created_at', userId))
+      .filter((p) => !hidden(p.id)).map((p) => ({ pageId: p.id, title: p.title, requestedAt: p.created_at })),
     contributions: {
       pagesEdited: one<{ n: number }>('SELECT COUNT(*) AS n FROM pages WHERE updated_by = ?', userId).n,
       versionsAuthored: one<{ n: number }>('SELECT COUNT(*) AS n FROM page_versions WHERE created_by = ?', userId).n,
@@ -139,7 +146,7 @@ export function personalDataArchive(data: PersonalData, filesDir: string): Async
 // Pièces jointes : les fichiers restent rattachés à leur page (ils font partie du contenu, comme le texte), l'envoyeur est
 // retiré. Elles ne comptent alors plus dans aucun quota personnel, toujours dans le plafond de l'instance.
 // (Les clés étrangères en cascade retirent sessions, jetons, favoris, suivis, notifications, permissions, préférences, conversations du chat IA
-// et désignations comme vérificateur.)
+// désignations comme vérificateur et accusés de lecture.)
 export function eraseUser(db: DB, userId: string, closedBy: string | null = null): boolean {
   return db.transaction(() => {
     const u = db.prepare('SELECT sub FROM users WHERE id = ?').get(userId) as { sub: string } | undefined;
@@ -158,6 +165,9 @@ export function eraseUser(db: DB, userId: string, closedBy: string | null = null
     db.prepare('DELETE FROM page_verifiers WHERE user_id = ?').run(userId);
     db.prepare('UPDATE page_verifications SET verified_by = NULL WHERE verified_by = ?').run(userId);
     db.prepare('UPDATE page_verifications SET created_by = NULL WHERE created_by = ?').run(userId);
+    // Accusé de lecture : ses accusés disparaissent, ses demandes restent sans auteur (même raison).
+    db.prepare('DELETE FROM page_read_receipts WHERE user_id = ?').run(userId);
+    db.prepare('UPDATE page_read_requests SET requested_by = NULL WHERE requested_by = ?').run(userId);
     // Le journal garde la trace des actions, sans la personne ni son adresse IP.
     db.prepare('UPDATE audit_log SET user_id = NULL, ip = NULL WHERE user_id = ?').run(userId);
     // Les connexions sont journalisées avant que l'identité soit posée sur la requête : la personne n'y figure que comme cible.

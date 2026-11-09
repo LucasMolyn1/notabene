@@ -32,6 +32,7 @@ import attachmentRoutes from './routes/attachments.js';
 import { attachmentsDir, drainAttachmentGc } from './lib/attachments.js';
 import v3Routes from './routes/v3.js';
 import verificationRoutes from './routes/verifications.js';
+import readReceiptRoutes from './routes/read-receipts.js';
 import { sessionAuth as sessionAuthWithIdle, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
 import { SecretBox, safeEqual } from './lib/crypto.js';
@@ -316,6 +317,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(importRoutes);
     await scope.register(v3Routes);
     await scope.register(verificationRoutes);
+    await scope.register(readReceiptRoutes);
     await scope.register(aboutRoutes);
     await scope.register(avatarRoutes);
     await scope.register(attachmentRoutes);
