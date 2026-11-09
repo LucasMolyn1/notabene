@@ -10,6 +10,7 @@ import { labelsOf, normalizeLabel, pageIdsWithLabel } from '../lib/labels.js';
 import { filterReadable } from '../lib/page-acl.js';
 import { searchAttachments } from '../lib/attachment-text.js';
 import { isFavorite, listPages, searchPages, toMeta, toPage, updatePage } from '../lib/pages.js';
+import { SyncedBlockConflict } from '../lib/synced-blocks.js';
 
 const patchBody = z.object({
   title: z.string().max(300).optional(),
@@ -94,7 +95,8 @@ export default async function pageQueryRoutes(app: FastifyInstance) {
       row = updatePage(db, id, { ...body, baseVersion: match ? Number(match[1]) : undefined }, userId(req), cloner);
     } catch (err) {
       cloner.rollback();
-      if (err instanceof HttpError && err.statusCode === 409) throw new HttpError(412, 'La page a changé depuis votre lecture (ETag périmé)', err.details);
+      // Seul le conflit de version devient 412 ; un bloc synchronisé déjà pris ailleurs reste un 409.
+      if (err instanceof HttpError && err.statusCode === 409 && !(err instanceof SyncedBlockConflict)) throw new HttpError(412, 'La page a changé depuis votre lecture (ETag périmé)', err.details);
       throw err;
     }
     bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: id, version: row.version, by: { id: req.auth.user.id, name: req.auth.user.name } });

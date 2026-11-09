@@ -7,6 +7,8 @@ import { getPageRow } from '../lib/pages.js';
 import { escapeHtml, injectSeo, renderHtml } from '../lib/render-html.js';
 import { idFromSegment, segmentOf } from '../lib/slug.js';
 import type { DocNode } from '../lib/content.js';
+import { anonymousCanRead } from '../lib/shares.js';
+import { expandSyncedCopies, MAX_ANONYMOUS_SOURCE_CHARS } from '../lib/synced-blocks.js';
 
 const SITEMAP_LIMIT = 5000;
 
@@ -47,7 +49,8 @@ export default async function seoRoutes(app: FastifyInstance, { indexHtml }: { i
     if (seg !== canonical) return reply.redirect(`/p/${canonical}`, 301);
 
     let body = '';
-    try { body = renderHtml(JSON.parse(row.content) as DocNode, titleOf); } catch { /* contenu illisible : le titre seul est rendu */ }
+    // Copies synchronisées : rendues seulement si leur source est elle aussi lisible sans compte (espace public, non restreinte).
+    try { body = renderHtml(expandSyncedCopies(db, JSON.parse(row.content) as DocNode, (pid) => anonymousCanRead(db, pid), { maxSourceChars: MAX_ANONYMOUS_SOURCE_CHARS }), titleOf); } catch { /* contenu illisible : le titre seul est rendu */ }
     const html = injectSeo(indexHtml, {
       title: row.title || 'Sans titre',
       description: row.text.replace(/\s+/g, ' ').trim().slice(0, 160),

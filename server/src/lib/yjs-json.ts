@@ -60,3 +60,9 @@ function fromYChildren(parent: Y.XmlFragment | Y.XmlElement): DocNode[] {
 export function yFragmentToJson(fragment: Y.XmlFragment): DocNode {
   return { type: 'doc', content: fromYChildren(fragment) };
 }
+
+/** Nœuds Yjs (éléments et textes) correspondant à une suite de nœuds JSON, à insérer dans un parent. */
+export const jsonToYNodes = (nodes: DocNode[]) => toYChildren(nodes);
+
+/** Contenu JSON des enfants d'un élément Yjs. */
+export const yChildrenToJson = (parent: Y.XmlFragment | Y.XmlElement) => fromYChildren(parent);

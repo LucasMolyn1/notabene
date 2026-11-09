@@ -20,6 +20,7 @@ import { createMentionMenu, Mention } from './editor/mention.js';
 import { Callout, PageLink } from './editor/nodes.js';
 import { createMobileToolbar } from './editor/mobile-toolbar.js';
 import { createSlashMenu, insertImageFile } from './editor/slash.js';
+import { SyncedCopy, SyncedGuard, SyncedSource } from './editor/synced.js';
 
 function baseExtensions({ collab = false, shareToken = null } = {}) {
   return [
@@ -61,7 +62,28 @@ function baseExtensions({ collab = false, shareToken = null } = {}) {
     PlantUml,
     Excalidraw,
     DrawIo,
+    SyncedSource,
+    SyncedCopy.configure({ shareToken, createViewer: (element, doc) => createViewer(element, doc, shareToken) }),
+    SyncedGuard,
   ];
+}
+
+// Contenu d'une copie de bloc synchronisé : éditeur en lecture seule (rendu par le schéma, aucun HTML inséré tel quel).
+// Renvoie null si le contenu ne respecte pas le schéma.
+function createViewer(element, doc, shareToken) {
+  const extensions = baseExtensions({ shareToken });
+  let invalid = false;
+  let viewer = null;
+  try {
+    viewer = new Editor({
+      element, editable: false, extensions, content: doc,
+      enableContentCheck: true, onContentError: () => { invalid = true; },
+      // Lecture seule, sans rôle de champ : le texte est lu comme le reste de la page.
+      editorProps: { attributes: { class: 'prose synced-prose', role: 'none' } },
+    });
+  } catch { invalid = true; }
+  if (invalid) { viewer?.destroy(); return null; }
+  return viewer;
 }
 
 const schemaExtensions = baseExtensions();

@@ -12,7 +12,8 @@ import type { DocNode } from '../lib/content.js';
 import { randomToken } from '../lib/crypto.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
 import { canWritePage, filterReadable } from '../lib/page-acl.js';
-import { activeShare, publicDoc, restrictionKey, setSharingEnabled, sharedDescendants, sharingEnabled, type ShareRow } from '../lib/shares.js';
+import { expandSyncedCopies, MAX_ANONYMOUS_SOURCE_CHARS } from '../lib/synced-blocks.js';
+import { activeShare, anonymousCanRead, publicDoc, restrictionKey, setSharingEnabled, sharedDescendants, sharingEnabled, type ShareRow } from '../lib/shares.js';
 
 const putBody = z.object({
   includeChildren: z.boolean().optional(),
@@ -143,7 +144,8 @@ export default async function shareRoutes(app: FastifyInstance) {
     if (!targetRow) return null;
     const titles = new Map<string, string>([[root.id, root.title], ...tree.map((t) => [t.id, t.title] as [string, string])]);
     let content: DocNode;
-    try { content = publicDoc(JSON.parse(targetRow.content) as DocNode, ids); } catch { content = { type: 'doc', content: [] }; }
+    // Copies synchronisées : résolues seulement si la source est publiée par ce partage ou lisible sans compte (espace public).
+    try { content = publicDoc(expandSyncedCopies(db, JSON.parse(targetRow.content) as DocNode, (pid) => anonymousCanRead(db, pid, ids), { maxSourceChars: MAX_ANONYMOUS_SOURCE_CHARS }), ids); } catch { content = { type: 'doc', content: [] }; }
     return {
       indexing: !!share.indexing,
       root: { id: root.id, title: root.title, icon: root.icon },

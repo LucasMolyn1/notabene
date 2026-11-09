@@ -304,7 +304,7 @@ export function importNotion(db: DB, input: NotionImportInput): ImportReport {
       const before = { ...stats.links };
       try {
         const raw = markdownToDoc(body, { resolveLink, resolveFile, resolveImage, resolveExternal, emojiCallouts: true, from: n.path, stats, notes });
-        updatePage(db, pageId, { content: sanitizeDoc(raw) }, userId, input.cloner);
+        updatePage(db, pageId, { content: sanitizeDoc(raw) }, userId, input.cloner, { freshSyncedIds: true });
       } catch (err) {
         if (!(err instanceof HttpError) || err instanceof ZipError) throw err;
         notes.add(`contenu non importé (${err.message}) : page créée vide`);
@@ -413,7 +413,7 @@ function fillTable(db: DB, n: Node, userId: string | null) {
   if (data.length > TABLE_MAX_ROWS) notes.push(`${data.length - TABLE_MAX_ROWS} ligne(s) au-delà de ${TABLE_MAX_ROWS} non reprises`);
   const content: DocNode[] = header.length ? [{ type: 'table', content: [row(header, 'tableHeader'), ...data.slice(0, TABLE_MAX_ROWS).map((r) => row(r, 'tableCell'))] }] : [{ type: 'paragraph' }];
   try {
-    updatePage(db, n.pageId!, { content: sanitizeDoc({ type: 'doc', content }) }, userId);
+    updatePage(db, n.pageId!, { content: sanitizeDoc({ type: 'doc', content }) }, userId, undefined, { freshSyncedIds: true });
   } catch (err) {
     if (!(err instanceof HttpError)) throw err;
     notes.push(`tableau non importé (${err.message})`);

@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, statSync } from 'node:fs';
 import type { FastifyRequest } from 'fastify';
 import type { DB } from '../db.js';
-import { canReadAttachment, readableSpaceIds } from './access.js';
+import { canReadAttachment, loadReadablePage, readableSpaceIds } from './access.js';
 import { ATTACHMENT_ID, attachmentPath, INLINE_MIMES, sanitizeFilename, sniffMime, type AttachmentMime } from './attachments.js';
 import { presentRows, propertiesOf, toCsv } from './bases.js';
 import { type DocNode, mentionIds } from './content.js';
@@ -17,6 +17,7 @@ import { type ExportLinks, toMarkdown } from './markdown.js';
 import { readersAmong } from './mentions.js';
 import { canReadPage, filterReadable } from './page-acl.js';
 import { escapeHtml, renderHtml } from './render-html.js';
+import { expandSyncedCopies } from './synced-blocks.js';
 import { zipEntryName, zipStream, type ZipEntry } from './zip.js';
 
 export type ExportFormat = 'md' | 'html';
@@ -185,7 +186,7 @@ export async function buildExport(db: DB, req: FastifyRequest, opts: {
       const path = `${FILES_DIR}/${reserve(usedFiles, `image-${++inlineCount}`, FILE_EXT[mime]!, false)}${FILE_EXT[mime]!}`;
       // Redécodée au moment de l'écriture, depuis la page relue : une seule image en mémoire à la fois.
       const body = () => {
-        const found = findDataImage(JSON.parse((content.get(pageId) as { content: string } | undefined)?.content ?? '{}') as DocNode, key);
+        const found = findDataImage(imageDocOf(pageId), key);
         if (!found) throw new Error('image modifiée pendant l’export');
         return Buffer.from(found, 'base64');
       };
@@ -193,6 +194,18 @@ export async function buildExport(db: DB, req: FastifyRequest, opts: {
     }
     images.set(key, out);
     return out;
+  };
+
+  // Contenu d'une page tel qu'exporté : copies synchronisées résolues seulement si la personne peut lire la page source.
+  const canReadSource = (pid: string) => { try { loadReadablePage(db, req, pid); return true; } catch { return false; } };
+  const docOf = (pageId: string) => expandSyncedCopies(db,
+    JSON.parse((content.get(pageId) as { content: string } | undefined)?.content ?? '{"type":"doc","content":[]}') as DocNode, canReadSource);
+  // Images intégrées : écrites à la suite pour une même page, d'où un cache d'une seule page développée (la dernière) plutôt que
+  // de garder toutes les pages en mémoire pendant l'export.
+  let lastImageDoc: { pageId: string; doc: DocNode } | null = null;
+  const imageDocOf = (pageId: string) => {
+    if (lastImageDoc?.pageId !== pageId) lastImageDoc = { pageId, doc: docOf(pageId) };
+    return lastImageDoc.doc;
   };
 
   // Titres des pages liées : celles de l'archive, ou une page lisible ailleurs (lien absolu vers le wiki).
@@ -217,7 +230,7 @@ export async function buildExport(db: DB, req: FastifyRequest, opts: {
       const props = propertiesOf(db, n.id);
       return Buffer.from(toCsv(props, presentRows({ db, auth: req.auth, spaces: visible, baseId: n.id }, props, !!req.auth)), 'utf8');
     }
-    const doc = JSON.parse((content.get(n.id) as { content: string } | undefined)?.content ?? '{"type":"doc","content":[]}') as DocNode;
+    const doc = docOf(n.id);
     const names = new Map(readersAmong(db, n.id, mentionIds(doc), 200).map((u) => [u.id, u.name]));
     const links: ExportLinks = {
       page: (id) => (fileOfPage.has(id) ? relative(n.file, fileOfPage.get(id)!) : null),

@@ -53,6 +53,11 @@ type AttrRules = Record<string, (v: unknown) => unknown>;
 
 const attachmentId = (v: unknown) => (typeof v === 'string' && ATTACHMENT_ID.test(v) ? v : undefined);
 
+// Identifiant de bloc synchronisé : 16 octets aléatoires en base64url sans remplissage (22 caractères, 128 bits). Le dernier
+// caractère ne porte que 2 bits utiles : seules les 4 valeurs possibles d'un encodage canonique sont acceptées.
+export const SYNCED_BLOCK_ID = /^[A-Za-z0-9_-]{21}[AQgw]$/;
+const syncedBlockId = (v: unknown) => (typeof v === 'string' && SYNCED_BLOCK_ID.test(v) ? v : undefined);
+
 const cell: AttrRules = { colspan: int(1, 64), rowspan: int(1, 64), colwidth };
 
 const NODES: Record<string, AttrRules> = {
@@ -106,6 +111,10 @@ const NODES: Record<string, AttrRules> = {
   attachment: { id: attachmentId, name: str(200), size: int(0, Number.MAX_SAFE_INTEGER), mime: oneOf(...ATTACHMENT_MIMES) },
   video: { id: attachmentId, name: str(200), width: nullable(int(120, 4000)) },
   audio: { id: attachmentId, name: str(200) },
+  // Blocs synchronisés : la source (contenu édité dans sa page) et la copie (atome, identifiant seul, aucun contenu stocké ;
+  // son contenu est lu à l'affichage, avec les droits du lecteur sur la page source). Voir lib/synced-blocks.ts.
+  syncedSource: { blockId: syncedBlockId },
+  syncedCopy: { blockId: syncedBlockId },
 };
 
 /** Blocs qui désignent une pièce jointe par son identifiant. */
@@ -153,12 +162,59 @@ function checkStructure(node: DocNode, parent: string) {
 // Au plus 20 blocs « base » par page : chacun demande la base entière au serveur à chaque affichage.
 export const MAX_BASE_BLOCKS = 20;
 
-export function sanitizeDoc(input: unknown): DocNode {
-  let baseBlocks = 0;
+// Au plus 20 blocs synchronisés (sources et copies) par page : chaque copie demande sa source au serveur à chaque affichage.
+export const MAX_SYNCED_BLOCKS = 20;
+// Parents permis pour un bloc synchronisé : les conteneurs de blocs (liste blanche). Jamais dans un texte, une liste ou un tableau
+// directement, ni dans un autre bloc synchronisé.
+export const SYNCED_PARENTS = new Set(['doc', 'blockquote', 'callout', 'listItem', 'taskItem', 'tableCell', 'tableHeader', 'detailsContent', 'column']);
+// Conteneurs qu'un bloc synchronisé peut avoir pour ancêtres (avec `doc`) : TOUTE la chaîne d'ancêtres doit en être. Un bloc caché
+// sous un paragraphe, une image, une copie ou une autre source est refusé, ce qui rend identiques par construction le parcours du
+// JSON et celui de l'état Yjs (co-édition, lib/synced-blocks.ts).
+export const SYNCED_CONTAINERS = new Set([
+  'blockquote', 'callout', 'bulletList', 'orderedList', 'taskList', 'listItem', 'taskItem', 'table', 'tableRow', 'tableCell', 'tableHeader',
+  'details', 'detailsContent', 'columns', 'column',
+]);
+// Parents sous lesquels une source invalide peut être sortie de son enveloppe (co-édition) : ceux qui acceptent des blocs, et une
+// source (source imbriquée). Sous tout autre parent (structure imposée), elle est retirée avec son contenu.
+export const UNWRAP_PARENTS = new Set([...SYNCED_PARENTS, 'syncedSource']);
+// Enfants interdits dans une source : ce qui n'est pas un bloc autonome.
+export const NOT_BLOCK = new Set([...INLINE, 'doc', 'listItem', 'taskItem', 'tableRow', 'tableCell', 'tableHeader', 'detailsSummary', 'detailsContent', 'column']);
+
+/**
+ * Nœud retiré en silence par l'assainissement (attributs déjà nettoyés) : image sans adresse sûre, lien de page, mention, intégration
+ * ou pièce jointe sans identifiant valide, bloc « base » sans identifiant ou au-delà de MAX_BASE_BLOCKS (`state` compte les blocs
+ * « base » dans l'ordre du document). Prédicat unique, partagé avec la co-édition (planCollabSynced, lib/synced-blocks.ts).
+ */
+export function droppedNode(type: string, attrs: Record<string, unknown> | undefined, state: { baseBlocks: number }): boolean {
+  if (type === 'image') return !attrs?.src;
+  if (type === 'pageLink' || type === 'mention' || ATTACHMENT_NODES.has(type)) return !attrs?.id;
+  if (type === 'embed') return !attrs?.url;
+  if (type === 'baseBlock') return !attrs?.id || ++state.baseBlocks > MAX_BASE_BLOCKS;
+  return false;
+}
+
+/** Le nœud brut `node` serait-il retiré en silence par l'assainissement ? (Texte vide compris ; type inconnu : non, il est refusé.) */
+export function isDroppedBySanitize(node: DocNode, state: { baseBlocks: number }): boolean {
+  if (node.type === 'text') return typeof node.text !== 'string' || !node.text;
+  if (!Object.hasOwn(NODES, node.type)) return false;
+  return droppedNode(node.type, cleanAttrs(NODES[node.type], node.attrs), state);
+}
+
+/**
+ * `lenientSynced` (co-édition) : un bloc synchronisé invalide ne fait jamais échouer l'assainissement. Les autres structures
+ * imposées (colonne, titre ou corps de dépliable forgés hors de leur parent) lèvent toujours, comme sans bloc synchronisé. Une source est sortie de son
+ * enveloppe (ses blocs restent, à leur place) sous un parent qui accepte des blocs, et retirée avec son contenu ailleurs (parent à
+ * structure imposée : dépliable, colonnes…) ; une copie est retirée. Le JSON enregistré fait foi.
+ */
+export function sanitizeDoc(input: unknown, opts: { lenientSynced?: boolean } = {}): DocNode {
+  const counters = { baseBlocks: 0 };
+  let syncedBlocks = 0;
   let count = 0;
   let textLength = 0;
 
-  const walk = (raw: unknown, depth: number, parent = ''): DocNode | null => {
+  // `inSynced` : le nœud est dans une source synchronisée (aucun bloc synchronisé n'y est permis : ni cycle, ni profondeur).
+  // `chain` : tous les ancêtres du nœud sont `doc` ou des conteneurs de SYNCED_CONTAINERS.
+  const walk = (raw: unknown, depth: number, parent = '', inSynced = false, chain = true): DocNode | DocNode[] | null => {
     if (depth > MAX_DEPTH) throw new HttpError(400, 'Document trop profond');
     if (++count > MAX_NODES) throw new HttpError(400, 'Document trop volumineux');
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new HttpError(400, 'Nœud de document invalide');
@@ -189,20 +245,39 @@ export function sanitizeDoc(input: unknown): DocNode {
 
     const attrs = cleanAttrs(NODES[type], node.attrs);
     if (attrs) out.attrs = attrs;
-    if (type === 'image' && !attrs?.src) return null;
-    if (type === 'pageLink' && !attrs?.id) return null;
-    if (type === 'mention' && !attrs?.id) return null;
-    if (type === 'embed' && !attrs?.url) return null;
-    if (ATTACHMENT_NODES.has(type) && !attrs?.id) return null;
-    if (type === 'baseBlock' && (!attrs?.id || ++baseBlocks > MAX_BASE_BLOCKS)) return null;
+    if (droppedNode(type, attrs, counters)) return null;
+    const synced = type === 'syncedSource' || type === 'syncedCopy';
+    // Bloc synchronisé invalide : refus (API), ou en co-édition copie retirée et source sortie de son enveloppe / retirée.
+    const invalid = (message: string, kids: DocNode[] = []): DocNode[] | null => {
+      if (!opts.lenientSynced) throw new HttpError(400, message);
+      return type === 'syncedSource' && UNWRAP_PARENTS.has(parent) ? kids : null;
+    };
+    let excess = false;
+    if (synced) {
+      if (!attrs?.blockId || inSynced || !chain || !SYNCED_PARENTS.has(parent)) {
+        if (!opts.lenientSynced || type === 'syncedCopy' || !UNWRAP_PARENTS.has(parent)) return invalid(`Structure invalide pour « ${type} »`);
+        excess = true; // source mal placée sous un parent qui accepte des blocs : sortie de son enveloppe après lecture de son contenu
+      } else if (++syncedBlocks > MAX_SYNCED_BLOCKS) {
+        if (!opts.lenientSynced || type === 'syncedCopy') return invalid(`Une page compte au plus ${MAX_SYNCED_BLOCKS} blocs synchronisés`);
+        excess = true;
+      }
+      // Une copie n'enregistre jamais de contenu : ce qui serait envoyé avec elle est ignoré, sans être lu.
+      if (type === 'syncedCopy') return out;
+    }
     if (Array.isArray(node.content)) {
-      out.content = node.content.map((c) => walk(c, depth + 1, type)).filter((c): c is DocNode => c !== null);
+      const nested = inSynced || type === 'syncedSource';
+      const childChain = chain && (type === 'doc' || SYNCED_CONTAINERS.has(type));
+      out.content = node.content.flatMap((c) => walk(c, depth + 1, type, nested, childChain) ?? []);
+    }
+    if (type === 'syncedSource' && (excess || !out.content?.length || out.content.some((k) => NOT_BLOCK.has(k.type)))) {
+      return invalid('Structure invalide pour « syncedSource »', out.content ?? []);
     }
     checkStructure(out, parent);
     return out;
   };
 
-  const doc = walk(input, 0);
+  const root = walk(input, 0);
+  const doc = Array.isArray(root) ? null : root;
   if (!doc || doc.type !== 'doc') throw new HttpError(400, 'Le contenu doit être un document (type « doc »)');
   if (!doc.content?.length) doc.content = [{ type: 'paragraph' }];
   return doc;
@@ -227,6 +302,17 @@ export function hasPageLink(doc: DocNode | undefined, pageId: string): boolean {
   return (doc.content ?? []).some((c) => hasPageLink(c, pageId));
 }
 
+/** Retire les ancres de commentaires : les fils d'une page ne suivent pas son contenu ailleurs (copie, bloc synchronisé). */
+export function stripCommentAnchors(node: DocNode): DocNode {
+  const out: DocNode = { ...node };
+  if (node.marks) {
+    const marks = node.marks.filter((m) => m.type !== 'commentAnchor');
+    if (marks.length) out.marks = marks; else delete out.marks;
+  }
+  if (node.content) out.content = node.content.map(stripCommentAnchors);
+  return out;
+}
+
 export const emptyDoc = (): DocNode => ({ type: 'doc', content: [{ type: 'paragraph' }] });
 
 const TEXT_BLOCKS = new Set(['paragraph', 'heading', 'codeBlock']);
@@ -236,6 +322,8 @@ export function docText(node: DocNode | undefined): string {
   if (!node) return '';
   if (node.type === 'text') return node.text ?? '';
   if (node.type === 'hardBreak') return ' ';
+  // Une copie synchronisée n'ajoute rien au texte de sa page (recherche, extraits) : le texte de la source est indexé avec SA page.
+  if (node.type === 'syncedCopy') return '';
   if (node.type === 'mermaid' || node.type === 'plantuml' || node.type === 'math') return ` ${String(node.attrs?.code ?? '')} `;
   if (ATTACHMENT_NODES.has(node.type)) return ` ${String(node.attrs?.name ?? '')} `;
   const sep = TEXT_BLOCKS.has(node.type) ? '' : ' ';

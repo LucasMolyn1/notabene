@@ -13,8 +13,9 @@ import type { AttachmentCloner } from './attachments.js';
 import { sanitizeDoc } from './content.js';
 import type { EventBus } from './events.js';
 import { randomToken } from './crypto.js';
-import { jsonToYFragment, yFragmentToJson } from './yjs-json.js';
-import { getPageRow, updatePage } from './pages.js';
+import { jsonToYFragment, jsonToYNodes, yChildrenToJson, yFragmentToJson } from './yjs-json.js';
+import { getPageRow, type PageRow, recordSnapshotVersion, updatePage } from './pages.js';
+import { type CollabAction, planCollabSynced } from './synced-blocks.js';
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
@@ -24,6 +25,14 @@ const FIELD = 'default';
 const SAVE_DELAY = 2000;
 const IDLE_CLOSE = 15_000;
 const MAX_CONNS_PER_ROOM = 50;
+// Garde-fou : au plus 20 sources synchronisées renommées par salle et par minute. Au-delà, les sources en conflit sont sorties de
+// leur enveloppe (contenu ordinaire), avec un avertissement : un état forgé ne peut pas faire réserver des identifiants en boucle,
+// et l'enregistrement de la page n'échoue jamais pour autant.
+const MAX_SYNCED_RENAMES_PER_MINUTE = 20;
+// Nouvel essai d'un enregistrement qui a échoué (l'état Yjs, lui, est toujours stocké).
+// Délai doublé à chaque échec (30 s, 60 s, 120 s… jusqu'à 10 min), remis au départ après un succès.
+const SAVE_RETRY_DELAY = 30_000;
+const SAVE_RETRY_MAX = 10 * 60_000;
 
 // Codes 4400-4499 : y-websocket ne se reconnecte pas (décision délibérée du serveur).
 export const CLOSE = { RELOAD: 4409, GONE: 4404, FULL: 4429, DENIED: 4403 } as const;
@@ -45,6 +54,18 @@ class Room {
   /** Personnes ayant modifié le document depuis le dernier enregistrement. */
   editors = new Set<string>();
   dirty = false;
+  /** Salle en cours de fermeture : aucun nouvel essai programmé, aucune modification ne la marque à enregistrer. */
+  closing = false;
+  /** État modifié depuis le dernier stockage dans page_ydocs. */
+  unstored = false;
+  /** Délai du prochain nouvel essai après un échec. */
+  retryDelay = SAVE_RETRY_DELAY;
+  /** La minuterie en cours est un nouvel essai (espacé) : une modification la remplace par l'enregistrement habituel. */
+  retryPending = false;
+  /** Identifiant déjà donné à une source renommée (« ancien#rang ») : un même renommage n'en tire jamais un second. */
+  readonly syncedRenames = new Map<string, string>();
+  /** Dates des renommages de la dernière minute (plafond MAX_SYNCED_RENAMES_PER_MINUTE). */
+  renameTimes: number[] = [];
   saveTimer: NodeJS.Timeout | null = null;
   idleTimer: NodeJS.Timeout | null = null;
   constructor(readonly pageId: string) {
@@ -54,6 +75,45 @@ class Room {
 
 const REF_NODES = new Set(['attachment', 'video', 'audio']);
 const IMAGE_SRC = /^\/api\/v3\/attachments\/([A-Za-z0-9_-]{22})$/;
+
+/**
+ * Applique à l'état Yjs le plan calculé sur son JSON brut (planCollabSynced) : `actions[k]` vise le k-ième bloc synchronisé dans
+ * l'ordre préfixe des éléments, le même que celui du JSON brut (yFragmentToJson garde chaque élément). Renommage (attribut
+ * réécrit seulement s'il change), source sortie de son enveloppe (ses enfants prennent sa place), copie retirée. Les retraits se
+ * font du dernier au premier : un descendant passe avant son ancêtre, un frère suivant avant le précédent, aucune position ne
+ * glisse. Renvoie false (et ne touche à rien) si l'état ne correspond plus au plan.
+ */
+export function applyCollabSynced(fragment: Y.XmlFragment, actions: CollabAction[]): boolean {
+  if (!actions.some(Boolean)) return true;
+  const els: Y.XmlElement[] = [];
+  const walk = (parent: Y.XmlFragment | Y.XmlElement) => {
+    for (const child of parent.toArray()) {
+      if (!(child instanceof Y.XmlElement)) continue;
+      if (child.nodeName === 'syncedSource' || child.nodeName === 'syncedCopy') els.push(child);
+      // Un élément nommé « text » est une feuille pour le plan (planCollabSynced) : on n'y descend pas non plus.
+      if (child.nodeName !== 'text') walk(child);
+    }
+  };
+  walk(fragment);
+  if (els.length !== actions.length) return false;
+  actions.forEach((a, k) => { if (a?.kind === 'rename' && els[k]!.getAttribute('blockId') !== a.to) els[k]!.setAttribute('blockId', a.to); });
+  for (let k = els.length - 1; k >= 0; k--) {
+    const a = actions[k];
+    if (a?.kind === 'strip') { const el = els[k]!; if (el.length) el.delete(0, el.length); continue; }
+    if (a?.kind !== 'unwrap' && a?.kind !== 'remove') continue;
+    const el = els[k]!;
+    const parent = el.parent as Y.XmlElement | Y.XmlFragment | null;
+    if (!parent) continue;
+    const index = parent.toArray().indexOf(el);
+    if (index < 0) continue;
+    // Sortie d'enveloppe = suppression puis réinsertion des enfants : une frappe concurrente dans ce sous-arbre est perdue (risque
+    // accepté : seulement pour un bloc hors règles, au-delà des plafonds ou forgé).
+    const kids = a.kind === 'unwrap' ? yChildrenToJson(el) : [];
+    parent.delete(index, 1);
+    if (kids.length) parent.insert(index, jsonToYNodes(kids));
+  }
+  return true;
+}
 
 /** Remplace dans l'état Yjs les citations de pièces jointes résolues (`''` : inchangée, `null` : bloc retiré, sinon la copie). */
 export function rewriteAttachmentRefs(parent: Y.XmlFragment | Y.XmlElement, resolved: Map<string, string | null>) {
@@ -109,7 +169,31 @@ export class CollabHub {
     if (!row || row.deleted_at) { this.#close(room, CLOSE.GONE, true); return; }
     // Titre, icône… : le contenu est inchangé, la salle reste valable.
     if (sha(row.content) === room.contentHash) return;
+    this.#snapshotUnsaved(room);
     this.#close(room, CLOSE.RELOAD, true);
+  }
+
+  // Contenu modifié ailleurs alors que la salle a des modifications non enregistrées : elles sont gardées dans l'historique de la
+  // page (version restaurable) avant que l'état ne soit abandonné. Chaque bloc de premier niveau est assaini à part, un bloc
+  // invalide (cause d'un échec d'enregistrement) est laissé de côté. À défaut, avertissement avec la taille de l'état perdu.
+  #snapshotUnsaved(room: Room) {
+    if (!room.dirty) return;
+    try {
+      const raw = yFragmentToJson(room.doc.getXmlFragment(FIELD));
+      const blocks = (raw.content ?? []).flatMap((b) => {
+        try {
+          const out = sanitizeDoc({ type: 'doc', content: [b] }, { lenientSynced: true }).content ?? [];
+          // Bloc retiré entièrement : sanitizeDoc rend un paragraphe vide par défaut, qu'on ne garde pas.
+          return out.length === 1 && out[0]!.type === 'paragraph' && !out[0]!.content && b.type !== 'paragraph' ? [] : out;
+        } catch { return []; }
+      });
+      const doc = sanitizeDoc({ type: 'doc', content: blocks }, { lenientSynced: true });
+      if (recordSnapshotVersion(this.db, room.pageId, doc, room.lastUser)) {
+        console.warn(`collab : modifications non enregistrées de la page ${room.pageId} gardées dans l'historique avant rechargement`);
+      }
+    } catch {
+      console.warn(`collab : modifications non enregistrées de la page ${room.pageId} perdues au rechargement (${Y.encodeStateAsUpdate(room.doc).length} octets)`);
+    }
   }
 
   #load(pageId: string): Room | null {
@@ -159,50 +243,95 @@ export class CollabHub {
   }
 
   #markDirty(room: Room) {
+    room.unstored = true;
+    if (room.closing) return;
     room.dirty = true;
+    if (room.saveTimer && room.retryPending) { clearTimeout(room.saveTimer); room.saveTimer = null; }
+    room.retryPending = false;
     if (!room.saveTimer) room.saveTimer = setTimeout(() => this.#save(room), SAVE_DELAY);
   }
 
   #storeState(room: Room) {
+    room.unstored = false;
     this.db.prepare(
       `INSERT INTO page_ydocs (page_id, state, epoch, content_hash, updated_at) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(page_id) DO UPDATE SET state = excluded.state, epoch = excluded.epoch, content_hash = excluded.content_hash, updated_at = excluded.updated_at`,
     ).run(room.pageId, Buffer.from(Y.encodeStateAsUpdate(room.doc)), room.epoch, room.contentHash, Date.now());
   }
 
-  // Écrit l'état Yjs et le contenu JSON assaini dans la page.
-  #save(room: Room) {
+  // Écrit l'état Yjs et le contenu JSON assaini dans la page. Renvoie true si tout est enregistré. Un échec ne perd jamais
+  // l'état Yjs : il est stocké quand même (page_ydocs), et un nouvel essai est programmé.
+  #save(room: Room): boolean {
     if (room.saveTimer) { clearTimeout(room.saveTimer); room.saveTimer = null; }
-    if (!room.dirty) return;
+    room.retryPending = false;
+    // Salle fermée et remplacée (ou retirée) : son état est périmé, rien n'est écrit.
+    if (room.closing && this.#rooms.get(room.pageId) !== room) return true;
+    if (!room.dirty) return true;
     room.dirty = false;
     try {
       const page = getPageRow(this.db, room.pageId);
-      if (!page || page.deleted_at) { this.#close(room, CLOSE.GONE, false); return; }
-      const clean = sanitizeDoc(yFragmentToJson(room.doc.getXmlFragment(FIELD)));
+      if (!page || page.deleted_at) { this.#close(room, CLOSE.GONE, false); return true; }
+      const now = Date.now();
+      room.renameTimes = room.renameTimes.filter((t) => now - t < 60_000);
+      // Blocs synchronisés : plan calculé sur le JSON brut, jamais d'échec ; rien n'est écrit dans l'état Yjs avant l'index.
+      const plan = planCollabSynced(this.db, room.pageId, yFragmentToJson(room.doc.getXmlFragment(FIELD)), {
+        reuse: (from, nth) => room.syncedRenames.get(`${from}#${nth}`),
+        renameBudget: MAX_SYNCED_RENAMES_PER_MINUTE - room.renameTimes.length,
+      });
+      if (plan.actions.some((a) => a?.kind === 'unwrap' || a?.kind === 'remove')) {
+        console.warn(`collab : blocs synchronisés hors règles sortis de leur enveloppe dans la page ${room.pageId}`);
+      }
+      const clean = sanitizeDoc(plan.doc, { lenientSynced: true });
+      let cloner: AttachmentCloner | undefined;
+      let row: PageRow | undefined;
       if (JSON.stringify(clean) !== page.content) {
-        const cloner = this.clonerFor?.([...room.editors], room.lastUser);
-        let row;
+        cloner = this.clonerFor?.([...room.editors], room.lastUser);
         try { row = updatePage(this.db, room.pageId, { content: clean }, room.lastUser, cloner); } catch (err) { cloner?.rollback(); throw err; }
         room.contentHash = sha(row.content);
-        // Le document de co-édition reçoit le même nettoyage : aucun identifiant de fichier inaccessible n'y reste.
-        if (cloner?.resolved.size) room.doc.transact(() => rewriteAttachmentRefs(room.doc.getXmlFragment(FIELD), cloner.resolved), 'server');
+      }
+      // Index et page enregistrés : l'état Yjs reçoit maintenant le même traitement, diffusé à tous les participants.
+      room.renameTimes.push(...plan.fresh.map(() => now));
+      for (const r of plan.renames) room.syncedRenames.set(`${r.from}#${r.nth}`, r.to);
+      if (plan.actions.some(Boolean)) {
+        room.doc.transact(() => {
+          if (!applyCollabSynced(room.doc.getXmlFragment(FIELD), plan.actions)) console.warn(`collab : état modifié pendant l'enregistrement de ${room.pageId}`);
+        }, 'server');
+      }
+      // Le document de co-édition reçoit le même nettoyage : aucun identifiant de fichier inaccessible n'y reste.
+      if (cloner?.resolved.size) room.doc.transact(() => rewriteAttachmentRefs(room.doc.getXmlFragment(FIELD), cloner.resolved), 'server');
+      if (row) {
         const author = room.lastUser ? this.db.prepare('SELECT id, name FROM users WHERE id = ?').get(room.lastUser) as { id: string; name: string } | undefined : undefined;
         this.bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: row.id, version: row.version, by: author, shared: room.editors.size > 1 });
       }
       room.editors.clear();
       this.#storeState(room);
+      room.retryDelay = SAVE_RETRY_DELAY;
+      return true;
     } catch (err) {
-      room.dirty = true; // nouvelle tentative au prochain changement
+      room.dirty = true;
       console.error('collab : échec de la sauvegarde', (err as Error).message);
+      // L'état Yjs est gardé quoi qu'il arrive (le contenu JSON reste le dernier enregistré) : à la réouverture, la salle repart de
+      // cet état tant que la page n'a pas été modifiée ailleurs.
+      if (room.unstored) try { this.#storeState(room); } catch (e) { console.error('collab : état non stocké', (e as Error).message); }
+      if (!room.closing && !room.saveTimer) {
+        room.saveTimer = setTimeout(() => this.#save(room), room.retryDelay);
+        room.retryPending = true;
+        room.retryDelay = Math.min(room.retryDelay * 2, SAVE_RETRY_MAX);
+      }
+      return false;
     }
   }
 
+  // `dropState` : l'état Yjs est abandonné (page à la corbeille ou supprimée, contenu modifié ailleurs, ou état déjà enregistré).
+  // Sinon il est enregistré, ou au moins stocké si l'enregistrement échoue (#save) : la salle n'est jamais détruite avant.
   #close(room: Room, code: number, dropState: boolean) {
+    room.closing = true;
     if (room.saveTimer) clearTimeout(room.saveTimer);
     if (room.idleTimer) clearTimeout(room.idleTimer);
     if (dropState) this.db.prepare('DELETE FROM page_ydocs WHERE page_id = ?').run(room.pageId);
     else this.#save(room);
-    this.#rooms.delete(room.pageId);
+    if (room.saveTimer) { clearTimeout(room.saveTimer); room.saveTimer = null; }
+    if (this.#rooms.get(room.pageId) === room) this.#rooms.delete(room.pageId);
     for (const ws of room.conns.keys()) ws.close(code);
     room.awareness.destroy();
     room.doc.destroy();
@@ -283,8 +412,9 @@ export class CollabHub {
   // (changement de permissions d'une page).
   evictAll() {
     for (const room of [...this.#rooms.values()]) {
-      this.#save(room); // les frappes en attente ne sont pas perdues
-      if (this.#rooms.get(room.pageId) === room) this.#close(room, CLOSE.RELOAD, true);
+      // Les frappes en attente ne sont pas perdues : l'état n'est abandonné que s'il a été enregistré, sinon il est stocké.
+      const saved = this.#save(room);
+      if (this.#rooms.get(room.pageId) === room) this.#close(room, CLOSE.RELOAD, saved);
     }
   }
 

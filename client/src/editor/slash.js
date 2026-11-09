@@ -4,6 +4,7 @@ import { icon } from '../icons.js';
 import { session } from '../session.js';
 import { openModal, toast } from '../ui.js';
 import { pickBase } from './base-block.js';
+import { askSyncedCopy, insideSource } from './synced.js';
 import { allowedHosts, embedUrl } from './embed.js';
 import { uploadFiles } from './attachments.js';
 import { DEFAULT_MATH, DEFAULT_MERMAID, DEFAULT_PLANTUML, openDrawio, openExcalidraw } from '../diagrams.js';
@@ -67,6 +68,20 @@ const SLASH_ITEMS = [
   { group: 'Blocs', title: 'Bloc dépliable', desc: 'Un titre qui masque ou montre son contenu', glyph: '▸', keys: 'details toggle depliable accordeon', run: chainCmd((c) => c.setDetails()) },
   { group: 'Blocs', title: 'Deux colonnes', desc: 'Contenu côte à côte', glyph: '▥', keys: 'colonnes columns deux 2', run: chainCmd((c) => c.setColumns(2)) },
   { group: 'Blocs', title: 'Trois colonnes', desc: 'Contenu en trois colonnes', glyph: '▦', keys: 'colonnes columns trois 3', run: chainCmd((c) => c.setColumns(3)) },
+  {
+    group: 'Blocs', title: 'Bloc synchronisé', desc: 'Contenu à réutiliser dans d’autres pages, toujours à jour', ico: 'layers', keys: 'synchronise synced bloc reutilisable source partage',
+    when: (_ctx, editor) => !insideSource(editor.state),
+    run: chainCmd((c) => c.insertSyncedSource()),
+  },
+  {
+    group: 'Blocs', title: 'Copie d’un bloc synchronisé', desc: 'Afficher ici un bloc synchronisé d’une autre page (lecture seule)', ico: 'copy', keys: 'synchronise synced copie reference bloc',
+    when: (_ctx, editor) => !insideSource(editor.state),
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).run();
+      const pos = editor.state.selection.from;
+      askSyncedCopy((blockId) => editor.chain().focus(pos).insertSyncedCopy(blockId).run());
+    },
+  },
   { group: 'Blocs', title: 'Séparateur', desc: 'Ligne horizontale', glyph: '—', keys: 'hr divider ligne', run: chainCmd((c) => c.setHorizontalRule()) },
   {
     group: 'Diagrammes', title: 'Mermaid', desc: 'Schéma décrit en texte (flux, séquence…)', ico: 'diamond', keys: 'mermaid diagramme flowchart sequence schema',
@@ -215,7 +230,7 @@ export function createSlashMenu(editor, ctx) {
 
   function filter(q) {
     const nq = norm(q);
-    const available = SLASH_ITEMS.filter((it) => !it.when || it.when(ctx));
+    const available = SLASH_ITEMS.filter((it) => !it.when || it.when(ctx, editor));
     if (!nq) return available;
     return available.filter((it) => norm(`${it.title} ${it.keys} ${it.group}`).includes(nq));
   }

@@ -4,7 +4,7 @@
 // rendrait visible à tous une page réservée) ; les mentions déjà notifiées ne le sont pas de nouveau.
 import type { DB } from '../db.js';
 import type { AttachmentCloner } from './attachments.js';
-import { type DocNode } from './content.js';
+import { type DocNode, stripCommentAnchors } from './content.js';
 import { copyBaseData } from './bases.js';
 import { HttpError } from './http.js';
 import { entriesOf, governingPage } from './page-acl.js';
@@ -12,16 +12,7 @@ import { createPage, getPageRow, type PageRow } from './pages.js';
 
 export const MAX_COPY_PAGES = 500;
 
-/** Retire les ancres de commentaires : les fils de la source ne suivent pas la copie. */
-export function stripCommentAnchors(node: DocNode): DocNode {
-  const out: DocNode = { ...node };
-  if (node.marks) {
-    const marks = node.marks.filter((m) => m.type !== 'commentAnchor');
-    if (marks.length) out.marks = marks; else delete out.marks;
-  }
-  if (node.content) out.content = node.content.map(stripCommentAnchors);
-  return out;
-}
+export { stripCommentAnchors };
 
 export function copyTree(
   db: DB,

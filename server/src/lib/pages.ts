@@ -5,6 +5,7 @@ import type { AttachmentCloner } from './attachments.js';
 import { type DocNode, docText, emptyDoc, sanitizeDoc } from './content.js';
 import { copyBaseData } from './bases.js';
 import { HttpError, newId } from './http.js';
+import { dropEmptySources, freshSources, moveIndexToSpace, syncIndex } from './synced-blocks.js';
 
 const VERSION_WINDOW = 5 * 60_000;
 const VERSION_MAX = 50;
@@ -134,7 +135,9 @@ export function createPage(db: DB, input: CreatePageInput, userId: string | null
   return db.transaction(() => {
     const parentId = input.parentId ?? null;
     assertParent(db, input.spaceId, parentId);
-    const doc = input.content ? sanitizeDoc(input.content) : emptyDoc();
+    // Une nouvelle page ne reprend jamais un identifiant de bloc synchronisé reçu (modèle, duplication, copie, client) : ses sources
+    // reçoivent des identifiants neufs, ses copies gardent le leur.
+    const doc = input.content ? freshSources(sanitizeDoc(input.content)) : emptyDoc();
     const sibs = siblings(db, input.spaceId, parentId);
     let position = sibs.length ? sibs[sibs.length - 1].position + 1 : 0;
     const afterIdx = input.afterId ? sibs.findIndex((s) => s.id === input.afterId) : -1;
@@ -154,6 +157,7 @@ export function createPage(db: DB, input: CreatePageInput, userId: string | null
       const copied = cloner.clone(doc, { pageId: id });
       if (JSON.stringify(copied) !== JSON.stringify(doc)) db.prepare('UPDATE pages SET content = ? WHERE id = ?').run(JSON.stringify(copied), id);
     }
+    syncIndex(db, id, input.spaceId, doc);
     const row = getPageRow(db, id)!;
     recordVersion(db, row, userId, true);
     return row;
@@ -170,7 +174,9 @@ export interface UpdatePageInput {
 
 // `cloner` : une pièce jointe d'une autre page (ou d'un modèle) citée par le contenu est copiée dans cette page si l'auteur peut la
 // lire, sinon la citation est retirée. La page ne dépend ainsi jamais des fichiers d'une autre page.
-export function updatePage(db: DB, id: string, input: UpdatePageInput, userId: string | null, cloner?: AttachmentCloner) {
+// Blocs synchronisés : une source qui reprend l'identifiant d'une autre page est refusée (409) ; `freshSyncedIds` (contenu importé)
+// donne à toutes les sources un identifiant neuf.
+export function updatePage(db: DB, id: string, input: UpdatePageInput, userId: string | null, cloner?: AttachmentCloner, opts: { freshSyncedIds?: boolean } = {}) {
   return db.transaction(() => {
     const current = getPageRow(db, id);
     if (!current || current.deleted_at) throw new HttpError(404, 'Page introuvable');
@@ -189,7 +195,10 @@ export function updatePage(db: DB, id: string, input: UpdatePageInput, userId: s
     if (input.fullWidth !== undefined) next.full_width = input.fullWidth ? 1 : 0;
     if (input.content !== undefined) {
       let doc = sanitizeDoc(input.content);
-      if (cloner) doc = cloner.clone(doc, { pageId: id }, { dropUnreadable: true });
+      if (opts.freshSyncedIds) doc = freshSources(doc);
+      // Le copieur peut retirer le seul bloc d'une source (pièce jointe illisible, manquante, quota) : la source vide disparaît.
+      if (cloner) doc = dropEmptySources(cloner.clone(doc, { pageId: id }, { dropUnreadable: true }));
+      syncIndex(db, id, current.space_id, doc);
       next.content = JSON.stringify(doc);
       next.text = docText(doc);
     }
@@ -204,6 +213,19 @@ export function updatePage(db: DB, id: string, input: UpdatePageInput, userId: s
     if (contentChanged) recordVersion(db, row, userId);
     return row;
   })();
+}
+
+/**
+ * Version de l'historique pour un contenu qui n'a pas pu être enregistré dans la page (co-édition rechargée après une modification
+ * venue d'ailleurs) : rien n'est perdu, la version peut être restaurée. Aucune si le contenu est celui de la page.
+ */
+export function recordSnapshotVersion(db: DB, pageId: string, doc: DocNode, userId: string | null) {
+  const row = getPageRow(db, pageId);
+  if (!row || row.deleted_at) return false;
+  const content = JSON.stringify(doc);
+  if (content === row.content) return false;
+  recordVersion(db, { ...row, content }, userId, true);
+  return true;
 }
 
 export function movePage(db: DB, id: string, input: { parentId: string | null; index?: number; spaceId?: string }) {
@@ -221,6 +243,7 @@ export function movePage(db: DB, id: string, input: { parentId: string | null; i
     if (spaceId !== page.space_id) {
       const ids = [id, ...descendantIds(db, id)];
       db.prepare('UPDATE pages SET space_id = ? WHERE id IN (SELECT value FROM json_each(?))').run(spaceId, JSON.stringify(ids));
+      moveIndexToSpace(db, ids, spaceId);
       // Changer d'espace change qui gouverne la page : ses liens publics (et ceux de ses sous-pages) ne la suivent pas.
       db.prepare('DELETE FROM page_shares WHERE page_id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));
     }

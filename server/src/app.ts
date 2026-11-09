@@ -31,6 +31,7 @@ import avatarRoutes from './routes/avatars.js';
 import attachmentRoutes from './routes/attachments.js';
 import { attachmentsDir, drainAttachmentGc } from './lib/attachments.js';
 import v3Routes from './routes/v3.js';
+import syncedBlockRoutes from './routes/synced-blocks.js';
 import verificationRoutes from './routes/verifications.js';
 import readReceiptRoutes from './routes/read-receipts.js';
 import scimRoutes from './routes/scim.js';
@@ -321,6 +322,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(webhookRoutes);
     await scope.register(importRoutes);
     await scope.register(v3Routes);
+    await scope.register(syncedBlockRoutes);
     await scope.register(verificationRoutes);
     await scope.register(readReceiptRoutes);
     await scope.register(scimAdminRoutes);

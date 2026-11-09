@@ -787,6 +787,23 @@ export const MIGRATIONS: string[] = [
   );
   CREATE UNIQUE INDEX scim_groups_external ON scim_groups(external_id) WHERE external_id IS NOT NULL;
   `,
+  // 30 : blocs synchronisés (lib/synced-blocks.ts). Index des sources : un identifiant de bloc désigne au plus une page, celle qui
+  // l'a enregistré en premier. `removed_at` : source retirée du contenu de sa page (l'identifiant reste réservé à cette page, une
+  // annulation le retrouve). `page_id` NULL : page supprimée définitivement ; l'identifiant reste réservé et ne désigne plus rien.
+  // `space_id` : espace de la page, tenu à jour au déplacement (information ; les droits sont toujours lus sur la page).
+  // Aucune donnée personnelle ni contenu. Aucune donnée existante modifiée (aucun bloc synchronisé ne pouvait exister avant).
+  // Retour arrière : DROP TABLE synced_blocks;
+  `
+  CREATE TABLE synced_blocks (
+    block_id   TEXT PRIMARY KEY,
+    page_id    TEXT REFERENCES pages(id) ON DELETE SET NULL,
+    space_id   TEXT REFERENCES spaces(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    removed_at INTEGER
+  );
+  CREATE INDEX synced_blocks_page ON synced_blocks(page_id) WHERE page_id IS NOT NULL;
+  `,
 ];
 
 export function openDb(file: string): DB {
