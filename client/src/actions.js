@@ -418,7 +418,7 @@ export async function openTrash() {
 
 export function spaceForm(space = null) {
   let spaceIcon = space?.icon || 'folder';
-  const iconBtn = h('button', { class: 'emoji-field', type: 'button' }, icon('folder', 20));
+  const iconBtn = h('button', { class: 'emoji-field', type: 'button', 'aria-label': 'Choisir l’icône de l’espace' }, icon('folder', 20));
   const paintBtn = () => { iconBtn.replaceChildren(pageIcon(spaceIcon, 20)); };
   iconBtn.addEventListener('click', () => iconPicker(iconBtn, (name) => { spaceIcon = name || 'folder'; paintBtn(); }, { allowRemove: false }));
   if (space?.icon) paintBtn();

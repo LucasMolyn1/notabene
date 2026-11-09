@@ -788,6 +788,9 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
 .modal-body { padding: 8px 20px 18px; overflow: auto; }
 .modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border); }
 .field { display: grid; gap: 6px; }
+.check-row { display: flex; align-items: flex-start; gap: 10px; }
+.check-row input { margin-top: 3px; flex: none; }
+.check-row .hint { display: block; margin-top: 2px; }
 .field > span { font-size: 12.5px; font-weight: 500; color: var(--text-2); }
 .code-area { width: 100%; font: 12.5px/1.5 var(--mono); padding: 10px; border-radius: var(--radius); border: 1px solid var(--border-strong); background: var(--bg-soft); resize: none; }
 
