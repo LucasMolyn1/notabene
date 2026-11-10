@@ -6,7 +6,7 @@
 import { h } from './util.js';
 import { icon } from './icons.js';
 import { closePopover, openPopover } from './ui.js';
-import { dayNum, isoDay, todayNum } from './base-model.js';
+import { dayNum, isDateCol, isoDay, rangeOf, todayNum } from './base-model.js';
 import { openIcal } from './ical-dialog.js';
 
 const DAY = 86_400_000;
@@ -61,14 +61,19 @@ export function calendarEl(ctx) {
   const helpId = `cal-help-${uid}`;
   const mode = c.mode === 'week' ? 'week' : 'month';
   const settings = data.settings ?? {};
-  const dates = data.properties.filter((p) => p.type === 'date');
+  // Début : une colonne Date ou une Plage de dates (qui porte alors aussi la fin) ; fin à part : une colonne Date.
+  const starts = data.properties.filter(isDateCol);
+  const dates = starts.filter((p) => p.type === 'date');
+  const startProp = (pid) => starts.find((p) => p.id === pid);
   const dateProp = (pid) => dates.find((p) => p.id === pid);
-  // Colonnes : celles de la vue, sinon celles des réglages de la base, sinon la première colonne Date.
-  const startP = dateProp(c.dateId) ?? dateProp(settings.startPropertyId) ?? dates[0] ?? null;
+  // Colonnes : celles de la vue, sinon celles des réglages de la base, sinon la première colonne de dates.
+  const startP = startProp(c.dateId) ?? startProp(settings.startPropertyId) ?? dates[0] ?? starts[0] ?? null;
+  const ranged = startP?.type === 'date_range';
   // Fin : celle de la vue, sinon celle des réglages (différente du début), sinon aucune (l'élément dure un jour).
-  const defaultEnd = dateProp(settings.endPropertyId)?.id !== startP?.id ? dateProp(settings.endPropertyId) ?? null : null;
-  const viewEnd = c.endId !== undefined && c.endId !== startP?.id ? dateProp(c.endId) ?? null : null;
+  const defaultEnd = !ranged && dateProp(settings.endPropertyId)?.id !== startP?.id ? dateProp(settings.endPropertyId) ?? null : null;
+  const viewEnd = !ranged && c.endId !== undefined && c.endId !== startP?.id ? dateProp(c.endId) ?? null : null;
   const endP = viewEnd ?? defaultEnd;
+  const hasEnd = ranged || !!endP;
   const statusP = data.properties.find((p) => p.type === 'status');
   const titleP = data.properties[0];
   const today = todayNum();
@@ -88,8 +93,9 @@ export function calendarEl(ctx) {
   const tools = h('div', { class: 'cal-tools' },
     selectOf('Affichage', mode, [['month', 'Affichage : mois'], ['week', 'Affichage : semaine']], (v) => set({ mode: v })),
     // Le début et la fin sont deux colonnes différentes : choisir comme début la colonne de fin retire la fin de la vue.
-    dates.length > 0 && selectOf('Colonne de date', startP.id, dates.map((p) => [p.id, `Date : ${p.name}`]), (v) => ctx.setConfig(v === c.endId ? without({ ...c, dateId: v }, 'endId') : { ...c, dateId: v })),
-    dates.length > 1 && selectOf('Colonne de fin', viewEnd?.id ?? '',
+    starts.length > 0 && selectOf('Colonne de date', startP.id, starts.map((p) => [p.id, p.type === 'date_range' ? `Plage : ${p.name}` : `Date : ${p.name}`]),
+      (v) => ctx.setConfig(v === c.endId || startProp(v)?.type === 'date_range' ? without({ ...c, dateId: v }, 'endId') : { ...c, dateId: v })),
+    !ranged && dates.length > 1 && selectOf('Colonne de fin', viewEnd?.id ?? '',
       [['', defaultEnd ? `Fin : ${defaultEnd.name} (réglages)` : 'Fin : aucune (un jour)'], ...dates.filter((p) => p.id !== startP.id && p.id !== defaultEnd?.id).map((p) => [p.id, `Fin : ${p.name}`])],
       (v) => ctx.setConfig(v ? { ...c, endId: v } : without(c, 'endId'))),
     h('div', { class: 'tl-modes', role: 'group', 'aria-label': 'Présentation' },
@@ -99,15 +105,20 @@ export function calendarEl(ctx) {
 
   if (!startP) {
     return h('div', { class: 'cal' }, tools, h('div', { class: 'empty tl-empty' },
-      h('p', null, 'Ajoutez une colonne Date à la base pour afficher le calendrier.')));
+      h('p', null, 'Ajoutez une colonne Date ou Plage de dates à la base pour afficher le calendrier.')));
   }
 
   // ---- Dates d'une ligne (un déplacement en cours au clavier prime) ----
+  /** Début et fin écrits dans la ligne (sans compléter l'un par l'autre). */
+  function rawOf(row) {
+    if (ranged) { const r = rangeOf(row.values[startP.id]); return { s: r ? dayNum(r.start) : null, e: r?.end ? dayNum(r.end) : null }; }
+    return { s: dayNum(row.values[startP.id]), e: endP ? dayNum(row.values[endP.id]) : null };
+  }
+  const rangeValue = (s, e) => (s === null ? null : { start: isoDay(s), end: e === null ? null : isoDay(e) });
   function datesOf(row) {
     const p = cal.pending.get(row.id);
     if (p) return p;
-    let s = dayNum(row.values[startP.id]);
-    let e = endP ? dayNum(row.values[endP.id]) : null;
+    let { s, e } = rawOf(row);
     if (s === null && e === null) return null;
     if (s === null) s = e;
     if (e === null || e < s) e = s;
@@ -124,9 +135,9 @@ export function calendarEl(ctx) {
 
   // ---- Écritures ----
   function commit(row, d) {
-    const values = { [startP.id]: isoDay(d.s) };
     // La fin suit le début (une fin vide le reste : l'élément dure alors un jour).
-    if (endP && row.values[endP.id]) values[endP.id] = isoDay(d.e);
+    const values = ranged ? { [startP.id]: rangeValue(d.s, rawOf(row).e === null ? null : d.e) } : { [startP.id]: isoDay(d.s) };
+    if (!ranged && endP && row.values[endP.id]) values[endP.id] = isoDay(d.e);
     cal.pending.delete(row.id);
     cal.focusRow = row.id;
     return ctx.patchRow(row, { values });
@@ -140,7 +151,7 @@ export function calendarEl(ctx) {
   async function add(n) {
     if (!canWrite) return;
     if (data.rows.length >= data.limits.rows) { announce('La base a atteint son nombre maximal de lignes.'); return; }
-    const row = await ctx.addRow({ [startP.id]: isoDay(n) });
+    const row = await ctx.addRow({ [startP.id]: ranged ? rangeValue(n, null) : isoDay(n) });
     if (!row) return;
     // La nouvelle ligne s'ouvre pour saisir son titre.
     const target = /** @type {HTMLElement | null} */ (document.querySelector(`.cal [data-focus-key="cal-ev-${CSS.escape(row.id)}"]`)
@@ -164,8 +175,8 @@ export function calendarEl(ctx) {
     if (tIn) tIn.value = row.values[titleP.id] ?? '';
     const sIn = h('input', { class: 'input', type: 'date', id: `cal-s-${uid}` });
     sIn.value = d ? isoDay(d.s) : '';
-    const eIn = endP && h('input', { class: 'input', type: 'date', id: `cal-e-${uid}` });
-    if (eIn) eIn.value = row.values[endP.id] ? isoDay(d.e) : '';
+    const eIn = hasEnd && h('input', { class: 'input', type: 'date', id: `cal-e-${uid}` });
+    if (eIn) { const raw = rawOf(row); eIn.value = raw.e !== null ? isoDay(raw.e) : ''; }
     const stIn = statusP && h('select', { class: 'input', id: `cal-st-${uid}` }, h('option', { value: '' }, '—'), statusP.options.map((o) => h('option', { value: o.id }, o.name)));
     if (stIn) stIn.value = row.values[statusP.id] ?? '';
     const err = h('p', { class: 'notice warning', role: 'alert', hidden: true });
@@ -177,9 +188,14 @@ export function calendarEl(ctx) {
       const values = {};
       const same = (a, b) => (a ?? null) === (b ?? null);
       if (tIn) { const t = tIn.value.trim() || null; if (!same(t, row.values[titleP.id])) values[titleP.id] = t; }
-      const sIso = s === null ? null : isoDay(s);
-      if (!same(sIso, row.values[startP.id])) values[startP.id] = sIso;
-      if (eIn) { const eIso = e === null ? null : isoDay(e); if (!same(eIso, row.values[endP.id])) values[endP.id] = eIso; }
+      if (ranged) {
+        const raw = rawOf(row);
+        if (s !== raw.s || e !== raw.e) values[startP.id] = rangeValue(s, e);
+      } else {
+        const sIso = s === null ? null : isoDay(s);
+        if (!same(sIso, row.values[startP.id])) values[startP.id] = sIso;
+        if (eIn) { const eIso = e === null ? null : isoDay(e); if (!same(eIso, row.values[endP.id])) values[endP.id] = eIso; }
+      }
       if (stIn && !same(stIn.value || null, row.values[statusP.id])) values[statusP.id] = stIn.value || null;
       closePopover();
       if (!Object.keys(values).length) return;
@@ -189,7 +205,7 @@ export function calendarEl(ctx) {
     };
     const field = (input, label) => input && h('div', { class: 'field' }, h('label', { for: input.id }, label), input);
     const form = h('form', { class: 'bt-pop cal-editor', 'aria-label': `Ligne ${title}` },
-      field(tIn, titleP.name), field(sIn, startP.name), field(eIn, endP?.name), field(stIn, statusP?.name), err,
+      field(tIn, titleP.name), field(sIn, ranged ? `${startP.name} : début` : startP.name), field(eIn, ranged ? `${startP.name} : fin` : endP?.name), field(stIn, statusP?.name), err,
       h('div', { class: 'bt-pop-foot cal-editor-foot' },
         h('button', { class: 'btn btn-ghost btn-sm danger', type: 'button', onClick: () => { closePopover(); ctx.removeRow(row); } }, icon('trash', 14), 'Supprimer'),
         h('button', { class: 'btn btn-primary btn-sm', type: 'submit' }, 'Enregistrer')));
@@ -398,6 +414,14 @@ export function calendarEl(ctx) {
       input.addEventListener('change', () => {
         const v = dayNum(input.value);
         if (v === null && which === 'start') { input.value = value === null ? '' : isoDay(value); return; }
+        if (ranged) {
+          const raw = rawOf(row);
+          const s = which === 'start' ? v : raw.s;
+          const e = which === 'end' ? v : raw.e;
+          if (e !== null && s !== null && e < s) { input.value = value === null ? '' : isoDay(value); announce('La fin ne peut pas précéder le début.'); return; }
+          ctx.patchRow(row, { values: { [p.id]: rangeValue(s, e) } });
+          return;
+        }
         ctx.patchRow(row, { values: { [p.id]: v === null ? null : isoDay(v) } });
       });
       return h('td', { class: 'bt-cell' }, input);
@@ -405,13 +429,13 @@ export function calendarEl(ctx) {
     const table = h('table', { class: 'bt-table tl-table cal-table', 'aria-label': `Calendrier sous forme de liste, ${periodTitle()}` },
       h('thead', null, h('tr', null,
         h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, 'Élément')),
-        h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, startP.name)),
+        h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, ranged ? 'Début' : startP.name)),
         h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, endP ? endP.name : 'Fin')),
         statusP && h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, statusP.name)))),
       h('tbody', null, items.slice(0, shown).map((ev) => h('tr', { 'data-row': ev.row.id },
         h('th', { scope: 'row', class: 'bt-cell tl-cell-name' }, h('button', { class: 'cal-open', type: 'button', 'data-focus-key': `cal-open-${ev.row.id}`, onClick: (e) => editor(/** @type {HTMLElement} */ (e.currentTarget), ev.row) }, titleOf(ev.row))),
         dateCell(ev.row, startP, ev.s, 'start'),
-        dateCell(ev.row, endP, endP && ev.row.values[endP.id] ? ev.e : (endP ? null : ev.e), 'end'),
+        ranged ? dateCell(ev.row, startP, rawOf(ev.row).e, 'end') : dateCell(ev.row, endP, endP && ev.row.values[endP.id] ? ev.e : (endP ? null : ev.e), 'end'),
         statusP && h('td', { class: 'bt-cell' }, statusOf(ev.row)?.name ?? '')))));
     return h('div', null,
       items.length ? h('div', { class: 'bt-scroll' }, table) : h('p', { class: 'muted bt-empty' }, `Aucun élément sur la ${mode === 'week' ? 'semaine' : 'période'} affichée.`),

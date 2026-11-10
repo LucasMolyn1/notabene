@@ -100,10 +100,14 @@ export function renderCalendar(db: DB, baseId: string, domain: string): string {
   if (dateId) {
     // Les identifiants de colonnes sont générés par le serveur (base64url) : le chemin JSON est passé en paramètre, jamais concaténé au SQL.
     const path = (id: string | null) => (id ? `$."${id}"` : '$."-"');
+    // Plage de dates : début et fin dans la même cellule.
+    const range = props.find((p) => p.id === dateId)?.type === 'date_range';
+    const startPath = range ? `${path(dateId)}.start` : path(dateId);
+    const endPath = range ? `${path(dateId)}.end` : path(endId);
     const rows = db.prepare(
       `SELECT id, json_extract(vals, ?) AS start, json_extract(vals, ?) AS finish, json_extract(vals, ?) AS title
        FROM base_rows WHERE base_id = ? AND json_type(vals, ?) = 'text' ORDER BY position, created_at LIMIT ?`,
-    ).all(path(dateId), path(endId), path(titleId), baseId, path(dateId), MAX_ICAL_EVENTS) as { id: string; start: unknown; finish: unknown; title: unknown }[];
+    ).all(startPath, endPath, path(titleId), baseId, startPath, MAX_ICAL_EVENTS) as { id: string; start: unknown; finish: unknown; title: unknown }[];
     const now = stamp();
     for (const r of rows) {
       if (!isDate(r.start)) continue;

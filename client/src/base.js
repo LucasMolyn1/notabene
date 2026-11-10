@@ -7,9 +7,13 @@ import { store } from './store.js';
 import { session } from './session.js';
 import { pagePath } from './urls.js';
 import { closePopover, confirmModal, openMenu, openModal, openPopover, pageIcon, toast } from './ui.js';
-import { applyView, descendantsOf, flattenTree, fmtDate, fmtRollup, fold, textOf } from './base-model.js';
+import {
+  NO_TEMPLATE_TYPES, READ_ONLY_TYPES, applyView, dayNum, descendantsOf, flattenTree, fmtDate, fmtRollup, fold, isDateCol, isoDay,
+  mailtoHref, rangeOf, safeEmail, safePhone, safeUrl, telHref, textOf, urlLabel,
+} from './base-model.js';
 import { SCALES, timelineEl } from './timeline.js';
 import { calendarEl } from './calendar.js';
+import { CHART_GROUP_TYPES, chartConfig, chartEl, openChartWizard } from './chart.js';
 import { crumbsFor, setView, topbar } from './views.js';
 import * as A from './actions.js';
 
@@ -20,8 +24,10 @@ const CARD_TYPE = 'application/x-notabene-card';
 export const TYPE_LABELS = {
   text: 'Texte', number: 'Nombre', date: 'Date', select: 'Sélection', multi_select: 'Multi-sélection',
   status: 'Statut', checkbox: 'Case à cocher', person: 'Personne', page_link: 'Lien vers une page', formula: 'Formule',
-  relation: 'Relation', rollup: 'Cumul',
+  relation: 'Relation', rollup: 'Cumul', url: 'Adresse web', email: 'Courriel', phone: 'Téléphone', date_range: 'Plage de dates',
+  unique_id: 'Identifiant unique', created_time: 'Date de création', updated_time: 'Date de modification', created_by: 'Créé par', updated_by: 'Modifié par',
 };
+const MAX_TEMPLATES = 20;
 const ROLLUP_FNS = { count: 'Nombre de liens', sum: 'Somme', avg: 'Moyenne', min: 'Minimum', max: 'Maximum', percent_checked: 'Pourcentage coché' };
 const MAX_LINKS = 50;
 const MAX_BLOCKERS = 10;
@@ -38,7 +44,12 @@ const OPERATORS = {
   link: [['contains', 'contient'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
   formula: [['contains', 'contient'], ['eq', '='], ['neq', '≠'], ['gt', '>'], ['lt', '<'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
 };
-const opKind = (t) => ({ text: 'text', number: 'number', date: 'date', select: 'option', status: 'option', multi_select: 'multi', checkbox: 'checkbox', person: 'link', page_link: 'link', formula: 'formula', relation: 'link', rollup: 'number' }[t]);
+const opKind = (t) => ({
+  text: 'text', number: 'number', date: 'date', select: 'option', status: 'option', multi_select: 'multi', checkbox: 'checkbox', person: 'link', page_link: 'link',
+  formula: 'formula', relation: 'link', rollup: 'number', url: 'text', email: 'text', phone: 'text', unique_id: 'text', created_by: 'link', updated_by: 'link',
+  created_time: 'date', updated_time: 'date', date_range: 'date',
+}[t] ?? 'text');
+const DATE_FILTER_TYPES = new Set(['date', 'created_time', 'updated_time', 'date_range']);
 // replaceChildren transforme null, false et les tableaux en texte : on aplatit et on écarte avant.
 const put = (el, ...parts) => el.replaceChildren(...parts.flat(Infinity).filter(Boolean));
 
@@ -53,6 +64,7 @@ export async function showBase(initial) {
   let destroyed = false;
   let lastOwnWrite = 0; // les écritures de cet écran reviennent aussi par le flux : on n'y réagit pas
   let localConfigs = {}; // lecteurs : réglages de vue gardés en mémoire seulement
+  let loadSeq = 0; // numéro du dernier chargement (le graphique se relit après chaque chargement)
   // Sous-éléments repliés et état de la chronologie (défilement, présentation) : gardés d'un rendu à l'autre.
   const tree = { collapsed: new Set(), tl: {}, cal: {} };
   const targets = new Map(); // bases liées par une relation, lues à la demande
@@ -75,10 +87,11 @@ export async function showBase(initial) {
     const c = localConfigs[view().id] ?? view().config;
     const known = (pid) => !!propById(pid);
     if (c.type === 'calendar') {
+      // Début : une colonne Date ou une Plage de dates ; fin : une colonne Date (une plage porte déjà sa fin).
       const dated = (pid) => propById(pid)?.type === 'date';
       return {
         type: 'calendar', mode: c.mode === 'week' ? 'week' : 'month',
-        ...(dated(c.dateId) ? { dateId: c.dateId } : {}), ...(dated(c.endId) ? { endId: c.endId } : {}),
+        ...(isDateCol(propById(c.dateId)) ? { dateId: c.dateId } : {}), ...(dated(c.endId) && propById(c.dateId)?.type !== 'date_range' ? { endId: c.endId } : {}),
         sort: c.sort.filter((x) => known(x.propertyId)), filters: c.filters.filter((x) => known(x.propertyId)), hidden: c.hidden.filter(known),
       };
     }
@@ -89,6 +102,9 @@ export async function showBase(initial) {
         ...(groupable(c.groupBy) ? { groupBy: c.groupBy } : {}), ...(groupable(c.colorBy) ? { colorBy: c.colorBy } : {}),
         sort: c.sort.filter((x) => known(x.propertyId)), filters: c.filters.filter((x) => known(x.propertyId)), hidden: c.hidden.filter(known),
       };
+    }
+    if (c.type === 'chart') {
+      return { ...chartConfig(props(), c), sort: [], filters: c.filters.filter((x) => known(x.propertyId)), hidden: [] };
     }
     const group = c.groupBy && propById(c.groupBy);
     const board = c.type === 'kanban' && group && (group.type === 'select' || group.type === 'status');
@@ -104,7 +120,9 @@ export async function showBase(initial) {
       return;
     }
     if (destroyed) return;
+    loadSeq += 1;
     targets.clear();
+    for (const [vid, cfg] of pendingConfigs) { const v = data.views.find((x) => x.id === vid); if (v) v.config = cfg; }
     if (!data.views.some((v) => v.id === activeView)) activeView = data.views[0]?.id ?? null;
     render();
   }
@@ -114,17 +132,35 @@ export async function showBase(initial) {
   // ---- Vue : enregistrement (écrivains) ou mémoire locale (lecteurs) ----
   // Un envoi différé par vue : passer à une autre vue pendant l'attente ne perd pas le réglage de la première.
   const saveTimers = new Map();
+  const pendingConfigs = new Map(); // réglages de vue pas encore enregistrés
+  // Attente d'enregistrement par vue : le graphique, calculé par le serveur sur la vue enregistrée, ne se relit qu'après.
+  const saveWaits = new Map();
   function saveConfig(viewId) {
     clearTimeout(saveTimers.get(viewId));
+    let wait = saveWaits.get(viewId);
+    if (!wait) {
+      /** @type {(v?: any) => void} */
+      let resolve = () => {};
+      const promise = new Promise((r) => { resolve = r; });
+      wait = { promise, resolve };
+      saveWaits.set(viewId, wait);
+    }
+    const w = wait;
     saveTimers.set(viewId, setTimeout(async () => {
       saveTimers.delete(viewId);
-      const v = data?.views.find((x) => x.id === viewId);
-      if (!v || destroyed) return;
-      try { await api.patch(`/bases/${id}/views/${viewId}`, { config: v.config }); } catch (err) { fail(err); load(true); }
+      // Le réglage envoyé est celui choisi ici : un rechargement survenu entre-temps ne le remplace pas par l'ancien.
+      const cfg = pendingConfigs.get(viewId);
+      pendingConfigs.delete(viewId);
+      try {
+        if (cfg && !destroyed) { lastOwnWrite = Date.now(); await api.patch(`/bases/${id}/views/${viewId}`, { config: cfg }); }
+      } catch (err) { fail(err); load(true); } finally {
+        if (!saveTimers.has(viewId) && saveWaits.get(viewId) === w) { saveWaits.delete(viewId); w.resolve(); }
+      }
     }, 500));
   }
+  const whenSaved = (viewId) => saveWaits.get(viewId)?.promise ?? Promise.resolve();
   function setConfig(next) {
-    if (canWrite()) { view().config = next; saveConfig(view().id); } else localConfigs[view().id] = next;
+    if (canWrite()) { view().config = next; pendingConfigs.set(view().id, next); saveConfig(view().id); } else localConfigs[view().id] = next;
     render();
   }
 
@@ -133,14 +169,30 @@ export async function showBase(initial) {
     const o = p.options.find((x) => x.id === oid);
     return o && h('span', { class: `bt-badge c-${o.color}` }, o.name);
   };
+  /**
+   * Lien d'une cellule Adresse web, Courriel ou Téléphone : construit par le DOM, schémas http, https, mailto et tel seulement.
+   * Une valeur qui ne passe pas le contrôle s'affiche en texte brut, jamais en lien.
+   */
+  function linkOf(p, v) {
+    if (typeof v !== 'string' || !v) return null;
+    const href = p.type === 'url' ? safeUrl(v)?.href : p.type === 'email' ? mailtoHref(v) : telHref(v);
+    if (!href) return h('span', { class: 'bt-raw' }, v);
+    const label = p.type === 'url' ? urlLabel(v) : v;
+    return h('a', {
+      class: 'bt-link', href, rel: 'noopener noreferrer nofollow', target: p.type === 'url' ? '_blank' : null,
+      title: p.type === 'url' ? v : null, onClick: (e) => e.stopPropagation(),
+    }, label, p.type === 'url' && h('span', { class: 'sr-only' }, ' (nouvel onglet)'));
+  }
   function display(p, v) {
     if (v === undefined || v === null) return null;
     switch (p.type) {
       case 'select': case 'status': return badge(p, v);
       case 'multi_select': return h('span', { class: 'bt-badges' }, v.map((x) => badge(p, x)));
-      case 'person': return h('span', { class: 'bt-person' }, v.name);
+      case 'person': case 'created_by': case 'updated_by': return v?.name ? h('span', { class: 'bt-person' }, v.name) : null;
       case 'page_link': return h('a', { class: 'bt-link', href: pagePath({ id: v.id, title: v.title }), onClick: (e) => e.stopPropagation() }, v.title || 'Sans titre');
-      case 'date': return fmtDate(v);
+      case 'date': case 'created_time': case 'updated_time': return fmtDate(v);
+      case 'url': case 'email': case 'phone': return linkOf(p, v);
+      case 'date_range': case 'unique_id': return textOf(p, v) || null;
       case 'number': return String(v);
       case 'formula': return typeof v === 'boolean' ? (v ? 'oui' : 'non') : String(v);
       case 'relation': return Array.isArray(v) && v.length ? h('span', { class: 'bt-badges' }, v.map((x) => h('span', { class: 'bt-rel' }, x.title || 'Sans titre'))) : null;
@@ -254,6 +306,35 @@ export async function showBase(initial) {
       items.map((it) => h('button', { class: 'menu-item', onClick: () => onPick(it.value) }, h('span', { class: 'menu-label' }, it.label))));
   }
 
+  /** Plage de dates : deux champs date étiquetés (début obligatoire, fin facultative, jamais avant le début). */
+  function editRange(cell, row, p) {
+    const r = rangeOf(row.values[p.id]);
+    const sIn = h('input', { class: 'input', type: 'date', id: `bt-rs-${row.id}` });
+    const eIn = h('input', { class: 'input', type: 'date', id: `bt-re-${row.id}` });
+    sIn.value = r?.start ?? '';
+    eIn.value = r?.end ?? '';
+    const err = h('p', { class: 'notice warning', role: 'alert', hidden: true });
+    const form = h('form', { class: 'bt-pop', 'aria-label': `${p.name} (${titleOf(row)})` },
+      h('div', { class: 'field' }, h('label', { for: sIn.id }, 'Début'), sIn),
+      h('div', { class: 'field' }, h('label', { for: eIn.id }, 'Fin (facultative)'), eIn),
+      err,
+      h('div', { class: 'bt-pop-foot bt-pop-foot-split' },
+        h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => { closePopover(); commit(row, p, null); } }, 'Effacer'),
+        h('button', { class: 'btn btn-primary btn-sm', type: 'submit' }, 'Enregistrer')));
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const s = dayNum(sIn.value);
+      const en = dayNum(eIn.value);
+      if (s === null && en === null) { closePopover(); commit(row, p, null); return; }
+      if (s === null) { err.textContent = 'Indiquez une date de début.'; err.hidden = false; sIn.focus(); return; }
+      if (en !== null && en < s) { err.textContent = 'La fin ne peut pas précéder le début.'; err.hidden = false; eIn.focus(); return; }
+      closePopover();
+      commit(row, p, { start: isoDay(s), end: en === null ? null : isoDay(en) });
+    });
+    openPopover(cell, form, { className: 'bt-popover' });
+    sIn.focus();
+  }
+
   function editCell(cell, row, p) {
     if (!canWrite()) return;
     const v = row.values[p.id];
@@ -341,17 +422,48 @@ export async function showBase(initial) {
         q.focus();
         break;
       }
+      case 'url': case 'email': case 'phone': {
+        const kind = { url: ['url', '2000', 'url'], email: ['email', '254', 'email'], phone: ['tel', '30', 'tel'] }[p.type];
+        const input = h('input', { class: 'input bt-input', type: kind[0], maxlength: kind[1], inputmode: kind[2], autocomplete: 'off', spellcheck: 'false', 'aria-label': p.name });
+        input.value = typeof v === 'string' ? v : '';
+        let finished = false;
+        const save = () => {
+          if (finished) return;
+          finished = true;
+          let next = input.value.trim() || null;
+          // Une adresse sans schéma (« exemple.fr/page ») reçoit https:// ; tout autre schéma est refusé.
+          if (next && p.type === 'url' && !/^[a-z][a-z0-9+.-]*:/i.test(next)) next = `https://${next}`;
+          const ok = next === null || (p.type === 'url' ? !!safeUrl(next) : p.type === 'email' ? !!safeEmail(next) : !!safePhone(next));
+          if (!ok) {
+            toast(p.type === 'url' ? 'Adresse web invalide : http ou https seulement, sans identifiants.' : p.type === 'email' ? 'Adresse de courriel invalide.' : 'Numéro invalide : chiffres, +, parenthèses, tirets, points et espaces (5 à 30 caractères).', { kind: 'error' });
+            done();
+            return;
+          }
+          if ((next ?? undefined) === v) done(); else commit(row, p, next);
+        };
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); save(); }
+          if (e.key === 'Escape') { e.preventDefault(); finished = true; done(); }
+        });
+        input.addEventListener('blur', save);
+        cell.replaceChildren(input);
+        input.focus();
+        input.select?.();
+        break;
+      }
+      case 'date_range': editRange(cell, row, p); break;
       case 'relation': editRelation(cell, row, p); break;
       default: break;
     }
     // Un menu fermé sans choix (clic ailleurs, Échap) ramène l'affichage normal.
-    if (['multi_select', 'person', 'page_link'].includes(p.type)) {
+    if (['multi_select', 'person', 'page_link', 'date_range'].includes(p.type)) {
       const watch = setInterval(() => { if (!document.querySelector('.popover')) { clearInterval(watch); if (editing) done(); } }, 200);
     }
   }
 
   // Une colonne calculée (formule, cumul) ne se modifie pas ; une relation vers une base illisible non plus.
-  const editable = (p) => canWrite() && p.type !== 'formula' && p.type !== 'rollup' && (p.type !== 'relation' || p.config?.targetTitle != null);
+  const editable = (p) => canWrite() && !READ_ONLY_TYPES.has(p.type) && (p.type !== 'relation' || p.config?.targetTitle != null);
+  const LINK_TYPES = new Set(['url', 'email', 'phone']);
 
   /** @param {any} row @param {any} p @param {any[] | null} [prefix] éléments placés avant la valeur (arborescence des sous-éléments) */
   function cellEl(row, p, prefix = null) {
@@ -365,6 +477,11 @@ export async function showBase(initial) {
     }
     const content = display(p, v);
     const td = h('td', { class: `bt-cell bt-t-${p.type}` });
+    // Lien rempli : le lien et le bouton de modification sont deux éléments distincts (pas de lien dans un bouton).
+    if (editable(p) && LINK_TYPES.has(p.type) && content) {
+      return wrap(td, h('div', { class: 'bt-linkcell' }, content,
+        h('button', { class: 'icon-btn bt-cell-btn bt-cell-edit', 'data-prop': p.id, 'aria-label': `Modifier ${p.name} (${v})`, title: `Modifier ${p.name}`, onClick: () => editCell(td, row, p) }, icon('pencil', 13))));
+    }
     if (editable(p)) {
       const shownText = textOf(p, v);
       const btn = h('button', { class: 'bt-cell-btn', 'data-prop': p.id, 'aria-label': shownText ? `${shownText} (modifier ${p.name})` : `Modifier ${p.name}`, onClick: () => editCell(td, row, p) }, content ?? h('span', { class: 'bt-placeholder' }, ' '));
@@ -394,7 +511,7 @@ export async function showBase(initial) {
     type.value = existing?.type ?? 'text';
     const formula = h('textarea', { id: 'bt-formula', class: 'input bt-formula-input', rows: '3', maxlength: '500', spellcheck: 'false', 'aria-describedby': 'bt-formula-help bt-formula-error', placeholder: 'prop("Prix") * prop("Quantité")' });
     formula.value = existing?.formula ?? '';
-    const formulaHelp = h('p', { id: 'bt-formula-help', class: 'muted bt-formula-help' }, 'Lisez une colonne avec prop("Nom"). Opérateurs : + - * / % == != < > <= >= && || !. Fonctions : if, round, floor, ceil, abs, min, max, length, upper, lower, concat, contains, isEmpty, number, text, dateDiff, year, month. Une cellule vide donne un résultat vide.');
+    const formulaHelp = h('p', { id: 'bt-formula-help', class: 'muted bt-formula-help' }, 'Lisez une colonne avec prop("Nom"). Opérateurs : + - * / % == != < > <= >= && || !. Fonctions : if, round, floor, ceil, abs, min, max, length, upper, lower, concat, contains, isEmpty, number, text, dateDiff, year, month, day, weekday (1 = lundi), dateAdd(date, jours), formatDate(date, "JJ/MM/AAAA"), listCount(prop("Étiquettes")), listHas(prop("Étiquettes"), "option"), regexTest(texte, motif), regexExtract(texte, motif), regexReplace(texte, motif, remplacement). Motifs simples : littéraux, ., [a-z], \\d \\w \\s, ^ $, |, ( ), * + ? ; le remplacement est littéral. Une plage de dates est lue par son début. Une cellule vide donne un résultat vide.');
     const errorEl = h('p', { id: 'bt-formula-error', class: 'notice warning', role: 'alert', hidden: true });
     const formulaBox = h('div', { class: 'field' }, h('label', { for: 'bt-formula' }, 'Formule'), formula, errorEl, formulaHelp);
 
@@ -448,12 +565,24 @@ export async function showBase(initial) {
         h('div', { class: 'field' }, h('label', { for: rollFn.id }, 'Calcul'), rollFn), rollNote,
         h('p', { class: 'muted bt-formula-help' }, 'Somme, moyenne, minimum et maximum portent sur une colonne Nombre ; le pourcentage, sur une Case à cocher. Seules les lignes que vous pouvez lire comptent.')]
       : h('p', { class: 'notice warning' }, 'Ajoutez d’abord une colonne Relation : un cumul calcule sur les lignes liées.'));
+    // Identifiant unique : préfixe facultatif (8 lettres, chiffres ou tirets au plus) ; les numéros sont attribués par le serveur.
+    const prefix = h('input', { id: 'bt-uid-prefix', class: 'input', maxlength: '8', autocomplete: 'off', spellcheck: 'false', 'aria-describedby': 'bt-uid-help', placeholder: 'PRJ' });
+    prefix.value = existing?.config?.prefix ?? '';
+    const otherUid = props().some((x) => x.type === 'unique_id' && x.id !== existing?.id);
+    const uidBox = h('div', { class: 'stack' }, otherUid && !existing
+      ? h('p', { class: 'notice warning' }, 'Cette base a déjà une colonne Identifiant unique : une seule est permise.')
+      : [h('div', { class: 'field' }, h('label', { for: prefix.id }, 'Préfixe (facultatif)'), prefix),
+        h('p', { id: 'bt-uid-help', class: 'muted bt-formula-help' }, 'Lettres, chiffres ou tirets, 8 au plus. Chaque ligne reçoit un numéro qui ne change plus et n’est jamais réutilisé, même après suppression ; les lignes existantes sont numérotées dans l’ordre.')]);
+    const READ_ONLY_NOTE = { created_time: 'Date de création de la ligne, tenue par le serveur.', updated_time: 'Date de la dernière modification de la ligne, tenue par le serveur.', created_by: 'Personne qui a créé la ligne, tenue par le serveur.', updated_by: 'Dernière personne qui a modifié la ligne, tenue par le serveur.' };
+    const noteBox = h('p', { class: 'muted bt-formula-help', role: 'status' });
     const isRelation = () => type.value === 'relation';
     const isRollup = () => type.value === 'rollup';
     let rollupLoaded = false;
     const showLinked = () => {
       relationBox.hidden = !isRelation();
       rollupBox.hidden = !isRollup();
+      uidBox.hidden = type.value !== 'unique_id';
+      noteBox.textContent = READ_ONLY_NOTE[type.value] ?? '';
       if (isRollup() && !rollupLoaded && relations.length) { rollupLoaded = true; loadTargetProps(true); }
     };
     const optionsHost = h('div', { class: 'bt-options' });
@@ -484,13 +613,15 @@ export async function showBase(initial) {
     const el = h('div', { class: 'stack' },
       h('label', { class: 'field' }, h('span', null, 'Nom'), name),
       h('label', { class: 'field' }, h('span', null, 'Type'), type),
-      optionsHost, formulaBox, relationBox, rollupBox);
+      optionsHost, formulaBox, relationBox, rollupBox, uidBox, noteBox);
     const payload = () => ({
       name: name.value.trim(),
       ...(existing ? {} : { type: type.value }),
       ...(isFormula() ? { formula: formula.value.trim() } : {}),
       ...(isRelation() && !existing ? { config: { targetId: target.value, twoWay: twoWay.checked } } : {}),
       ...(isRollup() && relations.length ? { config: { relationId: rollRel.value, targetPropertyId: rollProp.value || null, fn: rollFn.value || 'count' } } : {}),
+      // Préfixe : envoyé à la création, puis seulement s'il change.
+      ...(type.value === 'unique_id' && (!existing || prefix.value.trim() !== (existing.config?.prefix ?? '')) ? { config: prefix.value.trim() ? { prefix: prefix.value.trim() } : {} } : {}),
       ...(hasOptions() ? { options: opts.filter((o) => o.name.trim()).map((o) => ({ ...(o.id ? { id: o.id } : {}), name: o.name.trim(), color: o.color })) } : {}),
     });
     // Le message d'erreur s'affiche près du champ et est annoncé aux lecteurs d'écran ; le focus y revient.
@@ -509,6 +640,9 @@ export async function showBase(initial) {
           const payload = f.payload();
           if (!payload.name) { toast('Donnez un nom à la colonne', { kind: 'error' }); return false; }
           if (payload.type === 'rollup' && !payload.config) { toast('Ajoutez d’abord une colonne Relation', { kind: 'error' }); return false; }
+          if (payload.type === 'unique_id' && props().some((x) => x.type === 'unique_id')) { toast('Une seule colonne Identifiant unique par base', { kind: 'error' }); return false; }
+          const pre = /** @type {any} */ (payload).config?.prefix;
+          if (pre && !/^[A-Za-z0-9-]{1,8}$/.test(pre)) { toast('Préfixe : 8 lettres, chiffres ou tirets au plus', { kind: 'error' }); return false; }
           try {
             if (existing) await api.patch(`/bases/${id}/properties/${existing.id}`, payload);
             else await api.post(`/bases/${id}/properties`, payload);
@@ -530,7 +664,7 @@ export async function showBase(initial) {
       { label: 'Trier de Z à A', icon: 'chevrons', checked: sorted?.dir === 'desc', onClick: () => sortBy('desc') },
       { label: 'Masquer la colonne', icon: 'eye', onClick: () => setConfig({ ...c, hidden: [...c.hidden, p.id] }) },
       canWrite() && { sep: true },
-      canWrite() && { label: p.type === 'rollup' ? 'Renommer, modifier le calcul' : p.type === 'relation' ? 'Renommer' : 'Renommer, modifier les options', icon: 'pencil', onClick: () => openPropertyDialog(p) },
+      canWrite() && { label: p.type === 'rollup' ? 'Renommer, modifier le calcul' : p.type === 'unique_id' ? 'Renommer, modifier le préfixe' : ['select', 'multi_select', 'status'].includes(p.type) ? 'Renommer, modifier les options' : p.type === 'formula' ? 'Renommer, modifier la formule' : 'Renommer', icon: 'pencil', onClick: () => openPropertyDialog(p) },
       canWrite() && {
         label: 'Supprimer la colonne', icon: 'trash', danger: true,
         onClick: async () => {
@@ -542,10 +676,10 @@ export async function showBase(initial) {
   }
 
   // ---- Lignes ----
-  async function addRow(values = {}, parentId = null) {
+  async function addRow(values = {}, parentId = null, templateId = null) {
     lastOwnWrite = Date.now();
     try {
-      const res = await api.post(`/bases/${id}/rows`, parentId ? { values, parentId } : { values });
+      const res = await api.post(`/bases/${id}/rows`, { values, ...(parentId ? { parentId } : {}), ...(templateId ? { templateId } : {}) });
       const row = res?.row ?? res;
       data.rows.push(row);
       if (parentId) tree.collapsed.delete(parentId);
@@ -591,27 +725,124 @@ export async function showBase(initial) {
   }
 
   function rowMenu(anchor, row) {
+    const subitems = !!data.settings?.subitems;
     openMenu(anchor, [
-      { label: 'Ajouter un sous-élément', icon: 'plus', disabled: data.rows.length >= data.limits.rows, onClick: () => addRow({}, row.id) },
-      { label: 'Placer sous un autre élément', icon: 'move', onClick: () => chooseParent(anchor, row) },
-      row.parentId && { label: 'Remonter au premier niveau', icon: 'chevrons', onClick: () => patchRow(row, { parentId: null }) },
+      subitems && { label: 'Ajouter un sous-élément', icon: 'plus', disabled: data.rows.length >= data.limits.rows, onClick: () => addRow({}, row.id) },
+      subitems && { label: 'Placer sous un autre élément', icon: 'move', onClick: () => chooseParent(anchor, row) },
+      subitems && row.parentId && { label: 'Remonter au premier niveau', icon: 'chevrons', onClick: () => patchRow(row, { parentId: null }) },
+      subitems && { sep: true },
+      { label: 'Enregistrer comme modèle', icon: 'copy', disabled: templates().length >= templateCap(), onClick: () => saveAsTemplate(row) },
       { sep: true },
       { label: 'Supprimer la ligne', icon: 'trash', danger: true, onClick: () => removeRow(row) },
     ]);
+  }
+
+  // ---- Modèles de ligne : valeurs de départ d'une nouvelle ligne (sans colonne calculée, liée ni attribuée par le serveur) ----
+  const templates = () => (Array.isArray(data.rowTemplates) ? data.rowTemplates : []);
+  const templateCap = () => data.limits?.templates ?? MAX_TEMPLATES;
+  /** Valeurs d'une ligne présentée, remises au format d'écriture (personne et page : identifiant). */
+  function templateValues(row) {
+    const out = {};
+    for (const p of props()) {
+      if (NO_TEMPLATE_TYPES.has(p.type)) continue;
+      const v = row.values[p.id];
+      if (v === undefined || v === null) continue;
+      out[p.id] = (p.type === 'person' || p.type === 'page_link') && typeof v === 'object' ? v.id : v;
+    }
+    return out;
+  }
+  function templateName(initial, title, onSave) {
+    const input = h('input', { class: 'input', maxlength: '60', 'aria-label': 'Nom du modèle' });
+    input.value = initial;
+    openModal({ title, body: input, actions: [{ label: 'Annuler' }, {
+      label: 'Enregistrer', primary: true,
+      onClick: async () => {
+        const name = input.value.trim();
+        if (!name) { toast('Donnez un nom au modèle', { kind: 'error' }); input.focus(); return false; }
+        return onSave(name);
+      },
+    }] });
+    input.focus();
+    input.select();
+  }
+  function saveAsTemplate(row, after) {
+    templateName(titleOf(row).slice(0, 60), 'Enregistrer comme modèle', async (name) => {
+      lastOwnWrite = Date.now();
+      try { await api.post(`/bases/${id}/row-templates`, { name, values: templateValues(row) }); } catch (err) { fail(err); return false; }
+      await load(true);
+      announce(`Modèle « ${name} » enregistré`);
+      after?.();
+    });
+  }
+  function templatesMenu(anchor) {
+    const list = templates();
+    const full = data.rows.length >= data.limits.rows;
+    openMenu(anchor, [
+      list.length ? { heading: 'Nouvelle ligne depuis un modèle' } : { heading: 'Aucun modèle' },
+      ...list.map((t) => ({ label: t.name, icon: 'plus', disabled: full, onClick: () => addRow({}, null, t.id) })),
+      { sep: true },
+      { label: 'Gérer les modèles', icon: 'settings', onClick: () => manageTemplates() },
+    ]);
+  }
+  /** Gestion : créer depuis une ligne existante, renommer, supprimer. */
+  function manageTemplates() {
+    const host = h('div', { class: 'stack bt-templates' });
+    const rowSel = h('select', { id: 'bt-tpl-row', class: 'input' });
+    const draw = () => {
+      const list = templates();
+      const rowsList = data.rows.slice(0, PICK_SHOWN);
+      rowSel.replaceChildren(...rowsList.map((r) => h('option', { value: r.id }, titleOf(r))));
+      put(host,
+        list.length ? h('ul', { class: 'bt-tpl-list', 'aria-label': 'Modèles de ligne' }, list.map((t) => h('li', { class: 'bt-tpl' },
+          h('span', { class: 'bt-tpl-name' }, t.name),
+          h('button', { class: 'btn btn-ghost btn-sm', type: 'button', 'aria-label': `Renommer le modèle ${t.name}`, onClick: () => templateName(t.name, 'Renommer le modèle', async (name) => {
+            try { await api.patch(`/bases/${id}/row-templates/${t.id}`, { name }); } catch (err) { fail(err); return false; }
+            await load(true);
+            draw();
+          }) }, icon('pencil', 14), 'Renommer'),
+          h('button', { class: 'btn btn-ghost btn-sm danger', type: 'button', 'aria-label': `Supprimer le modèle ${t.name}`, onClick: async () => {
+            try { await api.del(`/bases/${id}/row-templates/${t.id}`); } catch (err) { fail(err); return; }
+            await load(true);
+            announce(`Modèle « ${t.name} » supprimé`);
+            draw();
+            /** @type {HTMLElement | null} */ (host.querySelector('button, select'))?.focus();
+          } }, icon('trash', 14), 'Supprimer'))))
+          : h('p', { class: 'muted' }, 'Aucun modèle pour le moment.'),
+        rowsList.length && list.length < templateCap()
+          ? h('div', { class: 'row bt-tpl-new' },
+            h('div', { class: 'field' }, h('label', { for: rowSel.id }, 'Créer un modèle depuis la ligne'), rowSel),
+            h('button', { class: 'btn btn-primary btn-sm', type: 'button', onClick: () => { const r = rowById(rowSel.value); if (r) saveAsTemplate(r, draw); } }, 'Créer'))
+          : h('p', { class: 'muted' }, list.length >= templateCap() ? `Au plus ${templateCap()} modèles par base.` : 'Ajoutez une ligne pour en faire un modèle.'),
+        h('p', { class: 'muted bt-formula-help' }, 'Un modèle reprend les valeurs de la ligne, sauf les formules, cumuls, relations, identifiants et colonnes tenues par le serveur. Il s’applique avec le bouton « Modèles de ligne » à côté de « Nouvelle ligne ».'));
+    };
+    draw();
+    openModal({ title: 'Modèles de ligne', body: host, actions: [{ label: 'Fermer' }] });
+    /** @type {HTMLElement | null} */ (host.querySelector('button, select'))?.focus();
   }
 
   // ---- Réglages de la base : sous-éléments, dépendances, colonnes de la chronologie ----
   function openSettings() {
     const st = data.settings ?? {};
     const dates = props().filter((p) => p.type === 'date');
+    // Début : une colonne Date ou une Plage de dates (qui porte alors aussi la fin).
+    const starts = props().filter(isDateCol);
     const sub = h('input', { type: 'checkbox', id: 'bt-set-sub' });
     sub.checked = !!st.subitems;
     const dep = h('input', { type: 'checkbox', id: 'bt-set-dep' });
     dep.checked = !!st.dependencies;
-    const start = h('select', { id: 'bt-set-start', class: 'input' }, h('option', { value: '' }, 'Aucune'), dates.map((p) => h('option', { value: p.id }, p.name)));
-    start.value = dates.some((p) => p.id === st.startPropertyId) ? st.startPropertyId : '';
-    const end = h('select', { id: 'bt-set-end', class: 'input' }, h('option', { value: '' }, 'Aucune (barre d’un jour)'), dates.map((p) => h('option', { value: p.id }, p.name)));
+    const start = h('select', { id: 'bt-set-start', class: 'input' }, h('option', { value: '' }, 'Aucune'), starts.map((p) => h('option', { value: p.id }, p.type === 'date_range' ? `${p.name} (plage)` : p.name)));
+    start.value = starts.some((p) => p.id === st.startPropertyId) ? st.startPropertyId : '';
+    const end = h('select', { id: 'bt-set-end', class: 'input', 'aria-describedby': 'bt-set-end-help' }, h('option', { value: '' }, 'Aucune (barre d’un jour)'), dates.map((p) => h('option', { value: p.id }, p.name)));
     end.value = dates.some((p) => p.id === st.endPropertyId) ? st.endPropertyId : '';
+    const endHelp = h('p', { id: 'bt-set-end-help', class: 'muted bt-formula-help' });
+    const syncEnd = () => {
+      const range = propById(start.value)?.type === 'date_range';
+      if (range) end.value = '';
+      end.disabled = range;
+      endHelp.textContent = range ? 'Une plage de dates porte déjà sa fin.' : '';
+    };
+    start.addEventListener('change', syncEnd);
+    syncEnd();
     const err = h('p', { class: 'notice warning', role: 'alert', hidden: true });
     const check = (cb, title, text) => h('label', { class: 'zip-check', for: cb.id }, cb, h('span', null, h('strong', null, title), h('span', { class: 'muted' }, text)));
     openModal({
@@ -620,8 +851,8 @@ export async function showBase(initial) {
         check(sub, 'Sous-éléments', 'Une ligne peut contenir d’autres lignes, affichées en retrait (quatre niveaux au plus). Supprimer une ligne supprime ses sous-éléments.'),
         check(dep, 'Dépendances', 'Colonne « Bloqué par » : une ligne bloquée commence au plus tôt le lendemain de la fin de ce qui la bloque ; elle est décalée automatiquement.'),
         h('div', { class: 'field' }, h('label', { for: start.id }, 'Colonne de début (chronologie)'), start),
-        h('div', { class: 'field' }, h('label', { for: end.id }, 'Colonne de fin (chronologie)'), end),
-        !dates.length && h('p', { class: 'muted' }, 'Ajoutez une colonne Date pour utiliser la chronologie.'),
+        h('div', { class: 'field' }, h('label', { for: end.id }, 'Colonne de fin (chronologie)'), end, endHelp),
+        !starts.length && h('p', { class: 'muted' }, 'Ajoutez une colonne Date ou Plage de dates pour utiliser la chronologie.'),
         err),
       actions: [{ label: 'Annuler' }, {
         label: 'Enregistrer', primary: true,
@@ -747,7 +978,7 @@ export async function showBase(initial) {
               if (f.value == null && p.options[0]) queueMicrotask(() => update({ value: p.options[0].id }));
               valueEl.addEventListener('change', () => update({ value: valueEl.value }));
             } else {
-              valueEl = h('input', { class: 'input', type: p.type === 'number' ? 'number' : p.type === 'date' ? 'date' : 'text', maxlength: '200', 'aria-label': 'Valeur', step: p.type === 'number' ? 'any' : null });
+              valueEl = h('input', { class: 'input', type: p.type === 'number' ? 'number' : DATE_FILTER_TYPES.has(p.type) ? 'date' : 'text', maxlength: '200', 'aria-label': 'Valeur', step: p.type === 'number' ? 'any' : null });
               valueEl.value = f.value ?? '';
               valueEl.addEventListener('change', () => update({ value: p.type === 'number' ? (valueEl.value === '' ? null : Number(valueEl.value)) : valueEl.value }));
             }
@@ -812,7 +1043,8 @@ export async function showBase(initial) {
       class: 'icon-btn', 'aria-label': 'Nouvelle vue', title: 'Nouvelle vue',
       onClick: (e) => {
         const groupable = props().find((p) => p.type === 'status' || p.type === 'select');
-        const dated = props().find((p) => p.type === 'date');
+        const dated = props().find(isDateCol);
+        const chartable = props().some((p) => CHART_GROUP_TYPES.has(p.type));
         const create = async (name, config) => {
           try { const v = await api.post(`/bases/${id}/views`, { name, config }); activeView = v.id; await load(true); } catch (err) { fail(err); }
         };
@@ -830,6 +1062,10 @@ export async function showBase(initial) {
             },
           },
           { label: dated ? 'Nouveau calendrier' : 'Calendrier : ajoutez une colonne Date', icon: 'calendar', disabled: !dated, onClick: () => create('Calendrier', { type: 'calendar', mode: 'month', sort: [], filters: [], hidden: [] }) },
+          {
+            label: chartable ? 'Nouveau graphique' : 'Graphique : ajoutez une colonne à regrouper', icon: 'layers', disabled: !chartable,
+            onClick: () => openChartWizard({ properties: props(), config: null, onSave: (cfg) => create('Graphique', { ...cfg, sort: [], filters: [], hidden: [] }) }),
+          },
         ]);
       },
     }, icon('plus', 15)));
@@ -926,14 +1162,15 @@ export async function showBase(initial) {
     const tbody = h('tbody', null, shownRows.map((l) => h('tr', { 'data-row': l.row.id },
       cols.map((p, i) => cellEl(l.row, p, i === 0 ? treePrefix(l) : null)),
       deps && blockedCell(l.row),
-      canWrite() && h('td', { class: 'bt-cell bt-row-more' }, subitems && h('button', {
-        class: 'icon-btn', 'aria-label': `Actions de la ligne ${titleOf(l.row)}`, title: 'Sous-éléments', onClick: (e) => rowMenu(e.currentTarget, l.row),
+      canWrite() && h('td', { class: 'bt-cell bt-row-more' }, h('button', {
+        class: 'icon-btn', 'aria-label': `Actions de la ligne ${titleOf(l.row)}`, title: subitems ? 'Sous-éléments, modèle' : 'Enregistrer comme modèle', onClick: (e) => rowMenu(e.currentTarget, l.row),
       }, icon('more', 14))),
       canWrite() && h('td', { class: 'bt-cell bt-row-actions' }, h('button', { class: 'icon-btn', 'aria-label': 'Supprimer la ligne', title: 'Supprimer la ligne', onClick: () => removeRow(l.row) }, icon('trash', 14))))));
 
     const mainEl = c.type === 'kanban' ? boardEl(c, rows)
       : c.type === 'timeline' ? timelineEl({ data, rows, config: c, canWrite: canWrite(), titleOf, state: tree, patchRow, setConfig, openSettings, announce })
         : c.type === 'calendar' ? calendarEl({ baseId: id, data, rows, config: c, canWrite: canWrite(), titleOf, state: tree, patchRow, addRow, removeRow, setConfig, announce })
+        : c.type === 'chart' ? chartEl({ baseId: id, viewId: view().id, data, config: c, canWrite: canWrite(), state: tree, stamp: loadSeq, setConfig, whenSaved, announce })
         : h('div', { class: 'bt-scroll' }, h('table', { class: 'bt-table', 'aria-label': 'Lignes de la base', 'aria-rowcount': String(lines.length + 1) }, head, tbody));
     // Le focus survit au rendu : élément repéré par une clé, ou barre de la chronologie.
     const active = document.activeElement;
@@ -947,16 +1184,20 @@ export async function showBase(initial) {
         viewTabs(),
         h('div', { class: 'bt-tools' },
           c.type === 'kanban' && groupSelect(c),
-          h('button', { class: `btn btn-ghost btn-sm${filtersOn ? ' active' : ''}`, onClick: (e) => filterPopover(e.currentTarget) }, `Filtrer${filtersOn ? ` (${filtersOn})` : ''}`),
-          h('button', { class: `btn btn-ghost btn-sm${c.sort.length ? ' active' : ''}`, onClick: (e) => sortPopover(e.currentTarget) }, `Trier${c.sort.length ? ` (${c.sort.length})` : ''}`),
-          c.type !== 'timeline' && c.type !== 'calendar' && h('button', { class: `btn btn-ghost btn-sm${c.hidden.length ? ' active' : ''}`, onClick: (e) => columnsPopover(e.currentTarget) }, `Colonnes${c.hidden.length ? ` (${props().length - c.hidden.length}/${props().length})` : ''}`),
+          // Graphique : calculé par le serveur sur la vue enregistrée ; un lecteur ne peut pas en changer les filtres.
+          (c.type !== 'chart' || canWrite()) && h('button', { class: `btn btn-ghost btn-sm${filtersOn ? ' active' : ''}`, onClick: (e) => filterPopover(e.currentTarget) }, `Filtrer${filtersOn ? ` (${filtersOn})` : ''}`),
+          c.type !== 'chart' && h('button', { class: `btn btn-ghost btn-sm${c.sort.length ? ' active' : ''}`, onClick: (e) => sortPopover(e.currentTarget) }, `Trier${c.sort.length ? ` (${c.sort.length})` : ''}`),
+          c.type !== 'timeline' && c.type !== 'calendar' && c.type !== 'chart' && h('button', { class: `btn btn-ghost btn-sm${c.hidden.length ? ' active' : ''}`, onClick: (e) => columnsPopover(e.currentTarget) }, `Colonnes${c.hidden.length ? ` (${props().length - c.hidden.length}/${props().length})` : ''}`),
           h('a', { class: 'btn btn-ghost btn-sm', href: `/api/v3/bases/${id}/export`, download: '' }, icon('download', 14), 'CSV'),
           canWrite() && h('button', { class: 'btn btn-ghost btn-sm', 'aria-label': 'Réglages de la base', title: 'Sous-éléments, dépendances, chronologie', onClick: () => openSettings() }, icon('settings', 14), 'Réglages'))),
       mainEl,
-      rows.length === 0 && h('p', { class: 'muted bt-empty' }, data.rows.length ? 'Aucune ligne ne correspond aux filtres.' : 'Aucune ligne pour le moment.'),
+      rows.length === 0 && c.type !== 'chart' && h('p', { class: 'muted bt-empty' }, data.rows.length ? 'Aucune ligne ne correspond aux filtres.' : 'Aucune ligne pour le moment.'),
       c.type === 'table' && lines.length > shown && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { shown += PAGE_SIZE; render(); } }, `Afficher ${Math.min(PAGE_SIZE, lines.length - shown)} lignes de plus (${shown} sur ${lines.length})`),
       h('div', { class: 'bt-foot' },
-        canWrite() && c.type !== 'kanban' && h('button', { class: 'btn btn-ghost btn-sm', disabled: data.rows.length >= data.limits.rows, onClick: () => addRow() }, icon('plus', 14), 'Nouvelle ligne'),
+        canWrite() && c.type !== 'kanban' && c.type !== 'chart' && h('div', { class: 'bt-newrow', role: 'group', 'aria-label': 'Ajout de ligne' },
+          h('button', { class: 'btn btn-ghost btn-sm', disabled: data.rows.length >= data.limits.rows, onClick: () => addRow() }, icon('plus', 14), 'Nouvelle ligne'),
+          h('button', { class: 'btn btn-ghost btn-sm', 'aria-haspopup': 'menu', title: 'Nouvelle ligne depuis un modèle, gérer les modèles', onClick: (e) => templatesMenu(e.currentTarget) },
+            `Modèles de ligne${templates().length ? ` (${templates().length})` : ''}`, icon('chevron', 12))),
         h('span', { class: 'muted' }, `${data.rows.length} ${data.rows.length > 1 ? 'lignes' : 'ligne'}${rows.length !== data.rows.length ? `, ${rows.length} affichées` : ''}`)),
     ].filter(Boolean));
     if (pendingFocus?.card && !editing) {

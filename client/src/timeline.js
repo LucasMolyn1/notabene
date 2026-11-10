@@ -7,7 +7,7 @@
 import { h } from './util.js';
 import { icon } from './icons.js';
 import { closePopover, openPopover } from './ui.js';
-import { dayNum, flattenTree, isoDay, todayNum } from './base-model.js';
+import { dayNum, flattenTree, isDateCol, isoDay, rangeOf, todayNum } from './base-model.js';
 
 const DAY = 86_400_000;
 const ROW_H = 36;
@@ -77,7 +77,11 @@ export function timelineEl(ctx) {
   const settings = data.settings ?? {};
   const prop = (pid) => data.properties.find((p) => p.id === pid);
   const startP = prop(settings.startPropertyId);
-  const endP = settings.endPropertyId && settings.endPropertyId !== settings.startPropertyId ? prop(settings.endPropertyId) : null;
+  // Une plage de dates porte le début et la fin : pas de colonne de fin à part.
+  const ranged = startP?.type === 'date_range';
+  const endP = !ranged && settings.endPropertyId && settings.endPropertyId !== settings.startPropertyId ? prop(settings.endPropertyId) : null;
+  const hasEnd = ranged || !!endP;
+  const endName = ranged ? 'Fin' : endP?.name;
   const choices = data.properties.filter((p) => p.type === 'select' || p.type === 'status');
   const groupP = c.groupBy ? prop(c.groupBy) : null;
   const colorP = c.colorBy ? prop(c.colorBy) : null;
@@ -105,18 +109,31 @@ export function timelineEl(ctx) {
       h('button', { class: `btn btn-ghost btn-sm${tl.mode !== 'table' ? ' active' : ''}`, 'aria-pressed': String(tl.mode !== 'table'), onClick: () => { tl.mode = 'chart'; swap(); } }, 'Barres'),
       h('button', { class: `btn btn-ghost btn-sm${tl.mode === 'table' ? ' active' : ''}`, 'aria-pressed': String(tl.mode === 'table'), onClick: () => { tl.mode = 'table'; swap(); } }, 'Tableau des dates')));
 
-  if (!startP || startP.type !== 'date') {
+  if (!isDateCol(startP)) {
     return h('div', { class: 'tl' }, tools, h('div', { class: 'empty tl-empty' },
-      h('p', null, 'Choisissez la colonne de début (une colonne Date) dans les réglages de la base pour afficher la chronologie.'),
+      h('p', null, 'Choisissez la colonne de début (une colonne Date ou Plage de dates) dans les réglages de la base pour afficher la chronologie.'),
       canWrite && h('button', { class: 'btn btn-primary btn-sm', onClick: () => ctx.openSettings() }, icon('settings', 14), 'Réglages de la base')));
   }
 
   // ---- Dates d'une ligne (une modification en cours au clavier prime) ----
+  /** Début et fin écrits dans la ligne (sans compléter l'un par l'autre). */
+  function rawOf(row) {
+    if (ranged) { const r = rangeOf(row.values[startP.id]); return { s: r ? dayNum(r.start) : null, e: r?.end ? dayNum(r.end) : null }; }
+    return { s: dayNum(row.values[startP.id]), e: endP ? dayNum(row.values[endP.id]) : null };
+  }
+  /** Valeurs à écrire pour des dates (début, fin) ; `null` en fin = pas de fin. */
+  function valuesFor(row, s, e, force = false) {
+    if (ranged) return { [startP.id]: { start: isoDay(s), end: e === null ? null : isoDay(e) } };
+    const before = rawOf(row);
+    const values = {};
+    if (force || s !== before.s) values[startP.id] = isoDay(s);
+    if (endP && (force || e !== before.e)) values[endP.id] = e === null ? null : isoDay(e);
+    return values;
+  }
   function datesOf(row) {
     const p = tl.pending.get(row.id);
     if (p) return p;
-    let s = dayNum(row.values[startP.id]);
-    let e = endP ? dayNum(row.values[endP.id]) : null;
+    let { s, e } = rawOf(row);
     if (s === null && e === null) return null;
     if (s === null) s = e;
     if (e === null || e < s) e = s;
@@ -200,10 +217,16 @@ export function timelineEl(ctx) {
   // Enregistrement : une seule requête après une rafale de touches.
   const timers = new Map();
   function commit(row, d) {
-    const values = {};
-    const before = datesOf({ ...row, id: '' }) ?? { s: null, e: null };
-    if (d.s !== before.s || !row.values[startP.id]) values[startP.id] = isoDay(d.s);
-    if (endP && (d.e !== before.e || !row.values[endP.id])) values[endP.id] = isoDay(d.e);
+    let values = {};
+    if (ranged) {
+      // Plage : une barre d'un jour sans fin écrite le reste ; sinon la fin suit.
+      const raw = rawOf(row);
+      values = valuesFor(row, d.s, raw.e === null && d.e === d.s ? null : d.e);
+    } else {
+      const before = datesOf({ ...row, id: '' }) ?? { s: null, e: null };
+      if (d.s !== before.s || !row.values[startP.id]) values[startP.id] = isoDay(d.s);
+      if (endP && (d.e !== before.e || !row.values[endP.id])) values[endP.id] = isoDay(d.e);
+    }
     tl.pending.delete(row.id);
     if (!Object.keys(values).length) return;
     tl.focusRow = row.id;
@@ -221,8 +244,8 @@ export function timelineEl(ctx) {
     const d = datesOf(row);
     const sIn = h('input', { class: 'input', type: 'date', id: `tl-s-${uid}`, required: true });
     sIn.value = d ? isoDay(d.s) : isoDay(today);
-    const eIn = endP && h('input', { class: 'input', type: 'date', id: `tl-e-${uid}` });
-    if (eIn) eIn.value = d ? isoDay(d.e) : '';
+    const eIn = hasEnd && h('input', { class: 'input', type: 'date', id: `tl-e-${uid}` });
+    if (eIn) { const raw = rawOf(row); eIn.value = raw.e !== null ? isoDay(raw.e) : (d && !ranged ? isoDay(d.e) : ''); }
     const err = h('p', { class: 'notice warning', role: 'alert', hidden: true });
     const save = () => {
       const s = dayNum(sIn.value);
@@ -230,16 +253,15 @@ export function timelineEl(ctx) {
       if (s === null) { err.textContent = 'Indiquez une date de début.'; err.hidden = false; sIn.focus(); return; }
       if (e !== null && e < s) { err.textContent = 'La fin ne peut pas précéder le début.'; err.hidden = false; eIn.focus(); return; }
       closePopover();
-      const values = { [startP.id]: isoDay(s) };
-      if (endP) values[endP.id] = e === null ? null : isoDay(e);
+      const values = valuesFor(row, s, e, true);
       tl.focusRow = row.id;
       tl.refocus = true;
       ctx.patchRow(row, { values });
     };
     const form = h('form', { class: 'bt-pop tl-editor', 'aria-label': `Dates de ${titleOf(row)}` },
       h('strong', null, titleOf(row)),
-      h('div', { class: 'field' }, h('label', { for: sIn.id }, startP.name), sIn),
-      eIn && h('div', { class: 'field' }, h('label', { for: eIn.id }, endP.name), eIn),
+      h('div', { class: 'field' }, h('label', { for: sIn.id }, ranged ? `${startP.name} : début` : startP.name), sIn),
+      eIn && h('div', { class: 'field' }, h('label', { for: eIn.id }, ranged ? `${startP.name} : fin` : endName), eIn),
       err,
       h('div', { class: 'bt-pop-foot' }, h('button', { class: 'btn btn-primary btn-sm', type: 'submit' }, 'Enregistrer')));
     form.addEventListener('submit', (e) => { e.preventDefault(); save(); });
@@ -274,8 +296,8 @@ export function timelineEl(ctx) {
       return el;
     }
     const bar = h('button', { class: `tl-item c-${color}${late ? ' late' : ''}`, type: 'button', 'data-row': row.id, 'aria-label': label, 'aria-describedby': helpId },
-      endP && h('span', { class: 'tl-handle tl-handle-start', 'aria-hidden': 'true' }), inner,
-      endP && h('span', { class: 'tl-handle tl-handle-end', 'aria-hidden': 'true' }));
+      hasEnd && h('span', { class: 'tl-handle tl-handle-start', 'aria-hidden': 'true' }), inner,
+      hasEnd && h('span', { class: 'tl-handle tl-handle-end', 'aria-hidden': 'true' }));
     place(bar, d);
     // Souris, stylet, doigt : glisser la barre la décale, glisser un bord l'étire.
     let drag = null;
@@ -324,7 +346,7 @@ export function timelineEl(ctx) {
       const cur = datesOf(row);
       let next;
       if (e.shiftKey) {
-        if (!endP) { announce('Pas de colonne de fin : la barre dure un jour. Ajoutez une colonne de fin dans les réglages.'); return; }
+        if (!hasEnd) { announce('Pas de colonne de fin : la barre dure un jour. Ajoutez une colonne de fin dans les réglages.'); return; }
         next = { s: cur.s, e: Math.max(cur.s, cur.e + step) };
         if (next.e === cur.e) { announce('La fin ne peut pas précéder le début.'); return; }
       } else next = { s: cur.s + step, e: cur.e + step };
@@ -436,12 +458,21 @@ export function timelineEl(ctx) {
     const rowsLines = lines.filter((l) => l.kind === 'row');
     const groupOf = (row) => (groupP ? (groupP.options.find((o) => o.id === row.values[groupP.id])?.name ?? 'Sans valeur') : null);
     const dateCell = (row, p, value, which) => {
-      if (!canWrite || (which === 'end' && !endP)) return h('td', { class: 'bt-cell' }, value === null ? '' : fmtLong(value));
+      if (!canWrite || (which === 'end' && !hasEnd)) return h('td', { class: 'bt-cell' }, value === null ? '' : fmtLong(value));
       const input = h('input', { class: 'input bt-input', type: 'date', 'data-focus-key': `tl-${row.id}-${which}`, 'aria-label': `${which === 'start' ? 'Début' : 'Fin'} de ${titleOf(row)}` });
       input.value = value === null ? '' : isoDay(value);
       input.addEventListener('change', () => {
         const n = dayNum(input.value);
         if (n === null && which === 'start') { input.value = value === null ? '' : isoDay(value); return; }
+        if (ranged) {
+          const raw = rawOf(row);
+          const s = which === 'start' ? n : raw.s;
+          const e = which === 'end' ? n : raw.e;
+          if (s === null) { input.value = ''; return; }
+          if (e !== null && e < s) { input.value = value === null ? '' : isoDay(value); announce('La fin ne peut pas précéder le début.'); return; }
+          ctx.patchRow(row, { values: valuesFor(row, s, e, true) });
+          return;
+        }
         ctx.patchRow(row, { values: { [p.id]: n === null ? null : isoDay(n) } });
       });
       return h('td', { class: 'bt-cell' }, input);
@@ -450,19 +481,19 @@ export function timelineEl(ctx) {
       h('thead', null, h('tr', null,
         h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, 'Élément')),
         groupP && h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, groupP.name)),
-        h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, startP.name)),
+        h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, ranged ? 'Début' : startP.name)),
         h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, endP ? endP.name : 'Fin')),
         h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, 'Durée')),
         deps && h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, 'Bloqué par')))),
       h('tbody', null, rowsLines.slice(0, shown).map((l) => {
         const d = datesOf(l.row);
-        const raw = { s: dayNum(l.row.values[startP.id]), e: endP ? dayNum(l.row.values[endP.id]) : null };
+        const raw = rawOf(l.row);
         return h('tr', { 'data-row': l.row.id },
           h('th', { scope: 'row', class: 'bt-cell tl-cell-name' }, h('span', { class: 'tl-indent', style: { paddingLeft: `${(l.level - 1) * 16}px` } },
             l.level > 1 && h('span', { class: 'sr-only' }, `Niveau ${l.level}, sous-élément de ${titleOf(l.parent)} : `), titleOf(l.row))),
           groupP && h('td', { class: 'bt-cell' }, groupOf(l.row)),
           dateCell(l.row, startP, raw.s, 'start'),
-          dateCell(l.row, endP, endP ? raw.e : null, 'end'),
+          dateCell(l.row, endP ?? startP, hasEnd ? raw.e : null, 'end'),
           h('td', { class: 'bt-cell' }, d ? plural(d.e - d.s + 1, 'jour', 'jours') : ''),
           deps && h('td', { class: 'bt-cell' }, (l.row.blockedBy ?? []).map(nameOf).join(', ')));
       })));

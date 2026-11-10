@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { can, guard, requireAuth } from '../auth/context.js';
 import { loadReadablePage, loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
+import { computeChart } from '../lib/base-chart.js';
 import { createOrRotateFeed, feedOf, revokeFeed } from '../lib/base-ical.js';
 import {
   cascadeShift, MAX_BLOCKERS, MAX_DEPTH, MAX_SHIFT_DEPTH, MAX_SHIFT_ROWS, setBlockers, setParent, settingsOf, updateSettings,
@@ -13,8 +14,11 @@ import {
 import {
   cleanName, addProperty, addRow, addView, checkViewConfig, createBase, MAX_DELETE, MAX_LINKS, MAX_PROPERTIES, MAX_RELATIONS, MAX_ROLLUPS, MAX_ROWS,
   optionSchema, patchRow, presentProperties, presentRows, propertiesOf, PROPERTY_TYPES, reindexBase, relationInput, removeProperty, removeRows,
-  rollupInput, rowCount, toCsv, touchBase, updateProperty, viewConfigSchema, viewsOf, type Ctx,
+  rollupInput, rowCount, toCsv, touchBase, uniqueIdInput, updateProperty, viewConfigSchema, viewsOf, type Ctx,
 } from '../lib/bases.js';
+import {
+  addTemplate, MAX_TEMPLATE_NAME, MAX_TEMPLATES, presentTemplates, removeTemplate, updateTemplate, valuesFromTemplate,
+} from '../lib/base-templates.js';
 import { MAX_TASK_BASES, MAX_TASKS, myTasks, progressOf } from '../lib/base-tasks.js';
 import { MAX_FORMULA_CHARS } from '../lib/formula.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
@@ -34,12 +38,13 @@ const createBody = z.object({
   title: z.string().max(300).optional(),
   icon: z.string().max(16).optional(),
 });
-// `config` : relation { targetId, twoWay? } ou cumul { relationId, targetPropertyId?, fn } ; revalidée selon le type par lib/bases.ts.
+// `config` : relation { targetId, twoWay? }, cumul { relationId, targetPropertyId?, fn } ou ID unique { prefix? } ; revalidée selon
+// le type par lib/bases.ts.
 const propertyBody = z.object({
   name: propertyName, type: z.enum(PROPERTY_TYPES), options: z.array(optionSchema).max(100).optional(), formula: z.string().max(MAX_FORMULA_CHARS).optional(),
-  config: z.union([relationInput, rollupInput]).optional(),
+  config: z.union([relationInput, rollupInput, uniqueIdInput]).optional(),
 });
-const propertyPatch = z.object({ name: propertyName.optional(), options: z.array(optionSchema).max(100).optional(), formula: z.string().max(MAX_FORMULA_CHARS).optional(), config: rollupInput.optional() });
+const propertyPatch = z.object({ name: propertyName.optional(), options: z.array(optionSchema).max(100).optional(), formula: z.string().max(MAX_FORMULA_CHARS).optional(), config: z.union([rollupInput, uniqueIdInput]).optional() });
 const propParams = z.object({ id: idSchema, propId: idSchema });
 const rowParams = z.object({ id: idSchema, rowId: idSchema });
 const viewParams = z.object({ id: idSchema, viewId: idSchema });
@@ -48,6 +53,12 @@ const rowBody = z.object({
   parentId: idSchema.nullable().optional(),
   blockedBy: z.array(idSchema).max(MAX_BLOCKERS).optional(),
 });
+// Création : `templateId` facultatif (modèle de la même base) ; ses valeurs d'abord, `values` par-dessus.
+const rowCreateBody = rowBody.extend({ templateId: idSchema.optional() });
+const templateName = cleanName(MAX_TEMPLATE_NAME);
+const templateBody = z.object({ name: templateName, values: values.default({}) }).strict();
+const templatePatch = z.object({ name: templateName.optional(), values: values.optional() }).strict();
+const templateParams = z.object({ id: idSchema, tid: idSchema });
 const rowsDelete = z.object({ ids: z.array(idSchema).min(1).max(MAX_DELETE) });
 const settingsBody = z.object({
   subitems: z.boolean().optional(),
@@ -100,13 +111,14 @@ export default async function baseRoutes(app: FastifyInstance) {
     return {
       page: toMeta(page),
       canWrite: can(req.auth, 'write') && canWritePage(db, req.auth, page.id),
-      limits: { rows: MAX_ROWS, properties: MAX_PROPERTIES, relations: MAX_RELATIONS, rollups: MAX_ROLLUPS, links: MAX_LINKS, blockers: MAX_BLOCKERS, depth: MAX_DEPTH, shiftDepth: MAX_SHIFT_DEPTH, shiftRows: MAX_SHIFT_ROWS, delete: MAX_DELETE },
+      limits: { rows: MAX_ROWS, properties: MAX_PROPERTIES, relations: MAX_RELATIONS, rollups: MAX_ROLLUPS, links: MAX_LINKS, blockers: MAX_BLOCKERS, depth: MAX_DEPTH, shiftDepth: MAX_SHIFT_DEPTH, shiftRows: MAX_SHIFT_ROWS, delete: MAX_DELETE, templates: MAX_TEMPLATES },
       settings: settingsOf(db, page.id),
       // Agrégat de lignes que le lecteur voit déjà : visible de tout lecteur de la base.
       progress: progressOf(db, page.id, props),
       properties: presentProperties(ctx, props),
       rows: presentRows(ctx, props, can(req.auth, 'read') && !!req.auth),
       views: viewsOf(db, page.id),
+      rowTemplates: presentTemplates(ctx, props, !!req.auth),
     };
   };
 
@@ -169,8 +181,9 @@ export default async function baseRoutes(app: FastifyInstance) {
   // ----- Lignes -----
   // Écriture d'une ligne : cellules, puis parent et dépendances, puis décalage en cascade, le tout dans une transaction (un refus
   // à n'importe quelle étape n'écrit rien, ni dans cette base ni dans une base liée).
-  const writeRow = (ctx: Ctx, rowId: string | null, b: z.output<typeof rowBody>, uid: string | null) => db.transaction(() => {
-    const id = rowId === null ? addRow(ctx, b.values, uid).id : patchRow(ctx, rowId, b.values, uid).id;
+  const writeRow = (ctx: Ctx, rowId: string | null, b: z.output<typeof rowCreateBody>, uid: string | null) => db.transaction(() => {
+    const start = rowId === null && b.templateId ? valuesFromTemplate(ctx, b.templateId, b.values) : b.values;
+    const id = rowId === null ? addRow(ctx, start, uid).id : patchRow(ctx, rowId, b.values, uid).id;
     if (b.parentId !== undefined) setParent(ctx, id, b.parentId);
     if (b.blockedBy !== undefined) setBlockers(ctx, id, b.blockedBy);
     return { id, shifted: cascadeShift(ctx, id, uid) };
@@ -181,12 +194,12 @@ export default async function baseRoutes(app: FastifyInstance) {
     return shifted > 0 || Object.keys(patch).some((k) => { const t = props.find((x) => x.id === k)?.type; return t !== 'checkbox' && t !== 'person' && t !== 'page_link' && t !== 'relation'; });
   };
 
-  app.post('/bases/:id/rows', { ...write, schema: { tags, summary: 'Ajouter une ligne (cellules, ligne parente, lignes bloquantes)', params: idParams, body: rowBody } }, async (req, reply) => {
+  app.post('/bases/:id/rows', { ...write, schema: { tags, summary: 'Ajouter une ligne (cellules, modèle, ligne parente, lignes bloquantes)', params: idParams, body: rowCreateBody } }, async (req, reply) => {
     const page = openBase(req, (req.params as { id: string }).id, 'write');
-    const b = req.body as z.output<typeof rowBody>;
+    const b = req.body as z.output<typeof rowCreateBody>;
     const ctx = ctxOf(req, page);
     const { id, shifted } = writeRow(ctx, null, b, userId(req));
-    changed(req, page, indexedBy(page.id, b.values, shifted.length));
+    changed(req, page, b.templateId !== undefined || indexedBy(page.id, b.values, shifted.length));
     changedOthers(req, ctx);
     return reply.status(201).send(presentRows(ctx, propertiesOf(db, page.id), !!req.auth, id)[0]);
   });
@@ -215,6 +228,37 @@ export default async function baseRoutes(app: FastifyInstance) {
       changedOthers(req, ctx);
     }
     return { deleted: n };
+  });
+
+  // ----- Modèles de ligne -----
+  // Lecture : dans GET /bases/:id (`rowTemplates`). Écriture : droit d'écriture sur la base. L'audit ne garde jamais les valeurs.
+  app.post('/bases/:id/row-templates', { ...write, schema: { tags, summary: `Ajouter un modèle de ligne (${MAX_TEMPLATES} au plus)`, params: idParams, body: templateBody } }, async (req, reply) => {
+    const page = openBase(req, (req.params as { id: string }).id, 'write');
+    const b = req.body as z.output<typeof templateBody>;
+    const ctx = ctxOf(req, page);
+    const id = addTemplate(ctx, b.name, b.values, userId(req));
+    audit(db, req, 'base.template.add', page.id, detail(page, { templateId: id }));
+    changed(req, page, false);
+    return reply.status(201).send(presentTemplates(ctx, propertiesOf(db, page.id), !!req.auth).find((t) => t.id === id));
+  });
+
+  app.patch('/bases/:id/row-templates/:tid', { ...write, schema: { tags, summary: 'Renommer un modèle de ligne ou remplacer ses valeurs', params: templateParams, body: templatePatch } }, async (req) => {
+    const p = req.params as z.output<typeof templateParams>;
+    const page = openBase(req, p.id, 'write');
+    const ctx = ctxOf(req, page);
+    updateTemplate(ctx, p.tid, req.body as z.output<typeof templatePatch>);
+    audit(db, req, 'base.template.update', page.id, detail(page, { templateId: p.tid }));
+    changed(req, page, false);
+    return presentTemplates(ctx, propertiesOf(db, page.id), !!req.auth).find((t) => t.id === p.tid);
+  });
+
+  app.delete('/bases/:id/row-templates/:tid', { ...write, schema: { tags, summary: 'Supprimer un modèle de ligne', params: templateParams } }, async (req, reply) => {
+    const p = req.params as z.output<typeof templateParams>;
+    const page = openBase(req, p.id, 'write');
+    removeTemplate(db, page.id, p.tid);
+    audit(db, req, 'base.template.remove', page.id, detail(page, { templateId: p.tid }));
+    changed(req, page, false);
+    return reply.status(204).send();
   });
 
   // ----- Réglages -----
@@ -296,6 +340,22 @@ export default async function baseRoutes(app: FastifyInstance) {
     db.prepare('UPDATE base_views SET name = ?, config = ? WHERE id = ?').run(b.name ?? cur.name, JSON.stringify(config), cur.id);
     bus.publish({ type: 'base.changed', spaceId: page.space_id, pageId: page.id, by: by(req) });
     return viewsOf(db, page.id).find((v) => v.id === cur.id);
+  });
+
+  // Graphique d'une vue `chart` : calculé sur les lignes telles que CE lecteur les voit, après les filtres de la vue. Seuls des
+  // libellés de groupes sortent, jamais de ligne.
+  app.get('/bases/:id/views/:viewId/chart', {
+    preHandler: guard('read'),
+    config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+    schema: { tags, summary: 'Calculer le graphique d’une vue', params: viewParams },
+  }, async (req) => {
+    const p = req.params as z.output<typeof viewParams>;
+    const page = openBase(req, p.id, 'read');
+    const view = viewsOf(db, page.id).find((v) => v.id === p.viewId);
+    if (!view) throw new HttpError(404, 'Vue introuvable');
+    if (view.config.type !== 'chart') throw new HttpError(400, 'Cette vue n’est pas un graphique');
+    const props = propertiesOf(db, page.id);
+    return computeChart(props, presentRows(ctxOf(req, page), props, !!req.auth), view.config, MAX_ROWS);
   });
 
   app.delete('/bases/:id/views/:viewId', { ...write, schema: { tags, summary: 'Supprimer une vue (il en reste toujours une)', params: viewParams } }, async (req, reply) => {

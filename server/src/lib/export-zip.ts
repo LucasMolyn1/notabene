@@ -10,7 +10,7 @@ import type { FastifyRequest } from 'fastify';
 import type { DB } from '../db.js';
 import { canReadAttachment, loadReadablePage, readableSpaceIds } from './access.js';
 import { ATTACHMENT_ID, attachmentPath, INLINE_MIMES, sanitizeFilename, sniffMime, type AttachmentMime } from './attachments.js';
-import { presentRows, propertiesOf, toCsv } from './bases.js';
+import { presentRows, propertiesOf, readBudget, toCsv } from './bases.js';
 import { type DocNode, mentionIds } from './content.js';
 import { HttpError } from './http.js';
 import { type ExportLinks, toMarkdown } from './markdown.js';
@@ -224,11 +224,14 @@ export async function buildExport(db: DB, req: FastifyRequest, opts: {
     return t;
   };
 
+  // Budget de calcul des bases (formules, cumuls, expressions régulières) : UN pour tout l'export, et non un par base. Le flux
+  // refait le rendu de la préparation dans le même ordre : il repart d'un budget neuf (même résultat, travail total borné à deux budgets).
+  let baseBudget = readBudget();
   // Texte d'une page, produit à la préparation (taille estimée, fichiers inscrits) puis de nouveau pendant le flux.
   const render = (n: Node): Buffer => {
     if (n.kind === 'base') {
       const props = propertiesOf(db, n.id);
-      return Buffer.from(toCsv(props, presentRows({ db, auth: req.auth, spaces: visible, baseId: n.id }, props, !!req.auth)), 'utf8');
+      return Buffer.from(toCsv(props, presentRows({ db, auth: req.auth, spaces: visible, baseId: n.id }, props, !!req.auth, undefined, baseBudget)), 'utf8');
     }
     const doc = docOf(n.id);
     const names = new Map(readersAmong(db, n.id, mentionIds(doc), 200).map((u) => [u.id, u.name]));
@@ -250,6 +253,7 @@ export async function buildExport(db: DB, req: FastifyRequest, opts: {
     for (const n of all.slice(i, i + PREPARE_BATCH)) sizes.set(n.id, render(n).length);
   }
   frozen = true;
+  baseBudget = readBudget();
 
   const pageEntries: ZipEntry[] = all.map((n) => ({ name: n.file, size: sizes.get(n.id)!, exact: false, mtime: n.updated_at, body: () => render(n) }));
   const fileEntries = [...new Map([...files.values(), ...images.values()].filter((f): f is { path: string; entry: ZipEntry } => !!f).map((f) => [f.path, f.entry])).values()];
