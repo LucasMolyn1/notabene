@@ -859,6 +859,24 @@ export const MIGRATIONS: string[] = [
     end_property_id   TEXT REFERENCES base_properties(id) ON DELETE SET NULL
   );
   `,
+  // v33 : flux iCalendar en lecture d'une base, par adresse secrète (lib/base-ical.ts). Seule l'empreinte SHA-256 du jeton est
+  // gardée (le jeton n'est montré qu'une fois). `restricted_key` : empreinte de la restriction de la base à la création ; le flux
+  // n'est servi que tant qu'elle est identique. Le flux suit la base (ON DELETE CASCADE) et disparaît à sa mise à la corbeille.
+  // Additive. Retour arrière : DROP TABLE base_ical_feeds (ses déclencheurs suivent ; aucune autre donnée touchée), ou restaurer la sauvegarde.
+  `
+  CREATE TABLE base_ical_feeds (
+    base_id        TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE,
+    token_hash     TEXT NOT NULL UNIQUE,
+    restricted_key TEXT,
+    created_by     TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at     INTEGER NOT NULL
+  );
+  -- Un compte désactivé ou supprimé ne laisse aucun flux ouvert derrière lui (toutes les voies : administration, SCIM, annuaire).
+  CREATE TRIGGER base_ical_feeds_user_disabled AFTER UPDATE OF disabled ON users WHEN NEW.disabled = 1 AND OLD.disabled = 0
+    BEGIN DELETE FROM base_ical_feeds WHERE created_by = NEW.id; END;
+  CREATE TRIGGER base_ical_feeds_user_deleted BEFORE DELETE ON users
+    BEGIN DELETE FROM base_ical_feeds WHERE created_by = OLD.id; END;
+  `,
 ];
 
 export function openDb(file: string): DB {

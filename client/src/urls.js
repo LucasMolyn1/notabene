@@ -27,7 +27,7 @@ export function idFromSegment(seg) {
   return seg;
 }
 
-/** @returns {{ kind: 'page' | 'space' | 'label' | 'share' | 'settings' | 'root' | 'unknown', id?: string, section?: string, token?: string }} */
+/** @returns {{ kind: 'page' | 'space' | 'label' | 'share' | 'settings' | 'tasks' | 'root' | 'unknown', id?: string, section?: string, token?: string }} */
 export function parseRoute(pathname) {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   if (path === '/') return { kind: 'root' };
@@ -44,6 +44,7 @@ export function parseRoute(pathname) {
     const ok = /^[A-Za-z0-9_-]{20,90}$/.test(token || '') && rest.length === 0 && (p === undefined || (p === 'p' && /^[A-Za-z0-9_-]{1,64}$/.test(id || '')));
     return ok ? { kind: 'share', token, id } : { kind: 'unknown' };
   }
+  if (path === '/tasks') return { kind: 'tasks' };
   if (path === '/settings') return { kind: 'settings' };
   if (path.startsWith('/settings/') && /^[a-z-]{1,40}$/.test(path.slice(10))) return { kind: 'settings', section: path.slice(10) };
   return { kind: 'unknown' };

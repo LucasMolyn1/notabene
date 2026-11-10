@@ -11,15 +11,17 @@ import { openMenu, pageIcon } from './ui.js';
 import * as A from './actions.js';
 import { openDocumentImport, openNotionImport } from './notion-import.js';
 import { openReviewList } from './verification.js';
+import { lateTasks, onTasksChange } from './tasks.js';
 
 let dragId = null;
 
-/** @param {string} ico @param {string} label @param {() => void} onClick @param {{ hint?: string, active?: boolean, badge?: boolean | string }} [options] */
-const navBtn = (ico, label, onClick, { hint, active, badge } = {}) => h('button', {
-  class: `sb-btn${active ? ' active' : ''}`, onClick,
+/** @param {string} ico @param {string} label @param {() => void} onClick @param {{ hint?: string, active?: boolean, badge?: boolean | string, badgeText?: string }} [options] */
+const navBtn = (ico, label, onClick, { hint, active, badge, badgeText } = {}) => h('button', {
+  class: `sb-btn${active ? ' active' : ''}`, onClick, 'aria-current': active ? 'page' : null,
 }, icon(ico), h('span', { class: 'sb-btn-label' }, label),
 hint ? h('kbd', null, hint) : null,
-badge === true ? h('span', { class: 'news-dot', role: 'img', 'aria-label': 'Nouveautés' }) : badge ? h('span', { class: 'badge' }, badge) : null);
+badge === true ? h('span', { class: 'news-dot', role: 'img', 'aria-label': 'Nouveautés' })
+  : badge ? h('span', { class: 'badge' }, h('span', { 'aria-hidden': badgeText ? 'true' : null }, badge), badgeText && h('span', { class: 'sr-only' }, badgeText)) : null);
 
 const ROLE_LABELS = { admin: 'Administrateur', editor: 'Éditeur', reader: 'Lecteur' };
 
@@ -300,6 +302,10 @@ export function renderSidebar() {
     h('div', { class: 'sb-nav' },
       navBtn('search', session.can('ai') ? 'Rechercher ou demander' : 'Rechercher', A.search, { hint: `${modKey}K` }),
       navBtn('home', 'Accueil de l’espace', () => A.go(`/s/${space.id}`), { active: onSpaceHome }),
+      session.user && navBtn('check', 'Mes tâches', () => A.go('/tasks'), {
+        active: location.pathname === '/tasks',
+        badge: lateTasks() ? String(lateTasks()) : undefined, badgeText: lateTasks() ? `, ${lateTasks()} en retard` : undefined,
+      }),
       canWrite && navBtn('plus', 'Nouvelle page', () => A.newPage(space.id), { hint: '⌥N' }),
       canWrite && navBtn('table', 'Nouvelle base', () => A.newBase(space.id)),
       canWrite && navBtn('layers', 'Depuis un modèle', () => A.newPageFromTemplate(space.id))),
@@ -345,3 +351,5 @@ export function renderSidebar() {
 
 // Quand les nouveautés sont consultées, la pastille de « Paramètres » s'éteint.
 onNewsChange(() => renderSidebar());
+// Le nombre de tâches en retard a changé : la pastille de « Mes tâches » suit.
+onTasksChange(() => renderSidebar());

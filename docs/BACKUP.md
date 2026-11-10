@@ -105,6 +105,8 @@ Les pièces jointes sont restaurées **avant** la base, et **rien n'est écrasé
 
 S'il manque des fichiers dans la sauvegarde ou que certains sont altérés, **la base actuelle n'est pas remplacée** et la commande liste les identifiants concernés. Pour restaurer quand même (les pièces jointes manquantes seront introuvables) : ajoutez `--allow-missing`. Une sauvegarde antérieure aux pièces jointes (sans dossier `.attachments`) se restaure normalement.
 
+Les flux iCalendar des bases (adresses secrètes) ne sont jamais gardés dans une sauvegarde : après une restauration, ils sont à recréer depuis chaque base (nouvelle adresse à redonner aux abonnés).
+
 Les migrations de schéma s'appliquent automatiquement au démarrage si la sauvegarde est plus ancienne que la version du serveur. Une sauvegarde plus récente que le serveur ne doit pas être restaurée sur une version plus ancienne.
 
 ## Conversion des images collées en pièces jointes

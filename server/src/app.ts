@@ -27,6 +27,7 @@ import { effectiveEmbedHosts } from './lib/embed.js';
 import pageQueryRoutes from './routes/pages-query.js';
 import templateRoutes from './routes/templates.js';
 import seoRoutes from './routes/seo.js';
+import icalRoutes from './routes/ical.js';
 import avatarRoutes from './routes/avatars.js';
 import attachmentRoutes from './routes/attachments.js';
 import { attachmentsDir, drainAttachmentGc } from './lib/attachments.js';
@@ -227,6 +228,9 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     // SCIM (/scim/v2) a sa propre authentification (jeton SCIM, routes/scim.ts) : ni session ni jeton d'API n'y sont résolus,
     // donc aucun n'y donne accès. Ignorer cette résolution ne peut que retirer des droits, jamais en donner.
     if ((req.routeOptions.url ?? '').startsWith('/scim/') || req.url.startsWith('/scim/')) return;
+    // Flux iCalendar : lu sans compte, par son seul jeton ; aucune identité n'y est résolue (un en-tête Authorization d'un client
+    // calendrier ne donne ni ne retire rien).
+    if ((req.routeOptions.url ?? '').startsWith('/ical/')) return;
     const header = req.headers.authorization;
     const bearer = header === undefined ? undefined : /^Bearer\s+(\S+)$/.exec(header)?.[1];
     const cookie = req.cookies[cookieName];
@@ -335,6 +339,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   await app.register(mcpRoutes);
   await app.register(scimRoutes, { prefix: '/scim/v2' });
   await app.register(versionRoutes);
+  await app.register(icalRoutes);
   // Santé : la base doit répondre, sinon le conteneur doit être signalé défaillant.
   app.get('/healthz', { schema: { hide: true } }, async (_req, reply) => {
     try {

@@ -20,6 +20,7 @@ import { showMfaSetup, showResetPassword } from './local-auth.js';
 import { refreshUnread } from './notifications.js';
 import { onCommentEvent } from './comments.js';
 import { showShare } from './share.js';
+import { refreshLateTasks, refreshLateTasksSoon, showTasks } from './tasks.js';
 import { toggleChat } from './ai-chat.js';
 import * as A from './actions.js';
 import { pagePath, parseRoute, spacePath, upgradeLegacyHash } from './urls.js';
@@ -40,6 +41,7 @@ function route() {
   else if (r.kind === 'page') showPage(r.id);
   else if (r.kind === 'space') showSpace(r.id);
   else if (r.kind === 'label') showLabel(r.id);
+  else if (r.kind === 'tasks') showTasks();
   else if (r.kind === 'unknown') showMissing(null);
   else {
     // Racine : dernière page consultée, sinon l'accueil de l'espace courant.
@@ -131,13 +133,13 @@ async function boot() {
   if (params.has('auth_error')) history.replaceState(null, '', location.pathname);
   if (!store.space(prefs.space)) { prefs.space = store.spaces[0]?.id ?? null; savePrefs(); }
 
-  if (session.user) { presence.enable(session.user.id); refreshUnread(); }
+  if (session.user) { presence.enable(session.user.id); refreshUnread(); refreshLateTasks(); }
   openEvents((type, evt) => {
     if (type === 'presence') { presence.receive(evt.data); return; }
     if (type === 'notification') { refreshUnread(); return; }
     if (type.startsWith('comment.')) { onCommentEvent(evt); return; }
     if (type === 'page.permissions') { store.scheduleRefresh(evt); return; }
-    if (type === 'base.changed') { window.dispatchEvent(new CustomEvent('notabene:base', { detail: evt })); return; }
+    if (type === 'base.changed') { window.dispatchEvent(new CustomEvent('notabene:base', { detail: evt })); refreshLateTasksSoon(); return; }
     if (type === 'page.labels') { window.dispatchEvent(new CustomEvent('notabene:labels', { detail: evt })); return; }
     // Sans « state » : la pastille relit le statut (les droits de chacun en dépendent).
     if (type === 'page.verification') { window.dispatchEvent(new CustomEvent('notabene:verification', { detail: { pageId: evt.pageId } })); return; }

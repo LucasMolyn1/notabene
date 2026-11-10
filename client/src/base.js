@@ -9,6 +9,7 @@ import { pagePath } from './urls.js';
 import { closePopover, confirmModal, openMenu, openModal, openPopover, pageIcon, toast } from './ui.js';
 import { applyView, descendantsOf, flattenTree, fmtDate, fmtRollup, fold, textOf } from './base-model.js';
 import { SCALES, timelineEl } from './timeline.js';
+import { calendarEl } from './calendar.js';
 import { crumbsFor, setView, topbar } from './views.js';
 import * as A from './actions.js';
 
@@ -53,7 +54,7 @@ export async function showBase(initial) {
   let lastOwnWrite = 0; // les écritures de cet écran reviennent aussi par le flux : on n'y réagit pas
   let localConfigs = {}; // lecteurs : réglages de vue gardés en mémoire seulement
   // Sous-éléments repliés et état de la chronologie (défilement, présentation) : gardés d'un rendu à l'autre.
-  const tree = { collapsed: new Set(), tl: {} };
+  const tree = { collapsed: new Set(), tl: {}, cal: {} };
   const targets = new Map(); // bases liées par une relation, lues à la demande
 
   const body = h('div', { class: 'bt-body' });
@@ -73,6 +74,14 @@ export async function showBase(initial) {
   const config = () => {
     const c = localConfigs[view().id] ?? view().config;
     const known = (pid) => !!propById(pid);
+    if (c.type === 'calendar') {
+      const dated = (pid) => propById(pid)?.type === 'date';
+      return {
+        type: 'calendar', mode: c.mode === 'week' ? 'week' : 'month',
+        ...(dated(c.dateId) ? { dateId: c.dateId } : {}), ...(dated(c.endId) ? { endId: c.endId } : {}),
+        sort: c.sort.filter((x) => known(x.propertyId)), filters: c.filters.filter((x) => known(x.propertyId)), hidden: c.hidden.filter(known),
+      };
+    }
     if (c.type === 'timeline') {
       const groupable = (pid) => { const p = pid && propById(pid); return !!p && (p.type === 'select' || p.type === 'status'); };
       return {
@@ -545,7 +554,8 @@ export async function showBase(initial) {
       render();
       if (type === 'table') body.querySelector(`tr[data-row="${row.id}"] .bt-cell-btn`)?.focus();
       else announce(type === 'kanban' ? 'Carte ajoutée' : parentId ? 'Sous-élément ajouté' : 'Ligne ajoutée');
-    } catch (err) { fail(err); }
+      return row;
+    } catch (err) { fail(err); return null; }
   }
   async function removeRow(row) {
     const kids = descendantsOf(data.rows, row.id).size;
@@ -819,6 +829,7 @@ export async function showBase(initial) {
               create('Chronologie', { type: 'timeline', scale: 'week', sort: [], filters: [], hidden: [] });
             },
           },
+          { label: dated ? 'Nouveau calendrier' : 'Calendrier : ajoutez une colonne Date', icon: 'calendar', disabled: !dated, onClick: () => create('Calendrier', { type: 'calendar', mode: 'month', sort: [], filters: [], hidden: [] }) },
         ]);
       },
     }, icon('plus', 15)));
@@ -843,6 +854,27 @@ export async function showBase(initial) {
         onClick: async () => { try { await api.del(`/bases/${id}/views/${v.id}`); await load(true); } catch (err) { fail(err); } },
       },
     ]);
+  }
+
+  // ---- Progression : lignes terminées (dernière option du statut, ou case cochée), recalculée après chaque écriture ----
+  function progressEl() {
+    const pr = data.progress;
+    if (!pr) return null;
+    const p = propById(pr.propertyId);
+    let done = pr.done;
+    let total = pr.total;
+    if (p && (p.type === 'status' || p.type === 'checkbox')) {
+      const lastOpt = p.type === 'status' ? p.options.at(-1)?.id : undefined;
+      total = data.rows.length;
+      done = data.rows.filter((r) => (p.type === 'status' ? lastOpt !== undefined && r.values[p.id] === lastOpt : r.values[p.id] === true)).length;
+    }
+    if (!total) return null;
+    const pct = Math.round((done / total) * 100);
+    const label = `${done} sur ${total} terminées`;
+    return h('div', { class: 'bt-progress' },
+      h('div', { class: 'bt-progress-bar', role: 'progressbar', 'aria-label': label, 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(done), 'aria-valuetext': `${label} (${pct} %)` },
+        h('span', { class: 'bt-progress-fill', style: { width: `${pct}%` } })),
+      h('span', { class: 'bt-progress-text', 'aria-hidden': 'true' }, `${label} (${pct} %)`));
   }
 
   // ---- Rendu ----
@@ -901,6 +933,7 @@ export async function showBase(initial) {
 
     const mainEl = c.type === 'kanban' ? boardEl(c, rows)
       : c.type === 'timeline' ? timelineEl({ data, rows, config: c, canWrite: canWrite(), titleOf, state: tree, patchRow, setConfig, openSettings, announce })
+        : c.type === 'calendar' ? calendarEl({ baseId: id, data, rows, config: c, canWrite: canWrite(), titleOf, state: tree, patchRow, addRow, removeRow, setConfig, announce })
         : h('div', { class: 'bt-scroll' }, h('table', { class: 'bt-table', 'aria-label': 'Lignes de la base', 'aria-rowcount': String(lines.length + 1) }, head, tbody));
     // Le focus survit au rendu : élément repéré par une clé, ou barre de la chronologie.
     const active = document.activeElement;
@@ -909,13 +942,14 @@ export async function showBase(initial) {
     if (inside && active.closest('.tl-lines')) tree.tl.refocus = true;
     body.replaceChildren(...[
       h('div', { class: 'bt-head' }, iconBtn, titleEl),
+      progressEl(),
       h('div', { class: 'bt-toolbar' },
         viewTabs(),
         h('div', { class: 'bt-tools' },
           c.type === 'kanban' && groupSelect(c),
           h('button', { class: `btn btn-ghost btn-sm${filtersOn ? ' active' : ''}`, onClick: (e) => filterPopover(e.currentTarget) }, `Filtrer${filtersOn ? ` (${filtersOn})` : ''}`),
           h('button', { class: `btn btn-ghost btn-sm${c.sort.length ? ' active' : ''}`, onClick: (e) => sortPopover(e.currentTarget) }, `Trier${c.sort.length ? ` (${c.sort.length})` : ''}`),
-          c.type !== 'timeline' && h('button', { class: `btn btn-ghost btn-sm${c.hidden.length ? ' active' : ''}`, onClick: (e) => columnsPopover(e.currentTarget) }, `Colonnes${c.hidden.length ? ` (${props().length - c.hidden.length}/${props().length})` : ''}`),
+          c.type !== 'timeline' && c.type !== 'calendar' && h('button', { class: `btn btn-ghost btn-sm${c.hidden.length ? ' active' : ''}`, onClick: (e) => columnsPopover(e.currentTarget) }, `Colonnes${c.hidden.length ? ` (${props().length - c.hidden.length}/${props().length})` : ''}`),
           h('a', { class: 'btn btn-ghost btn-sm', href: `/api/v3/bases/${id}/export`, download: '' }, icon('download', 14), 'CSV'),
           canWrite() && h('button', { class: 'btn btn-ghost btn-sm', 'aria-label': 'Réglages de la base', title: 'Sous-éléments, dépendances, chronologie', onClick: () => openSettings() }, icon('settings', 14), 'Réglages'))),
       mainEl,

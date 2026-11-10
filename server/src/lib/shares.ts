@@ -15,8 +15,8 @@ export const sharingEnabled = (db: DB): boolean => {
   try { return !!row && (JSON.parse(row.value) as { enabled?: boolean }).enabled === true; } catch { return false; }
 };
 
-/** Adresse sans le jeton, pour les journaux. */
-export const maskShareToken = (url: string) => url.replace(/(\/(?:share|public\/shares)\/)[^/?#]+/, '$1[jeton]');
+/** Adresse sans le jeton (lien de partage ou flux iCalendar d'une base), pour les journaux. */
+export const maskShareToken = (url: string) => url.replace(/(\/(?:share|public\/shares|ical)\/)[^/?#]+/, '$1[jeton]');
 
 /** En-têtes de l'enveloppe de l'application servie sur /share/<jeton>. */
 export function shareShellHeaders(db: DB, url: string): Record<string, string> {
@@ -25,14 +25,19 @@ export function shareShellHeaders(db: DB, url: string): Record<string, string> {
   return { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-robots-tag': found?.share.indexing ? 'all' : 'noindex, nofollow' };
 }
 
-/** Active ou coupe le partage public de l'instance. Couper retire tous les partages (renvoie leur nombre). */
+/**
+ * Active ou coupe le partage public de l'instance. Couper retire tous les partages de pages (renvoie leur nombre) et tous les flux
+ * iCalendar des bases : les réactiver ne fait rien réapparaître.
+ */
 export function setSharingEnabled(db: DB, enabled: boolean, userId: string): number {
   return db.transaction(() => {
     db.prepare(
       `INSERT INTO settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
     ).run(KEY, JSON.stringify({ enabled }), Date.now(), userId);
-    return enabled ? 0 : db.prepare('DELETE FROM page_shares').run().changes;
+    if (enabled) return 0;
+    db.prepare('DELETE FROM base_ical_feeds').run();
+    return db.prepare('DELETE FROM page_shares').run().changes;
   })();
 }
 

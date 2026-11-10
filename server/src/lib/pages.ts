@@ -246,6 +246,7 @@ export function movePage(db: DB, id: string, input: { parentId: string | null; i
       moveIndexToSpace(db, ids, spaceId);
       // Changer d'espace change qui gouverne la page : ses liens publics (et ceux de ses sous-pages) ne la suivent pas.
       db.prepare('DELETE FROM page_shares WHERE page_id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));
+      db.prepare('DELETE FROM base_ical_feeds WHERE base_id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));
     }
     return { row: getPageRow(db, id)!, fromSpaceId: page.space_id };
   })();
@@ -278,6 +279,8 @@ export function trashPage(db: DB, id: string) {
     const ids = [id, ...descendantIds(db, id)];
     db.prepare('UPDATE pages SET deleted_at = ?, trash_root = ? WHERE id IN (SELECT value FROM json_each(?)) AND deleted_at IS NULL')
       .run(Date.now(), id, JSON.stringify(ids));
+    // Une base à la corbeille perd son flux iCalendar : une restauration ne rouvre pas l'adresse secrète.
+    db.prepare('DELETE FROM base_ical_feeds WHERE base_id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));
   })();
 }
 
