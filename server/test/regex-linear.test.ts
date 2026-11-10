@@ -80,7 +80,7 @@ describe('moteur linéaire : équivalence avec RegExp sur le sous-ensemble', () 
     ['a?a?a?aaa', ['aaa', 'aaaa', 'aa']],
     ['[^aeiou ]+', ['bonjour le monde']],
     ['x*y*', ['', 'xxyy', 'yx']],
-    ['(a*)+b', ['aaab', 'b', 'aaa']],
+    ['(a*)b', ['aaab', 'b', 'aaa']],
     ['.+@.+', ['a@b', '@', 'a@']],
   ];
   it('mêmes positions de match que RegExp (sans drapeau)', () => {

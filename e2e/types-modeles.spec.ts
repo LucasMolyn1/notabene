@@ -110,7 +110,7 @@ test('types : liens sûrs, identifiant, colonnes tenues par le serveur, plage de
   await expect(form.getByRole('alert')).toContainText('La fin ne peut pas précéder le début.');
   await form.getByLabel('Fin (facultative)').fill(day(8));
   await form.getByRole('button', { name: 'Enregistrer' }).click();
-  await expect(rowB.getByRole('button', { name: new RegExp(`${frDate(day(5)).replace(/\//g, '\\/')} – ${frDate(day(8)).replace(/\//g, '\\/')}`) })).toBeVisible();
+  await expect(rowB.getByRole('button', { name: `${frDate(day(5))} – ${frDate(day(8))}` })).toBeVisible();
   const data = await rowsOf(browser, p.id);
   expect(data.rows.find((r) => r.id === p.b.id)!.values[p.periode.id]).toEqual({ start: day(5), end: day(8) });
 
