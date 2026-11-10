@@ -12,7 +12,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { type Auth, can } from '../auth/context.js';
 import type { DB } from '../db.js';
-import { type Budget, evaluate, FormulaError, parseFormula, referencedProperties, type Value } from './formula.js';
+import { type Budget, evaluate, FormulaError, listReferences, parseFormula, READ_REGEX_STEPS, referencedProperties, type Value } from './formula.js';
 import { HttpError, idSchema, newId } from './http.js';
 import { readersAmong } from './mentions.js';
 import { canReadPage, filterReadable, pageLevel } from './page-acl.js';
@@ -26,14 +26,26 @@ export const MAX_TEXT = 2000;
 export const MAX_FORMULAS = 10;
 /** Caractères que les fonctions de texte des formules peuvent traiter pour UNE lecture de la base (borne le temps de calcul). */
 /** `linkedChars` : volume (JSON) des lignes d'autres bases lues pour les relations et cumuls d'UNE lecture. */
-export const limits = { formulaChars: 20_000_000, linkedChars: 20_000_000 };
+/** `regexSteps` : pas de simulation des expressions régulières des formules pour UNE lecture (toutes lignes et formules confondues). */
+export const limits = { formulaChars: 20_000_000, linkedChars: 20_000_000, regexSteps: READ_REGEX_STEPS };
+/** Budget de calcul d'une lecture (formules, cumuls, expressions régulières). Un export de plusieurs bases en partage un seul. */
+export const readBudget = (): Budget => ({ chars: limits.formulaChars, regexSteps: limits.regexSteps });
 export const MAX_ROW_CHARS = 20_000;
 export const MAX_BASE_CHARS = 10_000_000;
 
-export const PROPERTY_TYPES = ['text', 'number', 'date', 'select', 'multi_select', 'status', 'checkbox', 'person', 'page_link', 'formula', 'relation', 'rollup'] as const;
+export const PROPERTY_TYPES = [
+  'text', 'number', 'date', 'select', 'multi_select', 'status', 'checkbox', 'person', 'page_link', 'formula', 'relation', 'rollup',
+  'url', 'email', 'phone', 'created_time', 'updated_time', 'created_by', 'updated_by', 'unique_id', 'date_range',
+] as const;
 export type PropertyType = typeof PROPERTY_TYPES[number];
 /** Colonnes dont la valeur est calculée à la lecture : jamais écrites, jamais lues par une formule ni par un cumul. */
 const COMPUTED = new Set<PropertyType>(['formula', 'rollup']);
+/** Colonnes dérivées de la ligne (dates et auteurs de création et de modification) : jamais stockées dans les cellules. */
+export const DERIVED = new Set<PropertyType>(['created_time', 'updated_time', 'created_by', 'updated_by']);
+/** Colonnes jamais écrites par un client, même pour être effacées (400). L'ID unique est attribué par le serveur et immuable. */
+const LOCKED = new Set<PropertyType>([...DERIVED, 'unique_id']);
+/** Colonnes qu'un modèle de ligne peut remplir. */
+export const TEMPLATE_TYPES = new Set<PropertyType>(['text', 'number', 'date', 'date_range', 'select', 'multi_select', 'status', 'checkbox', 'person', 'page_link', 'url', 'email', 'phone']);
 export const MAX_RELATIONS = 10;
 export const MAX_ROLLUPS = 10;
 /** Lignes liées par une cellule relation. */
@@ -59,9 +71,16 @@ export interface Option { id: string; name: string; color: typeof OPTION_COLORS[
 
 // Vue : tri, filtres, colonnes masquées. Rien d'exécutable : des identifiants de colonnes, des opérateurs d'une liste fermée.
 export const FILTER_OPS = ['contains', 'eq', 'neq', 'gt', 'lt', 'empty', 'notempty'] as const;
-export const VIEW_TYPES = ['table', 'kanban', 'timeline', 'calendar'] as const;
+export const VIEW_TYPES = ['table', 'kanban', 'timeline', 'calendar', 'chart'] as const;
 export const TIMELINE_SCALES = ['day', 'week', 'month', 'quarter'] as const;
 export const CALENDAR_MODES = ['month', 'week'] as const;
+export const CHART_KINDS = ['bar', 'line', 'donut'] as const;
+export const CHART_BUCKETS = ['day', 'week', 'month', 'year'] as const;
+export const CHART_METRICS = ['count', 'sum', 'avg', 'min', 'max'] as const;
+/** Colonnes selon lesquelles un graphique regroupe les lignes. */
+export const CHART_GROUP_TYPES = new Set<PropertyType>(['select', 'status', 'multi_select', 'checkbox', 'date', 'date_range', 'person', 'text', 'created_by', 'created_time']);
+/** Colonnes de date (un graphique les découpe par intervalle). */
+export const CHART_DATE_TYPES = new Set<PropertyType>(['date', 'date_range', 'created_time']);
 export const viewConfigSchema = z.object({
   // `kanban` : les lignes sont des cartes rangées en colonnes selon la valeur d'une colonne Sélection ou Statut (`groupBy`).
   // `timeline` : barres entre les colonnes de début et de fin des réglages de la base ; `groupBy` et `colorBy` facultatifs.
@@ -74,6 +93,13 @@ export const viewConfigSchema = z.object({
   mode: z.enum(CALENDAR_MODES).optional(),
   dateId: z.string().max(40).optional(),
   endId: z.string().max(40).optional(),
+  // `chart` : graphique (`chart`) des lignes regroupées selon `groupBy`, découpées par `bucket` pour une date ; `metric` sur la
+  // colonne `valueId` (sauf `count`) ; au plus `limit` groupes, le reste dans « Autres ». Calcul serveur (lib/base-chart.ts).
+  chart: z.enum(CHART_KINDS).optional(),
+  bucket: z.enum(CHART_BUCKETS).optional(),
+  metric: z.enum(CHART_METRICS).optional(),
+  valueId: z.string().max(40).optional(),
+  limit: z.number().int().min(5).max(50).optional(),
   sort: z.array(z.object({ propertyId: z.string().max(40), dir: z.enum(['asc', 'desc']) })).max(3).default([]),
   filters: z.array(z.object({
     propertyId: z.string().max(40),
@@ -89,7 +115,9 @@ interface PropertyRow { id: string; base_id: string; name: string; type: Propert
 export interface RelationConfig { targetId: string; backPropertyId: string | null }
 /** Cumul : relation de la même base, colonne lue dans la base cible (aucune pour `count`), fonction. */
 export interface RollupConfig { relationId: string; targetPropertyId: string | null; fn: RollupFn }
-export type PropertyConfig = RelationConfig | RollupConfig | Record<string, never>;
+/** ID unique : préfixe facultatif et prochain numéro (jamais réutilisé, même après suppression d'une ligne). */
+export interface UniqueIdConfig { prefix: string | null; next: number }
+export type PropertyConfig = RelationConfig | RollupConfig | UniqueIdConfig | Record<string, never>;
 export interface Property { id: string; name: string; type: PropertyType; options: Option[]; position: number; formula: string | null; config: PropertyConfig }
 export interface RowRow { id: string; base_id: string; position: number; vals: string; created_by: string | null; created_at: number; updated_by: string | null; updated_at: number; parent_id: string | null }
 
@@ -101,11 +129,27 @@ function parseConfig(type: PropertyType, raw: string): PropertyConfig {
   const str = (v: unknown) => (typeof v === 'string' ? v : null);
   if (type === 'relation') return { targetId: str(o.targetId) ?? '', backPropertyId: str(o.backPropertyId) };
   if (type === 'rollup') return { relationId: str(o.relationId) ?? '', targetPropertyId: str(o.targetPropertyId), fn: (ROLLUP_FNS as readonly string[]).includes(o.fn as string) ? o.fn as RollupFn : 'count' };
+  if (type === 'unique_id') {
+    const prefix = str(o.prefix);
+    return { prefix: prefix && PREFIX.test(prefix) ? prefix : null, next: typeof o.next === 'number' && Number.isSafeInteger(o.next) && o.next > 0 ? o.next : 1 };
+  }
   return {};
 }
+const PREFIX = /^[A-Za-z0-9-]{1,8}$/;
 const toProperty = (r: PropertyRow): Property => ({ id: r.id, name: r.name, type: r.type, options: JSON.parse(r.options) as Option[], position: r.position, formula: r.formula, config: parseConfig(r.type, r.config) });
 export const relationOf = (p: Property) => p.config as RelationConfig;
 export const rollupOf = (p: Property) => p.config as RollupConfig;
+export const uniqueIdOf = (p: Property) => p.config as UniqueIdConfig;
+/**
+ * Compteur des ID uniques, gardé au niveau de la BASE (base_settings) : supprimer puis recréer la colonne ne réutilise aucun numéro.
+ * `config.next` de la colonne en est le reflet, pour l'affichage.
+ */
+const uidCounter = (db: DB, baseId: string): number =>
+  (db.prepare('SELECT unique_id_next AS n FROM base_settings WHERE base_id = ?').get(baseId) as { n: number } | undefined)?.n ?? 1;
+const setUidCounter = (db: DB, baseId: string, n: number) =>
+  db.prepare('INSERT INTO base_settings (base_id, unique_id_next) VALUES (?, ?) ON CONFLICT(base_id) DO UPDATE SET unique_id_next = excluded.unique_id_next').run(baseId, n);
+/** Texte d'un ID unique : « PREFIXE-N », ou « N » sans préfixe. */
+export const uniqueIdText = (p: Property, n: number) => { const prefix = uniqueIdOf(p).prefix; return prefix ? `${prefix}-${n}` : String(n); };
 
 export const propertiesOf = (db: DB, baseId: string): Property[] =>
   (db.prepare('SELECT * FROM base_properties WHERE base_id = ? ORDER BY position, created_at').all(baseId) as PropertyRow[]).map(toProperty);
@@ -154,6 +198,9 @@ export function checkFormula(props: Property[], formula: string, selfId?: string
   // Ni formule, ni cumul, ni relation : pas de chaîne de calculs (donc pas de cycle), et aucune donnée d'une autre base.
   const readable = new Map(props.filter((p) => !COMPUTED.has(p.type) && p.type !== 'relation' && p.id !== selfId).map((p) => [p.name, p]));
   for (const n of names) if (!readable.has(n)) throw new HttpError(400, `Formule : la colonne « ${n} » n'existe pas (ou est elle-même calculée)`);
+  for (const n of listReferences(parseFormula(formula))) {
+    if (readable.get(n)?.type !== 'multi_select') throw new HttpError(400, `Formule : listCount et listHas lisent une colonne Sélection multiple (« ${n} » n'en est pas une)`);
+  }
   return formula;
 }
 
@@ -161,6 +208,8 @@ export function checkFormula(props: Property[], formula: string, selfId?: string
 export const relationInput = z.object({ targetId: idSchema, twoWay: z.boolean().optional() }).strict();
 /** Configuration reçue pour un cumul (création ou modification). */
 export const rollupInput = z.object({ relationId: idSchema, targetPropertyId: idSchema.nullable().optional(), fn: z.enum(ROLLUP_FNS) }).strict();
+/** Configuration reçue pour un ID unique : préfixe facultatif (8 caractères au plus : lettres, chiffres, tiret ; null le retire). */
+export const uniqueIdInput = z.object({ prefix: z.string().regex(PREFIX).nullable().optional() }).strict();
 
 function parseInput<T extends z.ZodType>(schema: T, v: unknown, what: string): z.output<T> {
   const r = schema.safeParse(v ?? null);
@@ -209,12 +258,30 @@ export function addProperty(db: DB, baseId: string, input: { name: string; type:
     assertFreeName(props, input.name);
     if ((input.type === 'formula') !== (input.formula !== undefined)) throw new HttpError(400, input.type === 'formula' ? 'Une colonne calculée demande une formule' : 'Seule une colonne calculée a une formule');
     const linked = input.type === 'relation' || input.type === 'rollup';
-    if (!linked && input.config !== undefined) throw new HttpError(400, 'Ce type de colonne n’a pas de configuration');
+    if (!linked && input.type !== 'unique_id' && input.config !== undefined) throw new HttpError(400, 'Ce type de colonne n’a pas de configuration');
     if (linked && !ctx) throw new HttpError(400, 'Relation impossible ici');
     if (input.type === 'formula' && props.filter((p) => p.type === 'formula').length >= MAX_FORMULAS) throw new HttpError(409, `Au plus ${MAX_FORMULAS} colonnes calculées par base`);
     const formula = input.formula === undefined ? null : checkFormula(props, input.formula);
     const options = normalizeOptions(input.type, input.options ?? (input.type === 'status' ? defaultStatus() : undefined));
 
+    if (input.type === 'unique_id') {
+      if (props.some((p) => p.type === 'unique_id')) throw new HttpError(409, 'Une base a au plus une colonne ID unique');
+      const cfg = parseInput(uniqueIdInput, input.config ?? {}, 'ID unique');
+      const id = insertProperty(db, baseId, props, { name: input.name, type: 'unique_id', config: { prefix: cfg.prefix ?? null, next: 1 } });
+      // Les lignes existantes sont numérotées dans leur ordre, à partir du compteur de la base (1 pour une première colonne ;
+      // après une colonne supprimée, à la suite de ses numéros).
+      const first = uidCounter(db, baseId);
+      const rows = db.prepare('SELECT id, vals FROM base_rows WHERE base_id = ? ORDER BY position, created_at').all(baseId) as { id: string; vals: string }[];
+      const upd = db.prepare('UPDATE base_rows SET vals = ? WHERE id = ?');
+      rows.forEach((r, i) => {
+        const vals = new Map(Object.entries(JSON.parse(r.vals) as Record<string, unknown>));
+        vals.set(id, first + i);
+        upd.run(JSON.stringify(Object.fromEntries(vals)), r.id);
+      });
+      setUidCounter(db, baseId, first + rows.length);
+      db.prepare('UPDATE base_properties SET config = ? WHERE id = ?').run(JSON.stringify({ prefix: cfg.prefix ?? null, next: first + rows.length }), id);
+      return propertyById(db, baseId, id);
+    }
     if (input.type === 'rollup') {
       if (props.filter((p) => p.type === 'rollup').length >= MAX_ROLLUPS) throw new HttpError(409, `Au plus ${MAX_ROLLUPS} cumuls par base`);
       const config = checkRollup(ctx!, props, parseInput(rollupInput, input.config, 'cumul'));
@@ -253,11 +320,17 @@ export function updateProperty(db: DB, baseId: string, id: string, input: { name
     const props = propertiesOf(db, baseId);
     if (input.formula !== undefined && prop.type !== 'formula') throw new HttpError(400, 'Seule une colonne calculée a une formule');
     if (input.config !== undefined && prop.type === 'relation') throw new HttpError(400, 'La base liée d’une relation ne change pas');
-    if (input.config !== undefined && prop.type !== 'rollup') throw new HttpError(400, 'Ce type de colonne n’a pas de configuration');
-    if (input.config !== undefined && !ctx) throw new HttpError(400, 'Cumul impossible ici');
+    if (input.config !== undefined && prop.type !== 'rollup' && prop.type !== 'unique_id') throw new HttpError(400, 'Ce type de colonne n’a pas de configuration');
+    if (input.config !== undefined && prop.type === 'rollup' && !ctx) throw new HttpError(400, 'Cumul impossible ici');
     if (input.name !== undefined && input.name !== prop.name) assertFreeName(props, input.name, id);
     const formula = input.formula === undefined ? prop.formula : checkFormula(props, input.formula, id);
-    const config = input.config === undefined ? prop.config : checkRollup(ctx!, props, parseInput(rollupInput, input.config, 'cumul'));
+    let config = prop.config;
+    if (input.config !== undefined && prop.type === 'rollup') config = checkRollup(ctx!, props, parseInput(rollupInput, input.config, 'cumul'));
+    if (input.config !== undefined && prop.type === 'unique_id') {
+      // Seul le préfixe change : le compteur n'est jamais modifiable.
+      const cfg = parseInput(uniqueIdInput, input.config, 'ID unique');
+      config = { prefix: cfg.prefix === undefined ? uniqueIdOf(prop).prefix : cfg.prefix, next: uniqueIdOf(prop).next };
+    }
     // Renommer une colonne lue par une formule la casserait en silence : on refuse, la formule se corrige d'abord.
     if (input.name !== undefined && input.name !== prop.name) {
       const user = formulaUsing(props, prop.name, id);
@@ -268,7 +341,7 @@ export function updateProperty(db: DB, baseId: string, id: string, input: { name
     if (input.options !== undefined) {
       const alive = new Set(options.map((o) => o.id));
       const removed = prop.options.filter((o) => !alive.has(o.id)).map((o) => o.id);
-      if (removed.length) rewriteRows(db, baseId, (vals) => {
+      const drop = (vals: Map<string, unknown>) => {
         const v = vals.get(id);
         if (typeof v === 'string' && removed.includes(v)) { vals.delete(id); return true; }
         if (Array.isArray(v)) {
@@ -276,7 +349,8 @@ export function updateProperty(db: DB, baseId: string, id: string, input: { name
           if (kept.length !== v.length) { if (kept.length) vals.set(id, kept); else vals.delete(id); return true; }
         }
         return false;
-      });
+      };
+      if (removed.length) { rewriteRows(db, baseId, drop); rewriteTemplates(db, baseId, drop); }
     }
     return propertyById(db, baseId, id);
   })();
@@ -331,6 +405,7 @@ export function removeProperty(db: DB, baseId: string, id: string, touched?: Set
     }
     db.prepare('DELETE FROM base_properties WHERE id = ?').run(id);
     rewriteRows(db, baseId, (vals) => vals.delete(id));
+    rewriteTemplates(db, baseId, (vals) => vals.delete(id));
     // Les vues ne gardent aucune référence à une colonne qui n'existe plus.
     for (const v of viewsOf(db, baseId)) {
       const c = v.config;
@@ -349,7 +424,10 @@ function remapView(c: ViewConfig, map: (id: string) => string | undefined): View
   const colorBy = c.colorBy === undefined ? undefined : map(c.colorBy);
   const dateId = c.dateId === undefined ? undefined : map(c.dateId);
   const endId = c.endId === undefined ? undefined : map(c.endId);
-  const type = c.type === 'kanban' && !groupBy ? 'table' : c.type;
+  const valueId = c.valueId === undefined ? undefined : map(c.valueId);
+  // Un graphique qui perd sa colonne de regroupement redevient un tableau ; sans sa colonne de valeur, il compte les lignes.
+  const type = (c.type === 'kanban' || c.type === 'chart') && !groupBy ? 'table' : c.type;
+  const chart = type === 'chart';
   const ids = (list: string[]) => list.map(map).filter((x): x is string => x !== undefined);
   // Calendrier : une colonne de date supprimée disparaît de la vue, qui revient aux colonnes par défaut.
   return {
@@ -360,10 +438,24 @@ function remapView(c: ViewConfig, map: (id: string) => string | undefined): View
     ...(type === 'calendar' && c.mode ? { mode: c.mode } : {}),
     ...(type === 'calendar' && dateId ? { dateId } : {}),
     ...(type === 'calendar' && endId ? { endId } : {}),
+    ...(chart && c.chart ? { chart: c.chart } : {}),
+    ...(chart && c.bucket ? { bucket: c.bucket } : {}),
+    ...(chart && c.metric ? { metric: valueId ? c.metric : 'count' as const } : {}),
+    ...(chart && valueId && c.metric !== 'count' ? { valueId } : {}),
+    ...(chart && c.limit ? { limit: c.limit } : {}),
     sort: c.sort.flatMap((s) => { const p = map(s.propertyId); return p ? [{ ...s, propertyId: p }] : []; }),
     filters: c.filters.flatMap((f) => { const p = map(f.propertyId); return p ? [{ ...f, propertyId: p }] : []; }),
     hidden: ids(c.hidden),
   };
+}
+
+/** Même chose pour les modèles de ligne de la base. */
+function rewriteTemplates(db: DB, baseId: string, fn: (vals: Map<string, unknown>) => boolean) {
+  const upd = db.prepare('UPDATE base_row_templates SET vals = ? WHERE id = ?');
+  for (const r of db.prepare('SELECT id, vals FROM base_row_templates WHERE base_id = ?').all(baseId) as { id: string; vals: string }[]) {
+    const vals = new Map(Object.entries(JSON.parse(r.vals) as Record<string, unknown>));
+    if (fn(vals)) upd.run(JSON.stringify(Object.fromEntries(vals)), r.id);
+  }
 }
 
 // Les cellules sont manipulées dans une Map : la clé (identifiant de colonne) vient du client, jamais d'un objet indexé par elle.
@@ -407,12 +499,80 @@ const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u200e\u200f\u202a
 /** Nom saisi : sans caractères de contrôle ni de direction du texte (qui déguisent un nom affiché ou exporté), non vide après nettoyage. */
 export const cleanName = (max: number) => z.string().transform((v) => v.replace(CONTROL, '').normalize('NFC').trim()).pipe(z.string().min(1).max(max));
 const ROW_ID = /^[A-Za-z0-9_-]{1,64}$/;
+// Tout caractère de contrôle (retours à la ligne et tabulations compris) ou de direction : refusé dans une adresse.
+// eslint-disable-next-line no-control-regex
+const ANY_CONTROL = /[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
+export const MAX_URL = 2000;
+export const MAX_EMAIL = 254;
+
+/**
+ * Adresse web : http ou https seulement (jamais javascript:, data:...), sans identifiants (user:pass@), normalisée par URL,
+ * 2000 caractères au plus. Sans schéma, https:// est ajouté. Rend null si l'adresse ne convient pas.
+ */
+export function normalizeUrl(raw: string): string | null {
+  if (raw.length > MAX_URL || ANY_CONTROL.test(raw)) return null;
+  let t = raw.trim();
+  if (!t) return null;
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(t)) t = `https://${t}`;
+  let u: URL;
+  try { u = new URL(t); } catch { return null; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  if (u.username || u.password || !u.hostname) return null;
+  return u.href.length > MAX_URL ? null : u.href;
+}
+
+const EMAIL_LOCAL = new Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.!#$%&'*+/=?^_`{|}~-");
+const isAlnum = (c: string) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+/** Adresse e-mail vérifiée caractère par caractère (aucune expression régulière à retour arrière) ; 254 caractères au plus. */
+export function isEmail(v: string): boolean {
+  if (v.length > MAX_EMAIL) return false;
+  const at = v.indexOf('@');
+  if (at < 1 || at !== v.lastIndexOf('@')) return false;
+  const local = v.slice(0, at);
+  const domain = v.slice(at + 1);
+  if (local.length > 64 || local.startsWith('.') || local.endsWith('.') || local.includes('..')) return false;
+  for (const c of local) if (!EMAIL_LOCAL.has(c)) return false;
+  const labels = domain.split('.');
+  if (labels.length < 2) return false;
+  for (const l of labels) {
+    if (!l.length || l.length > 63 || l.startsWith('-') || l.endsWith('-')) return false;
+    for (const c of l) if (!isAlnum(c) && c !== '-') return false;
+  }
+  const tld = labels[labels.length - 1]!;
+  return tld.length >= 2 && [...tld].every((c) => !(c >= '0' && c <= '9'));
+}
+
+/** Téléphone : chiffres, espaces, ( ) - . et un + initial ; 5 à 30 caractères dont au moins 3 chiffres. */
+export function isPhone(v: string): boolean {
+  if (v.length < 5 || v.length > 30) return false;
+  let digits = 0;
+  for (let i = 0; i < v.length; i++) {
+    const c = v[i]!;
+    if (c >= '0' && c <= '9') digits++;
+    else if (c === '+' ? i !== 0 : !' ().-'.includes(c)) return false;
+  }
+  return digits >= 3;
+}
+
+/** Plage de dates { start, end } (end facultatif, jamais avant start), ou null si la valeur ne convient pas. */
+export function asDateRange(v: unknown): { start: string; end: string | null } | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const keys = Object.keys(v);
+  if (!keys.includes('start') || keys.some((k) => k !== 'start' && k !== 'end')) return null;
+  const { start, end } = v as { start: unknown; end?: unknown };
+  if (typeof start !== 'string' || !isDate(start)) return null;
+  if (end === undefined || end === null) return { start, end: null };
+  if (typeof end !== 'string' || !isDate(end) || end < start) return null;
+  return { start, end };
+}
 
 /** Valide une valeur pour une colonne. `null` efface la cellule. Lève 400 si la valeur ne convient pas. */
 export function checkValue(ctx: Ctx, prop: Property, v: unknown): unknown {
   const bad = (m: string): never => { throw new HttpError(400, `Colonne « ${prop.name} » : ${m}`); };
   // Relation : les droits sur la base cible se vérifient aussi pour effacer (une relation double modifie la cible).
   if (prop.type === 'relation') return checkRelation(ctx, prop, v, bad);
+  // Dérivées de la ligne ou attribuées par le serveur : ni écrites ni effacées.
+  if (LOCKED.has(prop.type)) return bad('colonne calculée, non modifiable');
   if (v === null) return null;
   switch (prop.type) {
     case 'formula':
@@ -454,6 +614,27 @@ export function checkValue(ctx: Ctx, prop: Property, v: unknown): unknown {
       if (!p || p.deleted_at || !ctx.spaces.has(p.space_id) || !canReadPage(ctx.db, ctx.auth, v)) return bad('page introuvable');
       return v;
     }
+    case 'url': {
+      if (typeof v !== 'string') return bad('adresse web attendue');
+      if (!v.trim()) return null;
+      return normalizeUrl(v) ?? bad(`adresse http ou https attendue, sans identifiants, ${MAX_URL} caractères au plus`);
+    }
+    case 'email': {
+      if (typeof v !== 'string') return bad('adresse e-mail attendue');
+      if (ANY_CONTROL.test(v)) return bad('adresse e-mail invalide');
+      const t = v.trim();
+      if (!t) return null;
+      return isEmail(t) ? t : bad('adresse e-mail invalide');
+    }
+    case 'phone': {
+      if (typeof v !== 'string') return bad('numéro de téléphone attendu');
+      if (ANY_CONTROL.test(v)) return bad('numéro de téléphone invalide');
+      const t = v.trim();
+      if (!t) return null;
+      return isPhone(t) ? t : bad('numéro de téléphone invalide (chiffres, espaces, + ( ) - .)');
+    }
+    case 'date_range':
+      return asDateRange(v) ?? bad('plage { start, end } attendue (dates AAAA-MM-JJ, fin facultative et jamais avant le début)');
   }
   return bad('type inconnu');
 }
@@ -547,6 +728,14 @@ export function addRow(ctx: Ctx, values: Record<string, unknown>, userId: string
     const props = propertiesOf(db, baseId);
     const vals = applyPatch(ctx, props, {}, values);
     const id = newId();
+    // ID unique : attribué dans la transaction, depuis le compteur de la colonne (monotone, jamais réutilisé).
+    const uid = props.find((p) => p.type === 'unique_id');
+    if (uid) {
+      const n = Math.max(uidCounter(db, baseId), uniqueIdOf(uid).next);
+      vals[uid.id] = n;
+      setUidCounter(db, baseId, n + 1);
+      db.prepare('UPDATE base_properties SET config = ? WHERE id = ?').run(JSON.stringify({ ...uniqueIdOf(uid), next: n + 1 }), uid.id);
+    }
     syncMirrors(ctx, props, id, {}, vals, userId);
     assertRoom(db, baseId, JSON.stringify(vals).length);
     const last = db.prepare('SELECT MAX(position) AS m FROM base_rows WHERE base_id = ?').get(baseId) as { m: number | null };
@@ -647,32 +836,19 @@ interface Target { level: Level; title: Property | undefined; props: Map<string,
  * personne peut lire la base ; une cellule « page » ne donne le titre que d'une page que l'appelant peut lire ; une cellule « relation »
  * ne montre que des lignes d'une base que l'appelant peut lire, et un cumul ne calcule que sur elles. Sinon la cellule est vide.
  */
-export function presentRows(ctx: Ctx, props: Property[], canSeeNames: boolean, only?: string | string[]): PresentedRow[] {
+export function presentRows(ctx: Ctx, props: Property[], canSeeNames: boolean, only?: string | string[], budget: Budget = readBudget()): PresentedRow[] {
   const { db, baseId } = ctx;
   const rows = (only !== undefined
     ? db.prepare('SELECT * FROM base_rows WHERE base_id = ? AND id IN (SELECT value FROM json_each(?)) ORDER BY position, created_at').all(baseId, JSON.stringify(Array.isArray(only) ? only : [only]))
-    : db.prepare('SELECT * FROM base_rows WHERE base_id = ? ORDER BY position, created_at').all(baseId)) as RowRow[];
+    : db.prepare('SELECT * FROM base_rows WHERE base_id = ? ORDER BY position, created_at LIMIT ?').all(baseId, MAX_ROWS)) as RowRow[];
   const parsed = rows.map((r) => ({ r, vals: JSON.parse(r.vals) as Record<string, unknown> }));
-  const people = new Set<string>();
-  const pagesSeen = new Set<string>();
-  for (const p of props) {
-    if (p.type !== 'person' && p.type !== 'page_link') continue;
-    for (const { vals } of parsed) {
-      const v = vals[p.id];
-      if (typeof v === 'string') (p.type === 'person' ? people : pagesSeen).add(v);
-    }
-  }
-  const names = new Map(canSeeNames && people.size ? readersAmong(db, baseId, [...people], people.size).map((u) => [u.id, u.name]) : []);
-  const pageInfo = new Map<string, { id: string; title: string; icon: string }>();
-  if (pagesSeen.size) {
-    // Une requête pour toutes les pages visées (sans leur contenu), puis le filtre de droits habituel.
-    const found = db.prepare('SELECT id, space_id, title, icon FROM pages WHERE deleted_at IS NULL AND id IN (SELECT value FROM json_each(?))')
-      .all(JSON.stringify([...pagesSeen])) as { id: string; space_id: string; title: string; icon: string }[];
-    for (const pg of filterReadable(db, ctx.auth, found.filter((f) => ctx.spaces.has(f.space_id)))) pageInfo.set(pg.id, { id: pg.id, title: pg.title, icon: pg.icon });
-  }
+  // Auteurs de création et de modification : nommés comme une cellule personne (mêmes règles de lecture).
+  const authors: string[] = [];
+  if (props.some((p) => p.type === 'created_by')) for (const { r } of parsed) if (r.created_by) authors.push(r.created_by);
+  if (props.some((p) => p.type === 'updated_by')) for (const { r } of parsed) if (r.updated_by) authors.push(r.updated_by);
+  const { names, pageInfo } = lookups(ctx, props, canSeeNames, parsed.map((x) => x.vals), authors);
   const targets = loadTargets(ctx, props, parsed);
   const byId = new Map(props.map((p) => [p.id, p]));
-  const kinds = new Map(props.map((p) => [p.id, p.type]));
   // Formules : analysées une fois, évaluées par ligne sur les valeurs telles que CE lecteur les voit (un nom ou un titre qu'il ne peut
   // pas lire est déjà absent à ce stade, donc la formule ne peut pas le révéler).
   const formulas = props.filter((p) => p.type === 'formula' && p.formula).flatMap((p) => {
@@ -680,24 +856,34 @@ export function presentRows(ctx: Ctx, props: Property[], canSeeNames: boolean, o
   });
   const byName = new Map(props.filter((p) => !COMPUTED.has(p.type) && p.type !== 'relation').map((p) => [p.name, p]));
   const rollups = props.filter((p) => p.type === 'rollup');
-  const budget: Budget = { chars: limits.formulaChars };
+  const derived = props.filter((p) => DERIVED.has(p.type));
   const deps = new Map<string, string[]>();
   for (const d of db.prepare('SELECT row_id, blocker_id FROM base_row_deps WHERE base_id = ? ORDER BY blocker_id').all(baseId) as { row_id: string; blocker_id: string }[]) {
     deps.set(d.row_id, [...(deps.get(d.row_id) ?? []), d.blocker_id]);
   }
+  const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
   return parsed.map(({ r, vals }) => {
-    const out: Record<string, unknown> = {};
+    const out = presentStored(props, byId, vals, names, pageInfo);
     for (const [k, v] of Object.entries(vals)) {
-      const t = kinds.get(k);
-      if (!t) continue;
-      if (t === 'person') { const n = typeof v === 'string' ? names.get(v) : undefined; if (n !== undefined) out[k] = { id: v, name: n }; }
-      else if (t === 'page_link') { const info = typeof v === 'string' ? pageInfo.get(v) : undefined; if (info) out[k] = info; }
-      else if (t === 'relation') { const links = presentLinks(targets.get(k), v); if (links.length) out[k] = links; }
-      else if (t === 'rollup') continue;
-      else out[k] = v;
+      const p = byId.get(k);
+      if (p?.type === 'relation') { const links = presentLinks(targets.get(k), v); if (links.length) out[k] = links; }
+    }
+    for (const p of derived) {
+      if (p.type === 'created_time') out[p.id] = day(r.created_at);
+      else if (p.type === 'updated_time') out[p.id] = day(r.updated_at);
+      else {
+        const uid = p.type === 'created_by' ? r.created_by : r.updated_by;
+        const n = uid ? names.get(uid) : undefined;
+        if (uid && n !== undefined) out[p.id] = { id: uid, name: n };
+      }
     }
     for (const f of formulas) {
-      const result = evaluate(f.ast, (name) => { const p = byName.get(name); return p ? readCell(p, out[p.id]) : null; }, budget);
+      const result = evaluate(f.ast, (name) => { const p = byName.get(name); return p ? readCell(p, out[p.id]) : null; }, budget, (name) => {
+        const p = byName.get(name);
+        if (p?.type !== 'multi_select') return null;
+        const v = out[p.id];
+        return Array.isArray(v) ? v.map((x) => p.options.find((o) => o.id === x)?.name).filter((x): x is string => !!x) : [];
+      });
       if (result !== null) out[f.id] = result;
     }
     for (const ru of rollups) {
@@ -708,6 +894,55 @@ export function presentRows(ctx: Ctx, props: Property[], canSeeNames: boolean, o
     }
     return { id: r.id, position: r.position, values: out, createdAt: r.created_at, updatedAt: r.updated_at, parentId: r.parent_id ?? null, blockedBy: deps.get(r.id) ?? [] };
   });
+}
+
+type PageInfo = { id: string; title: string; icon: string };
+
+/**
+ * Noms des personnes (seulement celles qui peuvent lire la base, et seulement pour un lecteur connecté) et titres des pages
+ * (seulement celles que l'appelant peut lire) cités par des cellules, plus `extraPeople` (auteurs des lignes).
+ */
+function lookups(ctx: Ctx, props: Property[], canSeeNames: boolean, list: Record<string, unknown>[], extraPeople: string[] = []) {
+  const { db, baseId } = ctx;
+  const people = new Set<string>(extraPeople);
+  const pagesSeen = new Set<string>();
+  for (const p of props) {
+    if (p.type !== 'person' && p.type !== 'page_link') continue;
+    for (const vals of list) {
+      const v = vals[p.id];
+      if (typeof v === 'string') (p.type === 'person' ? people : pagesSeen).add(v);
+    }
+  }
+  const names = new Map(canSeeNames && people.size ? readersAmong(db, baseId, [...people], people.size).map((u) => [u.id, u.name]) : []);
+  const pageInfo = new Map<string, PageInfo>();
+  if (pagesSeen.size) {
+    // Une requête pour toutes les pages visées (sans leur contenu), puis le filtre de droits habituel.
+    const found = db.prepare('SELECT id, space_id, title, icon FROM pages WHERE deleted_at IS NULL AND id IN (SELECT value FROM json_each(?))')
+      .all(JSON.stringify([...pagesSeen])) as { id: string; space_id: string; title: string; icon: string }[];
+    for (const pg of filterReadable(db, ctx.auth, found.filter((f) => ctx.spaces.has(f.space_id)))) pageInfo.set(pg.id, { id: pg.id, title: pg.title, icon: pg.icon });
+  }
+  return { names, pageInfo };
+}
+
+/** Cellules stockées présentées (hors relations et colonnes calculées ou dérivées) : personne, page, ID unique, valeurs brutes. */
+function presentStored(props: Property[], byId: Map<string, Property>, vals: Record<string, unknown>, names: Map<string, string>, pageInfo: Map<string, PageInfo>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(vals)) {
+    const p = byId.get(k);
+    if (!p || p.type === 'relation' || COMPUTED.has(p.type) || DERIVED.has(p.type)) continue;
+    if (p.type === 'person') { const n = typeof v === 'string' ? names.get(v) : undefined; if (n !== undefined) out[k] = { id: v, name: n }; }
+    else if (p.type === 'page_link') { const info = typeof v === 'string' ? pageInfo.get(v) : undefined; if (info) out[k] = info; }
+    else if (p.type === 'unique_id') { if (typeof v === 'number') out[k] = uniqueIdText(p, v); }
+    else out[k] = v;
+  }
+  return out;
+}
+
+/** Valeurs de modèles de ligne telles que les voit l'appelant (mêmes règles qu'une ligne pour les personnes et les pages). */
+export function presentTemplateValues(ctx: Ctx, props: Property[], canSeeNames: boolean, list: Record<string, unknown>[]): Record<string, unknown>[] {
+  const { names, pageInfo } = lookups(ctx, props, canSeeNames, list);
+  const byId = new Map(props.filter((p) => TEMPLATE_TYPES.has(p.type)).map((p) => [p.id, p]));
+  return list.map((vals) => presentStored(props, byId, vals, names, pageInfo));
 }
 
 /**
@@ -813,8 +1048,10 @@ function primitive(p: Property, v: unknown): Value {
   switch (p.type) {
     case 'select': case 'status': return p.options.find((o) => o.id === v)?.name ?? null;
     case 'multi_select': return (v as string[]).map((x) => p.options.find((o) => o.id === x)?.name).filter(Boolean).join(', ') || null;
-    case 'person': return (v as { name: string }).name;
+    case 'person': case 'created_by': case 'updated_by': return (v as { name: string }).name;
     case 'page_link': return (v as { title: string }).title;
+    // Plage de dates : une formule lit son début.
+    case 'date_range': return (v as { start: string }).start;
     default: return typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean' ? v : null;
   }
 }
@@ -835,20 +1072,41 @@ export function checkViewConfig(db: DB, baseId: string, config: ViewConfig): Vie
   const ids = new Set(props.map((p) => p.id));
   const all = [
     ...config.sort.map((s) => s.propertyId), ...config.filters.map((f) => f.propertyId), ...config.hidden,
-    ...[config.groupBy, config.colorBy, config.dateId, config.endId].filter((x): x is string => x !== undefined),
+    ...[config.groupBy, config.colorBy, config.dateId, config.endId, config.valueId].filter((x): x is string => x !== undefined),
   ];
   if (all.some((id) => !ids.has(id))) throw new HttpError(400, 'La vue cite une colonne inconnue');
+  const typeOf = (id: string | undefined) => props.find((x) => x.id === id)?.type;
   const choice = (id: string | undefined) => { const p = props.find((x) => x.id === id); return !!p && (p.type === 'select' || p.type === 'status'); };
   const isDateProp = (id: string) => props.some((x) => x.id === id && x.type === 'date');
+  const chart = config.type === 'chart';
+  if (!chart && (config.chart !== undefined || config.bucket !== undefined || config.metric !== undefined || config.valueId !== undefined || config.limit !== undefined)) {
+    throw new HttpError(400, 'Type de graphique, intervalle, calcul et colonne de valeur ne concernent que les graphiques');
+  }
+  let metric = config.metric ?? 'count';
+  let valueId = config.valueId;
+  if (chart) {
+    const g = typeOf(config.groupBy);
+    if (!g || !CHART_GROUP_TYPES.has(g)) throw new HttpError(400, 'Un graphique se regroupe selon une colonne Sélection, Statut, Sélection multiple, Case à cocher, Date, Plage de dates, Personne, Texte, Créé par ou Créé le');
+    if (config.bucket !== undefined && !CHART_DATE_TYPES.has(g)) throw new HttpError(400, 'L’intervalle ne concerne qu’un regroupement par date');
+    if (metric === 'count') valueId = undefined;
+    else {
+      const v = typeOf(valueId);
+      if (v !== 'number' && v !== 'rollup' && v !== 'formula') throw new HttpError(400, 'Ce calcul demande une colonne Nombre, Cumul ou Formule');
+    }
+    if (!valueId) metric = 'count';
+  }
   if (config.type === 'kanban') {
     if (!choice(config.groupBy)) throw new HttpError(400, 'Un Kanban se range selon une colonne Sélection ou Statut');
   } else if (config.type === 'timeline') {
     if (config.groupBy !== undefined && !choice(config.groupBy)) throw new HttpError(400, 'Une chronologie se regroupe selon une colonne Sélection ou Statut');
     if (config.colorBy !== undefined && !choice(config.colorBy)) throw new HttpError(400, 'Une chronologie se colore selon une colonne Sélection ou Statut');
-  } else if (config.groupBy !== undefined) throw new HttpError(400, 'Seules les vues Kanban et chronologie se rangent par colonne');
+  } else if (config.groupBy !== undefined && !chart) throw new HttpError(400, 'Seules les vues Kanban, chronologie et graphique se rangent par colonne');
   if (config.type !== 'timeline' && (config.scale !== undefined || config.colorBy !== undefined)) throw new HttpError(400, 'Échelle et couleur ne concernent que la chronologie');
   if (config.type === 'calendar') {
-    for (const id of [config.dateId, config.endId]) if (id !== undefined && !isDateProp(id)) throw new HttpError(400, 'Un calendrier se place selon des colonnes Date de la base');
+    // Début : une colonne Date ou Plage de dates ; une plage porte sa propre fin (pas de colonne de fin en plus).
+    if (config.dateId !== undefined && !isDateProp(config.dateId) && typeOf(config.dateId) !== 'date_range') throw new HttpError(400, 'Un calendrier se place selon des colonnes Date de la base');
+    if (config.endId !== undefined && !isDateProp(config.endId)) throw new HttpError(400, 'Un calendrier se place selon des colonnes Date de la base');
+    if (config.endId !== undefined && typeOf(config.dateId) === 'date_range') throw new HttpError(400, 'Une plage de dates porte déjà sa fin');
     if (config.dateId !== undefined && config.dateId === config.endId) throw new HttpError(400, 'Le début et la fin sont deux colonnes différentes');
   } else if (config.mode !== undefined || config.dateId !== undefined || config.endId !== undefined) {
     throw new HttpError(400, 'Mode et colonnes de date ne concernent que le calendrier');
@@ -862,6 +1120,12 @@ export function checkViewConfig(db: DB, baseId: string, config: ViewConfig): Vie
     ...(config.type === 'calendar' ? { mode: config.mode ?? 'month' } : {}),
     ...(config.dateId !== undefined ? { dateId: config.dateId } : {}),
     ...(config.endId !== undefined ? { endId: config.endId } : {}),
+    ...(chart ? { chart: config.chart ?? 'bar' } : {}),
+    ...(chart && config.bucket !== undefined ? { bucket: config.bucket } : {}),
+    ...(chart && CHART_DATE_TYPES.has(typeOf(config.groupBy)!) && config.bucket === undefined ? { bucket: 'month' as const } : {}),
+    ...(chart ? { metric } : {}),
+    ...(chart && valueId !== undefined ? { valueId } : {}),
+    ...(chart ? { limit: config.limit ?? 20 } : {}),
     sort: config.sort, filters: config.filters, hidden: config.hidden,
   };
 }
@@ -871,10 +1135,13 @@ export function checkViewConfig(db: DB, baseId: string, config: ViewConfig): Vie
  * Date) et la colonne de fin des réglages. Sans vue calendrier (`view` absent) : mêmes défauts. La fin est distincte du début.
  */
 export function calendarColumns(props: Property[], settings: { startPropertyId: string | null; endPropertyId: string | null }, view?: Pick<ViewConfig, 'dateId' | 'endId'>): { dateId: string | null; endId: string | null } {
+  // Début : colonne Date ou Plage de dates ; une plage porte sa fin, il n'y a alors pas de colonne de fin.
+  const starts = new Set(props.filter((p) => p.type === 'date' || p.type === 'date_range').map((p) => p.id));
   const dates = new Set(props.filter((p) => p.type === 'date').map((p) => p.id));
-  const pick = (id: string | null | undefined) => (id && dates.has(id) ? id : null);
-  const dateId = pick(view?.dateId) ?? pick(settings.startPropertyId) ?? props.find((p) => p.type === 'date')?.id ?? null;
-  const endId = pick(view?.endId) ?? pick(settings.endPropertyId);
+  const pick = (set: Set<string>, id: string | null | undefined) => (id && set.has(id) ? id : null);
+  const dateId = pick(starts, view?.dateId) ?? pick(starts, settings.startPropertyId) ?? props.find((p) => p.type === 'date' || p.type === 'date_range')?.id ?? null;
+  if (dateId && !dates.has(dateId)) return { dateId, endId: null };
+  const endId = pick(dates, view?.endId) ?? pick(dates, settings.endPropertyId);
   return { dateId, endId: endId !== dateId ? endId : null };
 }
 
@@ -916,6 +1183,9 @@ export function copyBaseData(db: DB, srcId: string, dstId: string, userId: strin
     const props = kept.filter((p) => p.type !== 'rollup' || relIds.has((parseConfig('rollup', p.config) as RollupConfig).relationId));
     const map = new Map<string, string>(props.map((p) => [p.id, newId()]));
     const insProp = db.prepare('INSERT INTO base_properties (id, base_id, name, type, options, position, created_at, formula, config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const srcCount = rowCount(db, srcId);
+    const uidProp = props.find((p) => p.type === 'unique_id');
+    const uidNew = uidProp ? map.get(uidProp.id)! : null;
     for (const p of props) {
       let config: PropertyConfig = {};
       if (p.type === 'relation') {
@@ -924,6 +1194,9 @@ export function copyBaseData(db: DB, srcId: string, dstId: string, userId: strin
       } else if (p.type === 'rollup') {
         const c = parseConfig('rollup', p.config) as RollupConfig;
         config = { relationId: map.get(c.relationId)!, targetPropertyId: c.targetPropertyId ? map.get(c.targetPropertyId) ?? null : null, fn: c.fn };
+      } else if (p.type === 'unique_id') {
+        // Renumérotée plus bas : la copie repart de 1, dans l'ordre des lignes.
+        config = { prefix: (parseConfig('unique_id', p.config) as UniqueIdConfig).prefix, next: srcCount + 1 };
       }
       insProp.run(map.get(p.id), dstId, p.name, p.type, p.options, p.position, Date.now(), p.formula, JSON.stringify(config));
     }
@@ -932,18 +1205,19 @@ export function copyBaseData(db: DB, srcId: string, dstId: string, userId: strin
     const rowMap = new Map<string, string>(srcRows.map((r) => [r.id, newId()]));
     const relations = new Set(props.filter((p) => p.type === 'relation').map((p) => map.get(p.id)!));
     const insRow = db.prepare('INSERT INTO base_rows (id, base_id, position, vals, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-    for (const r of srcRows) {
+    srcRows.forEach((r, index) => {
       const vals: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(JSON.parse(r.vals) as Record<string, unknown>)) {
         const nk = map.get(k);
-        if (!nk) continue;
+        if (!nk || nk === uidNew) continue;
         if (relations.has(nk)) {
           const ids = (Array.isArray(v) ? v : []).map((x) => rowMap.get(String(x))).filter((x): x is string => x !== undefined);
           if (ids.length) vals[nk] = ids;
         } else vals[nk] = v;
       }
+      if (uidNew) vals[uidNew] = index + 1;
       insRow.run(rowMap.get(r.id), dstId, r.position, JSON.stringify(vals), userId, now, userId, now);
-    }
+    });
     const setParent = db.prepare('UPDATE base_rows SET parent_id = ? WHERE id = ?');
     for (const r of srcRows) if (r.parent_id && rowMap.has(r.parent_id)) setParent.run(rowMap.get(r.parent_id), rowMap.get(r.id));
     const insDep = db.prepare('INSERT OR IGNORE INTO base_row_deps (base_id, row_id, blocker_id) VALUES (?, ?, ?)');
@@ -955,8 +1229,18 @@ export function copyBaseData(db: DB, srcId: string, dstId: string, userId: strin
       db.prepare('INSERT OR REPLACE INTO base_settings (base_id, subitems, dependencies, start_property_id, end_property_id) VALUES (?, ?, ?, ?, ?)')
         .run(dstId, st.subitems, st.dependencies, st.start_property_id ? map.get(st.start_property_id) ?? null : null, st.end_property_id ? map.get(st.end_property_id) ?? null : null);
     }
+    // Compteur des ID uniques : la copie repart toujours de zéro (renumérotée à partir de 1 s'il y a une colonne).
+    setUidCounter(db, dstId, uidNew ? srcCount + 1 : 1);
     const insView = db.prepare('INSERT INTO base_views (id, base_id, name, config, position, created_at) VALUES (?, ?, ?, ?, ?, ?)');
     for (const v of viewsOf(db, srcId)) insView.run(newId(), dstId, v.name, JSON.stringify(remapView(v.config, (id) => map.get(id))), v.position, now);
+    // Modèles de ligne : valeurs des seules colonnes copiées.
+    db.prepare('DELETE FROM base_row_templates WHERE base_id = ?').run(dstId);
+    const insTpl = db.prepare('INSERT INTO base_row_templates (id, base_id, name, vals, position, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    for (const t of db.prepare('SELECT * FROM base_row_templates WHERE base_id = ? ORDER BY position, created_at').all(srcId) as { name: string; vals: string; position: number }[]) {
+      const vals: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(JSON.parse(t.vals) as Record<string, unknown>)) { const nk = map.get(k); if (nk) vals[nk] = v; }
+      insTpl.run(newId(), dstId, t.name, JSON.stringify(vals), t.position, userId, now);
+    }
     reindexBase(db, dstId);
   })();
 }
@@ -976,7 +1260,8 @@ export function reindexBase(db: DB, baseId: string): void {
       if (p.type === 'relation' || COMPUTED.has(p.type)) continue;
       const v = vals[p.id];
       let t: string | null = null;
-      if (typeof v === 'string' && (p.type === 'text' || p.type === 'date')) t = v;
+      if (typeof v === 'string' && (p.type === 'text' || p.type === 'date' || p.type === 'url' || p.type === 'email' || p.type === 'phone')) t = v;
+      else if (typeof v === 'number' && p.type === 'unique_id') t = uniqueIdText(p, v);
       else if (typeof v === 'number') t = String(v);
       else if (typeof v === 'string' && (p.type === 'select' || p.type === 'status')) t = p.options.find((o) => o.id === v)?.name ?? null;
       else if (Array.isArray(v)) t = v.map((x) => p.options.find((o) => o.id === x)?.name).filter(Boolean).join(' ');
@@ -1013,13 +1298,16 @@ export function toCsv(props: Property[], rows: PresentedRow[]): string {
       case 'relation': return (v as { title: string }[]).map((l) => l.title || 'Sans titre').join(', ');
       case 'select': case 'status': return p.options.find((o) => o.id === v)?.name ?? '';
       case 'multi_select': return (v as string[]).map((x) => p.options.find((o) => o.id === x)?.name).filter(Boolean).join(', ');
-      case 'person': return (v as { name: string }).name;
+      case 'person': case 'created_by': case 'updated_by': return (v as { name: string }).name;
       case 'page_link': return (v as { title: string }).title || 'Sans titre';
+      case 'date_range': { const r = v as { start: string; end: string | null }; return r.end ? `${r.start} / ${r.end}` : r.start; }
       default: return String(v);
     }
   };
   // Nombres et dates sont validés : ils ne peuvent pas être une formule, et « -5 » doit rester un nombre pour le tableur.
-  const cell = (p: Property, v: unknown) => (p.type === 'number' || p.type === 'date' || p.type === 'rollup' || (p.type === 'formula' && typeof v === 'number') ? text(p, v) : csvCell(text(p, v)));
+  // Adresses, e-mails, téléphones et ID uniques passent par csvCell comme le texte.
+  const plain = new Set<PropertyType>(['number', 'date', 'rollup', 'date_range', 'created_time', 'updated_time']);
+  const cell = (p: Property, v: unknown) => (plain.has(p.type) || (p.type === 'formula' && typeof v === 'number') ? text(p, v) : csvCell(text(p, v)));
   const lines = [props.map((p) => csvCell(p.name)).join(',')];
   for (const r of rows) lines.push(props.map((p) => cell(p, r.values[p.id])).join(','));
   return `\uFEFF${lines.join('\r\n')}\r\n`;

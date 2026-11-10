@@ -11,6 +11,71 @@ export function fmtRollup(p, v) {
   return p.config?.fn === 'percent_checked' ? `${text} %` : text;
 }
 
+// ---- Types de colonne : familles ----
+/** Colonnes calculées ou tenues par le serveur : jamais modifiables depuis une cellule. */
+export const READ_ONLY_TYPES = new Set(['formula', 'rollup', 'created_time', 'updated_time', 'created_by', 'updated_by', 'unique_id']);
+/** Colonnes qui ne vont pas dans un modèle de ligne (calculées, liées ou attribuées par le serveur). */
+export const NO_TEMPLATE_TYPES = new Set([...READ_ONLY_TYPES, 'relation']);
+/** Colonnes de dates lues par la chronologie et le calendrier (une plage porte à la fois le début et la fin). */
+export const isDateCol = (p) => !!p && (p.type === 'date' || p.type === 'date_range');
+
+/** Plage de dates : { start, end } (fin facultative) ; null si la valeur n'en est pas une. */
+export function rangeOf(v) {
+  if (!v || typeof v !== 'object' || typeof v.start !== 'string') return null;
+  return { start: v.start, end: typeof v.end === 'string' ? v.end : null };
+}
+/** Identifiant unique : le serveur le présente en texte (« PRJ-12 ») ; un nombre seul reçoit le préfixe de la colonne. */
+export function uniqueText(p, v) {
+  if (typeof v === 'number') return p.config?.prefix ? `${p.config.prefix}-${v}` : String(v);
+  return typeof v === 'string' ? v : '';
+}
+
+// ---- Liens tirés des cellules : construits ici, jamais insérés comme HTML ----
+const hasControl = (s) => { for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c < 32 || c === 127) return true; } return false; };
+/** Adresse web sûre (http ou https, sans identifiants), ou null. */
+export function safeUrl(v) {
+  if (typeof v !== 'string' || v.length > 2000 || hasControl(v)) return null;
+  let u;
+  try { u = new URL(v); } catch { return null; }
+  if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.username || u.password) return null;
+  return u;
+}
+/** Texte montré pour une adresse web : hôte et chemin, tronqués. */
+export function urlLabel(v) {
+  const u = safeUrl(v);
+  if (!u) return String(v ?? '');
+  const path = u.pathname === '/' ? '' : u.pathname;
+  const text = `${u.host}${path}${u.search}`;
+  return text.length > 48 ? `${text.slice(0, 47)}…` : text;
+}
+/** Courriel : contrôle linéaire (une seule arobase, pas d'espace ni de caractère de contrôle), sans expression régulière. */
+export function safeEmail(v) {
+  if (typeof v !== 'string' || !v || v.length > 254) return null;
+  let at = -1;
+  for (let i = 0; i < v.length; i++) {
+    const c = v.charCodeAt(i);
+    if (c <= 32 || c === 127 || v[i] === '<' || v[i] === '>' || v[i] === '"' || v[i] === '\\') return null;
+    if (v[i] === '@') { if (at >= 0) return null; at = i; }
+  }
+  if (at <= 0 || at === v.length - 1 || !v.slice(at + 1).includes('.')) return null;
+  return { local: v.slice(0, at), domain: v.slice(at + 1) };
+}
+export function mailtoHref(v) {
+  const e = safeEmail(v);
+  return e ? `mailto:${encodeURIComponent(e.local)}@${encodeURIComponent(e.domain)}` : null;
+}
+/** Téléphone : chiffres, + ( ) - . et espaces, 5 à 30 caractères ; le lien ne garde que les chiffres et un + initial. */
+export function safePhone(v) {
+  if (typeof v !== 'string' || v.length < 5 || v.length > 30) return null;
+  for (const ch of v) if (!'0123456789+()-. '.includes(ch)) return null;
+  const digits = v.replace(/[^0-9]/g, '');
+  return digits.length ? `${v.trim().startsWith('+') ? '+' : ''}${digits}` : null;
+}
+export function telHref(v) {
+  const n = safePhone(v);
+  return n ? `tel:${n}` : null;
+}
+
 // ---- Valeurs : texte affiché, comparaison, filtre (partagés avec le bloc intégré) ----
 const optName = (p, oid) => p.options.find((o) => o.id === oid)?.name ?? '';
 export function textOf(p, v) {
@@ -20,15 +85,19 @@ export function textOf(p, v) {
     case 'formula': return typeof v === 'boolean' ? (v ? 'oui' : 'non') : String(v);
     case 'select': case 'status': return optName(p, v);
     case 'multi_select': return v.map((x) => optName(p, x)).join(', ');
-    case 'person': return v.name;
+    case 'person': case 'created_by': case 'updated_by': return typeof v === 'object' ? v.name ?? '' : '';
     case 'page_link': return v.title || 'Sans titre';
     case 'relation': return Array.isArray(v) ? v.map((x) => x.title || 'Sans titre').join(', ') : '';
     case 'rollup': return fmtRollup(p, v);
-    case 'date': return fmtDate(v);
+    case 'date': case 'created_time': case 'updated_time': return fmtDate(v);
+    case 'date_range': { const r = rangeOf(v); return r ? (r.end && r.end !== r.start ? `${fmtDate(r.start)} – ${fmtDate(r.end)}` : fmtDate(r.start)) : ''; }
+    case 'unique_id': return uniqueText(p, v);
     default: return String(v);
   }
 }
-export const isEmpty = (p, v) => v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length) || (p.type === 'checkbox' && v !== true);
+/** Valeur comparable d'une date : le jour lui-même, ou le début d'une plage. */
+const dateKey = (p, v) => (p.type === 'date_range' ? rangeOf(v)?.start : typeof v === 'string' ? v : undefined);
+export const isEmpty = (p, v) => v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length) || (p.type === 'checkbox' && v !== true) || (p.type === 'date_range' && !rangeOf(v));
 function matches(props, row, f) {
   const p = props.find((x) => x.id === f.propertyId);
   if (!p) return true;
@@ -37,10 +106,15 @@ function matches(props, row, f) {
   if (f.op === 'notempty') return !isEmpty(p, v);
   const want = f.value;
   switch (p.type) {
-    case 'text': case 'person': case 'page_link': case 'relation': {
+    case 'text': case 'person': case 'page_link': case 'relation': case 'url': case 'email': case 'phone':
+    case 'created_by': case 'updated_by': case 'unique_id': {
       const t = fold(textOf(p, v));
       const w = fold(want);
       return f.op === 'contains' ? t.includes(w) : f.op === 'eq' ? t === w : t !== w;
+    }
+    case 'created_time': case 'updated_time': case 'date_range': {
+      const d = dateKey(p, v);
+      return d !== undefined && (f.op === 'eq' ? d === want : f.op === 'gt' ? d > want : d < want);
     }
     case 'formula': {
       const n = Number(String(want).replace(',', '.'));
@@ -68,7 +142,12 @@ function compare(a, b, p) {
   if (isEmpty(p, va)) return 1; // les cellules vides vont toujours en dernier
   if (isEmpty(p, vb)) return -1;
   if (p.type === 'number' || p.type === 'rollup' || (p.type === 'formula' && typeof va === 'number' && typeof vb === 'number')) return va - vb;
-  if (p.type === 'date') return va < vb ? -1 : va > vb ? 1 : 0;
+  if (p.type === 'date' || p.type === 'created_time' || p.type === 'updated_time' || p.type === 'date_range') {
+    const da = dateKey(p, va) ?? '';
+    const db = dateKey(p, vb) ?? '';
+    return da < db ? -1 : da > db ? 1 : 0;
+  }
+  if (p.type === 'unique_id' && typeof va === 'number' && typeof vb === 'number') return va - vb;
   if (p.type === 'checkbox') return Number(va === true) - Number(vb === true);
   if (p.type === 'select' || p.type === 'status') return p.options.findIndex((o) => o.id === va) - p.options.findIndex((o) => o.id === vb);
   return textOf(p, va).localeCompare(textOf(p, vb), 'fr', { numeric: true, sensitivity: 'base' });

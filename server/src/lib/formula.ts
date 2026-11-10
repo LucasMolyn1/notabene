@@ -4,6 +4,9 @@
 // le coût d'une évaluation est borné par la taille de la formule.
 // Limites : 500 caractères, 120 nœuds, profondeur 25, résultat texte de 2 000 caractères au plus.
 // Une erreur d'exécution (division par zéro, type inattendu, valeur absente) donne `null`, jamais une exception.
+// Expressions régulières : moteur linéaire maison (regex-linear.ts), jamais RegExp sur un motif venu d'une formule.
+import { compileRegex, type Program, RegexBudgetError, RegexError, regexExtract, regexReplace, regexTest, type Steps } from './regex-linear.js';
+
 export type Value = number | string | boolean | null;
 
 export class FormulaError extends Error {}
@@ -16,9 +19,20 @@ const MAX_STRING = 2000;
 // eslint-disable-next-line no-control-regex
 const BAD_CHARS = /[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
 const MAX_TEXT_CALLS = 8;
-const TEXT_FUNCTIONS = new Set(['upper', 'lower', 'concat', 'text', 'contains', 'length']);
-/** Budget de caractères traités par les fonctions de texte, partagé par toutes les évaluations d'une lecture. */
-export interface Budget { chars: number }
+const TEXT_FUNCTIONS = new Set(['upper', 'lower', 'concat', 'text', 'contains', 'length', 'formatDate', 'listHas', 'regexTest', 'regexExtract', 'regexReplace']);
+const REGEX_FUNCTIONS = new Set(['regexTest', 'regexExtract', 'regexReplace']);
+/** Fonctions de liste : leur premier argument est une colonne Sélection multiple, lue comme une liste de noms d'options. */
+const LIST_FUNCTIONS = new Set(['listCount', 'listHas']);
+/** Pas de simulation d'expression régulière au plus pour UN appel (et jamais plus que ce qui reste du budget de pas de la lecture). */
+export const MAX_REGEX_STEPS = 1_000_000;
+/** Pas de simulation pour UNE lecture, toutes lignes et formules confondues (environ 10 à 40 ms de calcul au pire). */
+export const READ_REGEX_STEPS = 3_000_000;
+/**
+ * Budget partagé par toutes les évaluations d'une lecture : caractères traités par les fonctions de texte (`chars`) et pas de
+ * simulation des expressions régulières (`regexSteps`, compte à part : un pas n'a pas le coût d'un caractère). Un budget sans
+ * `regexSteps` en reçoit READ_REGEX_STEPS au premier appel ; sans budget du tout, seul le plafond par appel s'applique.
+ */
+export interface Budget { chars: number; regexSteps?: number }
 class OutOfBudget extends Error {}
 
 type Node =
@@ -90,6 +104,8 @@ const ARITY: Record<string, [number, number]> = {
   if: [3, 3], round: [1, 2], floor: [1, 1], ceil: [1, 1], abs: [1, 1], min: [2, 10], max: [2, 10],
   length: [1, 1], upper: [1, 1], lower: [1, 1], concat: [1, 10], contains: [2, 2], isEmpty: [1, 1],
   number: [1, 1], text: [1, 1], dateDiff: [2, 2], year: [1, 1], month: [1, 1],
+  dateAdd: [2, 2], formatDate: [2, 2], day: [1, 1], weekday: [1, 1], listCount: [1, 1], listHas: [2, 2],
+  regexTest: [2, 2], regexExtract: [2, 2], regexReplace: [3, 3],
 };
 const FUNCTIONS = new Map(Object.entries(ARITY));
 
@@ -167,6 +183,15 @@ export function parseFormula(src: string): Node {
       const arity = FUNCTIONS.get(t.v);
       if (!arity) return fail(`Fonction « ${t.v} » inconnue`, t);
       if (args.length < arity[0] || args.length > arity[1]) return fail(`${t.v}() attend ${arity[0] === arity[1] ? arity[0] : `de ${arity[0]} à ${arity[1]}`} argument(s)`, t);
+      if (LIST_FUNCTIONS.has(t.v) && args[0]!.t !== 'prop') return fail(`${t.v}() lit une colonne Sélection multiple : ${t.v}(prop("nom de colonne")${t.v === 'listHas' ? ', "option"' : ''})`, t);
+      // Motif écrit dans la formule : vérifié dès l'enregistrement. Un motif calculé n'est vérifié qu'à l'exécution (null s'il est invalide).
+      const pattern = args[1];
+      if (REGEX_FUNCTIONS.has(t.v) && pattern?.t === 'str') {
+        try { compileRegex(pattern.v); } catch (err) {
+          if (err instanceof RegexError) return fail(err.message, t);
+          throw err;
+        }
+      }
       return { t: 'call', fn: t.v, args };
     }
     return fail(t.k === 'end' ? 'Expression incomplète' : `Symbole « ${t.v} » inattendu`, t);
@@ -175,6 +200,21 @@ export function parseFormula(src: string): Node {
   const root = expr(1, 0);
   if (peek().k !== 'end') fail(`Symbole « ${peek().v} » inattendu`);
   return root;
+}
+
+/** Noms des colonnes lues comme des listes (premier argument de listCount et listHas). */
+export function listReferences(ast: Node): string[] {
+  const out = new Set<string>();
+  const walk = (n: Node) => {
+    if (n.t === 'call') {
+      const a = n.args[0];
+      if (LIST_FUNCTIONS.has(n.fn) && a?.t === 'prop') out.add(a.name);
+      n.args.forEach(walk);
+    } else if (n.t === 'un') walk(n.a);
+    else if (n.t === 'bin') { walk(n.a); walk(n.b); }
+  };
+  walk(ast);
+  return [...out];
 }
 
 /** Noms des colonnes lues par la formule (par prop("…")). */
@@ -217,6 +257,66 @@ const parseDate = (v: Value): { y: number; m: number; d: number; day: number } |
   return { y, m: mo, d, day: Math.round(t / 86_400_000) };
 };
 const dayNumber = (v: Value): number | null => parseDate(v)?.day ?? null;
+const pad = (n: number, w: number) => String(n).padStart(w, '0');
+/** Jour numéro `n` (depuis le 1er janvier 1970) en AAAA-MM-JJ, ou null hors des années 0000 à 9999. */
+function fromDayNumber(n: number): string | null {
+  const t = n * 86_400_000;
+  const d = new Date(t);
+  if (!Number.isFinite(t) || Number.isNaN(d.getTime())) return null;
+  const y = d.getUTCFullYear();
+  if (y < 0 || y > 9999) return null;
+  return `${pad(y, 4)}-${pad(d.getUTCMonth() + 1, 2)}-${pad(d.getUTCDate(), 2)}`;
+}
+/** Jetons AAAA, MM et JJ remplacés ; tout le reste copié tel quel. */
+function formatDate(v: Value, fmt: Value): Value {
+  const d = parseDate(v);
+  if (!d || typeof fmt !== 'string') return null;
+  let out = '';
+  for (let i = 0; i < fmt.length;) {
+    if (fmt.startsWith('AAAA', i)) { out += pad(d.y, 4); i += 4; }
+    else if (fmt.startsWith('MM', i)) { out += pad(d.m, 2); i += 2; }
+    else if (fmt.startsWith('JJ', i)) { out += pad(d.d, 2); i += 2; }
+    else { out += fmt[i]; i++; }
+  }
+  return cut(out);
+}
+
+// Programmes compilés récemment (motifs écrits dans une formule, relus à chaque ligne) : cache borné.
+const compiled = new Map<string, Program | null>();
+function programOf(pattern: string): Program | null {
+  if (compiled.has(pattern)) return compiled.get(pattern)!;
+  let prog: Program | null;
+  try { prog = compileRegex(pattern); } catch (err) {
+    if (!(err instanceof RegexError)) throw err;
+    prog = null;
+  }
+  if (compiled.size >= 200) compiled.delete(compiled.keys().next().value!);
+  compiled.set(pattern, prog);
+  return prog;
+}
+
+/** Fonctions d'expressions régulières : motif invalide ou texte absent = null ; le travail réel est décompté du budget. */
+function regexCall(fn: string, a: Value[], budget: Budget | undefined): Value {
+  if (typeof a[1] !== 'string') return null;
+  const prog = programOf(a[1]);
+  if (!prog) return null;
+  const text = str(a[0]!);
+  // Plafond de l'appel fixé AVANT la simulation : jamais plus que ce qui reste à la lecture.
+  if (budget) budget.regexSteps ??= READ_REGEX_STEPS;
+  const allowed = Math.min(MAX_REGEX_STEPS, budget?.regexSteps ?? MAX_REGEX_STEPS);
+  if (allowed <= 0) return null;
+  const steps: Steps = { left: allowed };
+  try {
+    if (fn === 'regexTest') return regexTest(prog, text, steps);
+    if (fn === 'regexExtract') return regexExtract(prog, text, steps);
+    return regexReplace(prog, text, str(a[2]!), steps, MAX_STRING);
+  } catch (err) {
+    if (err instanceof RegexBudgetError) return null;
+    throw err;
+  } finally {
+    if (budget?.regexSteps !== undefined) budget.regexSteps -= allowed - Math.max(0, steps.left);
+  }
+}
 
 function binary(op: string, a: Value, b: Value, spend: (n: number) => void): Value {
   switch (op) {
@@ -245,7 +345,7 @@ function binary(op: string, a: Value, b: Value, spend: (n: number) => void): Val
   }
 }
 
-function call(fn: string, a: Value[], spend: (n: number) => void): Value {
+function call(fn: string, a: Value[], spend: (n: number) => void, budget: Budget | undefined): Value {
   if (TEXT_FUNCTIONS.has(fn)) spend(a.reduce<number>((n, v) => n + (typeof v === 'string' ? v.length : 1), 0));
   switch (fn) {
     case 'round': { const x = num(a[0]!); if (x === null) return null; const d = a[1] === undefined ? 0 : num(a[1]); if (d === null || d < 0 || d > 10) return null; const f = 10 ** Math.trunc(d); return finite(Math.round(x * f) / f); }
@@ -264,6 +364,16 @@ function call(fn: string, a: Value[], spend: (n: number) => void): Value {
     case 'dateDiff': { const x = dayNumber(a[0]!); const y = dayNumber(a[1]!); return x === null || y === null ? null : x - y; }
     case 'year': return parseDate(a[0]!)?.y ?? null;
     case 'month': return parseDate(a[0]!)?.m ?? null;
+    case 'day': return parseDate(a[0]!)?.d ?? null;
+    // 1 = lundi ... 7 = dimanche (le 1er janvier 1970 était un jeudi).
+    case 'weekday': { const n = dayNumber(a[0]!); return n === null ? null : (((n % 7) + 7 + 3) % 7) + 1; }
+    case 'dateAdd': {
+      const n = dayNumber(a[0]!); const k = num(a[1]!);
+      if (n === null || k === null || !Number.isInteger(k) || Math.abs(k) > 3_000_000) return null;
+      return fromDayNumber(n + k);
+    }
+    case 'formatDate': return formatDate(a[0]!, a[1]!);
+    case 'regexTest': case 'regexExtract': case 'regexReplace': return regexCall(fn, a, budget);
     default: return null;
   }
 }
@@ -273,7 +383,7 @@ function call(fn: string, a: Value[], spend: (n: number) => void): Value {
  * des fonctions de texte pour l'ensemble des évaluations qui le partagent ; une fois épuisé, le résultat est null.
  * Les opérateurs logiques et `if` exigent des booléens : une autre valeur (ou une cellule vide) donne un résultat vide, jamais un faux silencieux.
  */
-export function evaluate(ast: Node, read: (name: string) => Value, budget?: Budget): Value {
+export function evaluate(ast: Node, read: (name: string) => Value, budget?: Budget, readList?: (name: string) => string[] | null): Value {
   const spend = (n: number) => { if (budget && (budget.chars -= n) < 0) throw new OutOfBudget(); };
   const go = (n: Node): Value => {
     switch (n.t) {
@@ -293,7 +403,18 @@ export function evaluate(ast: Node, read: (name: string) => Value, budget?: Budg
       case 'call': {
         // if() n'évalue que la branche choisie ; les autres fonctions évaluent tous leurs arguments.
         if (n.fn === 'if') { const c = go(n.args[0]!); return typeof c === 'boolean' ? (c ? go(n.args[1]!) : go(n.args[2]!)) : null; }
-        return call(n.fn, n.args.map(go), spend);
+        // Listes : la colonne est lue par `readList` (noms d'options), jamais comme un objet ; sans lecteur de liste, vide.
+        if (LIST_FUNCTIONS.has(n.fn)) {
+          const a = n.args[0]!;
+          const list = a.t === 'prop' && readList ? readList(a.name) : null;
+          if (n.fn === 'listCount') return list === null ? null : list.length;
+          const want = go(n.args[1]!);
+          if (list === null || typeof want !== 'string') return null;
+          spend(want.length + list.reduce((s, x) => s + x.length, 0));
+          const w = want.toLocaleLowerCase('fr');
+          return list.some((x) => x.toLocaleLowerCase('fr') === w);
+        }
+        return call(n.fn, n.args.map(go), spend, budget);
       }
     }
   };

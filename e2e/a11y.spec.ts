@@ -289,6 +289,65 @@ for (const scheme of ['light', 'dark'] as const) {
       expect(found).toEqual([]);
     });
 
+    test('graphique, nouveaux types de colonne et modèles de ligne', async ({ page, browser }) => {
+      const admin = await adminContext(browser);
+      const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+      const base = (await (await api(admin.request, 'POST', '/bases', { spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: `A11y graphique ${scheme}` })).json()) as { page: { id: string }; properties: { id: string }[] };
+      const id = base.page.id;
+      const nom = base.properties[0]!.id;
+      const prop = async (body: object) => (await (await api(admin.request, 'POST', `/bases/${id}/properties`, body)).json()) as { id: string; options: { id: string }[] };
+      const statut = await prop({ name: 'Statut', type: 'status' });
+      const points = await prop({ name: 'Points', type: 'number' });
+      const site = await prop({ name: 'Site', type: 'url' });
+      const mail = await prop({ name: 'Courriel', type: 'email' });
+      const tel = await prop({ name: 'Téléphone', type: 'phone' });
+      const periode = await prop({ name: 'Période', type: 'date_range' });
+      await prop({ name: 'Réf', type: 'unique_id', config: { prefix: 'A11Y' } });
+      await prop({ name: 'Créée par', type: 'created_by' });
+      await prop({ name: 'Modifiée le', type: 'updated_time' });
+      for (let i = 0; i < 6; i++) {
+        await api(admin.request, 'POST', `/bases/${id}/rows`, { values: {
+          [nom]: `Ligne ${i}`, [statut.id]: statut.options[i % 3]!.id, [points.id]: i + 1,
+          ...(i === 0 ? { [site.id]: 'https://exemple.fr/a', [mail.id]: 'a@exemple.fr', [tel.id]: '+33 1 02 03 04 05', [periode.id]: { start: '2026-03-01', end: '2026-03-04' } } : {}),
+        } });
+      }
+      await api(admin.request, 'POST', `/bases/${id}/row-templates`, { name: 'Modèle a11y', values: { [statut.id]: statut.options[0]!.id } });
+      await api(admin.request, 'POST', `/bases/${id}/views`, { name: 'Graphique', config: { type: 'chart', chart: 'bar', groupBy: statut.id, metric: 'count', sort: [], filters: [], hidden: [] } });
+      await admin.close();
+
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.goto(`/p/${id}`);
+      await page.getByRole('link', { name: /exemple\.fr\/a/ }).waitFor();
+      const found = await violations(page, 'tableau (nouveaux types)');
+      await page.getByRole('button', { name: /Modifier Période/ }).first().click();
+      await page.getByRole('form', { name: /Période/ }).waitFor();
+      found.push(...await violations(page, 'plage de dates'));
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: /Modèles de ligne/ }).click();
+      await page.getByRole('menuitem', { name: 'Gérer les modèles' }).click();
+      await page.getByRole('dialog', { name: 'Modèles de ligne' }).getByRole('listitem').first().waitFor();
+      found.push(...await violations(page, 'modèles de ligne'));
+      await page.keyboard.press('Escape');
+      await page.getByRole('tab', { name: 'Graphique' }).click();
+      await page.locator('.ch-item').first().waitFor();
+      await page.locator('.ch-item').first().focus();
+      await page.getByRole('tooltip').waitFor();
+      found.push(...await violations(page, 'graphique (barres)'));
+      await page.getByRole('button', { name: 'Tableau des valeurs' }).click();
+      await page.locator('.ch-table').waitFor();
+      found.push(...await violations(page, 'graphique (tableau des valeurs)'));
+      await page.getByRole('button', { name: 'Configurer le graphique' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Configurer le graphique' });
+      await dialog.getByLabel('Anneau').check();
+      await dialog.getByLabel('Calcul').selectOption('sum');
+      found.push(...await violations(page, 'assistant de graphique'));
+      await dialog.getByRole('button', { name: 'Enregistrer' }).click();
+      await page.getByRole('button', { name: 'Graphique', exact: true }).click();
+      await page.getByRole('list', { name: 'Légende' }).waitFor();
+      found.push(...await violations(page, 'graphique (anneau)'));
+      expect(found).toEqual([]);
+    });
+
     test('paramètres : toutes les sections', async ({ page }) => {
       await loginUi(page, ADMIN.email, ADMIN.password);
       const found: string[] = [];

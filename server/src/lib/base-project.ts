@@ -22,12 +22,19 @@ export function settingsOf(db: DB, baseId: string): BaseSettings {
   return { subitems: !!r?.subitems, dependencies: !!r?.dependencies, startPropertyId: r?.start_property_id ?? null, endPropertyId: r?.end_property_id ?? null };
 }
 
-/** Modifie les réglages. Les colonnes de début et de fin sont des colonnes Date de la base, distinctes. */
+/**
+ * Modifie les réglages. Les colonnes de début et de fin sont des colonnes Date de la base, distinctes. Le début peut aussi être une
+ * colonne Plage de dates : elle porte sa fin, la colonne de fin est alors vide.
+ */
 export function updateSettings(db: DB, baseId: string, patch: Partial<BaseSettings>): BaseSettings {
   return db.transaction(() => {
     const next = { ...settingsOf(db, baseId), ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) } as BaseSettings;
-    const dates = new Set(propertiesOf(db, baseId).filter((p) => p.type === 'date').map((p) => p.id));
-    for (const id of [next.startPropertyId, next.endPropertyId]) if (id !== null && !dates.has(id)) throw new HttpError(400, 'Les colonnes de début et de fin sont des colonnes Date de la base');
+    const props = propertiesOf(db, baseId);
+    const dates = new Set(props.filter((p) => p.type === 'date').map((p) => p.id));
+    const ranges = new Set(props.filter((p) => p.type === 'date_range').map((p) => p.id));
+    if (next.startPropertyId !== null && !dates.has(next.startPropertyId) && !ranges.has(next.startPropertyId)) throw new HttpError(400, 'La colonne de début est une colonne Date ou Plage de dates de la base');
+    if (next.endPropertyId !== null && !dates.has(next.endPropertyId)) throw new HttpError(400, 'Les colonnes de début et de fin sont des colonnes Date de la base');
+    if (next.startPropertyId !== null && ranges.has(next.startPropertyId) && next.endPropertyId !== null) throw new HttpError(400, 'Une plage de dates porte déjà sa fin : pas de colonne de fin');
     if (next.startPropertyId !== null && next.startPropertyId === next.endPropertyId) throw new HttpError(400, 'Le début et la fin sont deux colonnes différentes');
     db.prepare(`INSERT INTO base_settings (base_id, subitems, dependencies, start_property_id, end_property_id) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(base_id) DO UPDATE SET subitems = excluded.subitems, dependencies = excluded.dependencies, start_property_id = excluded.start_property_id, end_property_id = excluded.end_property_id`)
@@ -107,6 +114,16 @@ const DAY = 86_400_000;
 const toDay = (s: string) => Date.parse(`${s}T00:00:00Z`) / DAY;
 const fromDay = (d: number) => new Date(d * DAY).toISOString().slice(0, 10);
 const asDate = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(toDay(v)) ? v : null);
+/** Début et fin d'une ligne : deux colonnes Date, ou une colonne Plage de dates ({ start, end }). */
+function spanOf(v: Record<string, unknown> | undefined, start: string, end: string | null, range: boolean): { st: string | null; en: string | null } {
+  if (!v) return { st: null, en: null };
+  if (range) {
+    const r = v[start];
+    const o = r && typeof r === 'object' && !Array.isArray(r) ? r as { start?: unknown; end?: unknown } : {};
+    return { st: asDate(o.start), en: asDate(o.end) };
+  }
+  return { st: asDate(v[start]), en: end ? asDate(v[end]) : null };
+}
 
 /**
  * Décalage : si les dépendances sont actives et la colonne de début définie, une ligne bloquée commence au plus tôt le jour qui
@@ -119,7 +136,9 @@ export function cascadeShift(ctx: Ctx, rowId: string, userId: string | null): st
   const s = settingsOf(db, baseId);
   if (!s.dependencies || !s.startPropertyId) return [];
   const start = s.startPropertyId;
-  const end = s.endPropertyId;
+  // Colonne de début Plage de dates : début et fin sont dans la même cellule.
+  const range = propertiesOf(db, baseId).find((p) => p.id === start)?.type === 'date_range';
+  const end = range ? null : s.endPropertyId;
   const blockers = blockersMap(db, baseId);
   const blocks = new Map<string, string[]>();
   for (const [r, bs] of blockers) for (const b of bs) blocks.set(b, [...(blocks.get(b) ?? []), r]);
@@ -142,12 +161,12 @@ export function cascadeShift(ctx: Ctx, rowId: string, userId: string | null): st
   for (const r of db.prepare('SELECT id, vals FROM base_rows WHERE base_id = ? AND id IN (SELECT value FROM json_each(?))').all(baseId, JSON.stringify([...need])) as { id: string; vals: string }[]) {
     vals.set(r.id, JSON.parse(r.vals) as Record<string, unknown>);
   }
-  const finish = (id: string) => { const v = vals.get(id); return v ? asDate(end ? v[end] : undefined) ?? asDate(v[start]) : null; };
+  const finish = (id: string) => { const sp = spanOf(vals.get(id), start, end, range); return sp.en ?? sp.st; };
   const depth = new Map<string, number>([[rowId, 0]]);
   const moved: string[] = [];
   for (const n of order) {
     const v = vals.get(n);
-    const st = v ? asDate(v[start]) : null;
+    const { st, en } = spanOf(v, start, end, range);
     if (!v || !st) continue;
     let required: number | null = null;
     for (const b of blockers.get(n) ?? []) {
@@ -160,10 +179,14 @@ export function cascadeShift(ctx: Ctx, rowId: string, userId: string | null): st
     if (d > MAX_SHIFT_DEPTH) throw new HttpError(409, `Décalage trop profond (au plus ${MAX_SHIFT_DEPTH} niveaux) : rien n'a été modifié`);
     depth.set(n, d);
     const delta = required - toDay(st);
-    const next = { ...v, [start]: fromDay(required) };
-    const en = end ? asDate(v[end]) : null;
-    if (end && en) next[end] = fromDay(toDay(en) + delta);
-    for (const k of [start, end]) if (k && typeof next[k] === 'string' && !/^\d{4}-/.test(next[k] as string)) throw new HttpError(409, 'Date décalée hors limites : rien n\'a été modifié');
+    const next = { ...v };
+    const shifted = [fromDay(required), en ? fromDay(toDay(en) + delta) : null];
+    if (shifted.some((d) => d !== null && !/^\d{4}-/.test(d))) throw new HttpError(409, 'Date décalée hors limites : rien n\'a été modifié');
+    if (range) next[start] = { start: shifted[0], end: shifted[1] };
+    else {
+      next[start] = shifted[0];
+      if (end && en) next[end] = shifted[1];
+    }
     vals.set(n, next);
     moved.push(n);
     if (moved.length > MAX_SHIFT_ROWS) throw new HttpError(409, `Décalage trop étendu (au plus ${MAX_SHIFT_ROWS} lignes) : rien n'a été modifié`);

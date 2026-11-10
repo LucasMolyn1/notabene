@@ -4,6 +4,14 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [3.17.0] - 2026-11-10
+
+### Ajouté
+- **Bases : vue Graphique** : barres, lignes et anneau, regroupés par une colonne (sélection, statut, multi-sélection, case, date par jour, semaine, mois ou année, plage, personne, texte, créé le, créé par) avec nombre, somme, moyenne, minimum ou maximum d'une colonne numérique ; 50 groupes au plus, le reste en « Autres ». Calculé par le serveur sur les valeurs que la personne voit, après les filtres de la vue (`GET /api/v3/bases/:id/views/:viewId/chart`). Accessible : barres focalisables, valeurs écrites, « Tableau des valeurs » équivalent.
+- **Bases : nouveaux types de colonne** : adresse web (http et https seulement, sans identifiants), courriel, téléphone ; créé le, modifié le, créé par, modifié par (lecture seule) ; **ID unique** (préfixe facultatif, numéro monotone jamais réutilisé, même si la colonne est recréée) ; **plage de dates** (début et fin), lue par la chronologie, le calendrier, le flux iCalendar, « Mes tâches » et le décalage des dépendances. Les liens sont construits sans HTML, avec `rel="noopener noreferrer nofollow"`. Migration v34.
+- **Bases : modèles de ligne** : 20 par base, créés depuis une ligne existante, utilisables depuis « Nouvelle ligne ». Sans formule, relation, ID unique ni colonne dérivée ; les valeurs sont revalidées avec les droits de la personne à l'application.
+- **Formules** : `dateAdd`, `formatDate` (AAAA, MM, JJ), `day`, `weekday`, `listCount`, `listHas` (multi-sélection) et trois fonctions d'expressions régulières, `regexTest`, `regexExtract`, `regexReplace`. Le moteur est maison, à temps linéaire (sans retour arrière, références arrière ni `{n,m}`) ; un budget de 3 millions de pas par lecture borne le coût. Les listes (`map`, `filter`…) restent à venir.
+
 ## [3.16.0] - 2026-11-10
 
 ### Ajouté

@@ -55,12 +55,16 @@ export interface Task {
   status: { name: string; color: string; done: boolean } | null; done: boolean;
 }
 
-/** Échéance : colonne de fin des réglages, sinon de début, sinon première colonne Date. */
-function dueColumn(db: DB, baseId: string, props: Property[]): string | null {
-  const dates = new Set(props.filter((p) => p.type === 'date').map((p) => p.id));
+/**
+ * Échéance : colonne de fin des réglages, sinon de début, sinon première colonne Date ou Plage de dates. Rend l'expression SQL qui
+ * la lit et ses paramètres (une plage donne sa fin, sinon son début).
+ */
+function dueOf(db: DB, baseId: string, props: Property[]): { sql: string; params: string[] } {
+  const kind = new Map(props.filter((p) => p.type === 'date' || p.type === 'date_range').map((p) => [p.id, p.type]));
   const s = settingsOf(db, baseId);
-  for (const id of [s.endPropertyId, s.startPropertyId]) if (id && dates.has(id)) return id;
-  return props.find((p) => p.type === 'date')?.id ?? null;
+  const id = [s.endPropertyId, s.startPropertyId].find((x) => x && kind.has(x)) ?? props.find((p) => kind.has(p.id))?.id ?? null;
+  if (id && kind.get(id) === 'date_range') return { sql: 'COALESCE(json_extract(vals, ?), json_extract(vals, ?))', params: [`${path(id)}.end`, `${path(id)}.start`] };
+  return { sql: 'json_extract(vals, ?)', params: [path(id)] };
 }
 
 /**
@@ -87,21 +91,21 @@ export function myTasks(db: DB, auth: Auth, spaceIds: string[], includeDone: boo
     const people = props.filter((p) => p.type === 'person').map((p) => path(p.id));
     if (!people.length) continue;
     const titleId = props.find((p) => p.type === 'text')?.id;
-    const dueId = dueColumn(db, base.id, props);
+    const due = dueOf(db, base.id, props);
     const rule = doneRule(props);
     const d = doneSql(rule);
     // Au plus MAX_TASKS + 1 lignes par base, par échéance croissante (sans échéance en dernier) : de quoi garder les MAX_TASKS premières.
     const rows = db.prepare(
-      `SELECT id, json_extract(vals, ?) AS title, json_extract(vals, ?) AS due, json_extract(vals, ?) AS status, (${d.sql}) AS done
+      `SELECT id, json_extract(vals, ?) AS title, ${due.sql} AS due, json_extract(vals, ?) AS status, (${d.sql}) AS done
        FROM base_rows
        WHERE base_id = ? AND EXISTS (SELECT 1 FROM json_each(?) c WHERE json_extract(vals, c.value) = ?)
          ${includeDone ? '' : `AND NOT (${d.sql})`}
-       ORDER BY json_type(vals, ?) IS NOT 'text', json_extract(vals, ?), position, created_at LIMIT ?`,
+       ORDER BY typeof(${due.sql}) IS NOT 'text', ${due.sql}, position, created_at LIMIT ?`,
     ).all(
-      path(titleId), path(dueId), path(rule?.kind === 'status' ? rule.prop.id : null), ...d.params,
+      path(titleId), ...due.params, path(rule?.kind === 'status' ? rule.prop.id : null), ...d.params,
       base.id, JSON.stringify(people), auth.user.id,
       ...(includeDone ? [] : d.params),
-      path(dueId), path(dueId), MAX_TASKS + 1,
+      ...due.params, ...due.params, MAX_TASKS + 1,
     ) as { id: string; title: unknown; due: unknown; status: unknown; done: number }[];
     if (rows.length > MAX_TASKS) truncated = true;
     const statusProp = rule?.kind === 'status' ? rule.prop : null;

@@ -877,6 +877,56 @@ export const MIGRATIONS: string[] = [
   CREATE TRIGGER base_ical_feeds_user_deleted BEFORE DELETE ON users
     BEGIN DELETE FROM base_ical_feeds WHERE created_by = OLD.id; END;
   `,
+  // v34 : nouveaux types de colonnes (url, email, phone, created_time, updated_time, created_by, updated_by, unique_id, date_range)
+  // et modèles de ligne (lib/base-templates.ts).
+  // - base_properties est refaite comme en v32 (SQLite ne modifie pas un CHECK). Supprimer l'ancienne table déclencherait le
+  //   ON DELETE SET NULL de base_settings : les colonnes de début et de fin sont mises de côté puis remises.
+  // - base_row_templates : valeurs de cellules validées par type, jamais de colonne calculée ni de relation.
+  // - base_settings.unique_id_next : compteur des ID uniques de la base.
+  // Aucune donnée existante modifiée. Retour arrière : restaurer la sauvegarde prise avant la mise à jour (le serveur précédent
+  // refuse un schéma plus récent que le sien).
+  `
+  CREATE TEMP TABLE base_settings_v34 AS SELECT base_id, start_property_id, end_property_id FROM base_settings;
+  CREATE TABLE base_properties_v34 (
+    id         TEXT PRIMARY KEY,
+    base_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    type       TEXT NOT NULL CHECK (type IN ('text', 'number', 'date', 'select', 'multi_select', 'status', 'checkbox', 'person', 'page_link', 'formula', 'relation', 'rollup',
+                                             'url', 'email', 'phone', 'created_time', 'updated_time', 'created_by', 'updated_by', 'unique_id', 'date_range')),
+    options    TEXT NOT NULL DEFAULT '[]',
+    position   REAL NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    formula    TEXT,
+    config     TEXT NOT NULL DEFAULT '{}',
+    CHECK ((type = 'formula') = (formula IS NOT NULL))
+  );
+  INSERT INTO base_properties_v34 (id, base_id, name, type, options, position, created_at, formula, config)
+    SELECT id, base_id, name, type, options, position, created_at, formula, config FROM base_properties;
+  DROP TABLE base_properties;
+  ALTER TABLE base_properties_v34 RENAME TO base_properties;
+  CREATE INDEX base_properties_base ON base_properties(base_id, position);
+  CREATE INDEX base_properties_relation ON base_properties(json_extract(config, '$.targetId')) WHERE type = 'relation';
+  -- Une seule colonne « ID unique » par base.
+  CREATE UNIQUE INDEX base_properties_unique_id ON base_properties(base_id) WHERE type = 'unique_id';
+  UPDATE base_settings SET
+    start_property_id = (SELECT b.start_property_id FROM base_settings_v34 b WHERE b.base_id = base_settings.base_id),
+    end_property_id = (SELECT b.end_property_id FROM base_settings_v34 b WHERE b.base_id = base_settings.base_id);
+  DROP TABLE base_settings_v34;
+
+  -- Compteur des ID uniques au niveau de la base : il survit à la suppression de la colonne (jamais de numéro réutilisé).
+  ALTER TABLE base_settings ADD COLUMN unique_id_next INTEGER NOT NULL DEFAULT 1 CHECK (unique_id_next >= 1);
+
+  CREATE TABLE base_row_templates (
+    id         TEXT PRIMARY KEY,
+    base_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    vals       TEXT NOT NULL DEFAULT '{}',
+    position   REAL NOT NULL DEFAULT 0,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX base_row_templates_base ON base_row_templates(base_id, position);
+  `,
 ];
 
 export function openDb(file: string): DB {
