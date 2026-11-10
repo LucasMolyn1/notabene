@@ -236,6 +236,59 @@ for (const scheme of ['light', 'dark'] as const) {
       expect(found).toEqual([]);
     });
 
+    test('calendrier, flux iCalendar, progression et mes tâches', async ({ page, browser }) => {
+      const admin = await adminContext(browser);
+      const me = (await (await admin.request.get('/api/v3/me')).json()) as { user: { id: string } };
+      const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+      const base = (await (await api(admin.request, 'POST', '/bases', { spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: `A11y calendrier ${scheme}` })).json()) as { page: { id: string }; properties: { id: string }[]; views: { id: string }[] };
+      const id = base.page.id;
+      const prop = async (body: object) => (await (await api(admin.request, 'POST', `/bases/${id}/properties`, body)).json()) as { id: string; options: { id: string }[] };
+      const debut = await prop({ name: 'Début', type: 'date' });
+      const fin = await prop({ name: 'Fin', type: 'date' });
+      const statut = await prop({ name: 'Statut', type: 'status' });
+      const qui = await prop({ name: 'Responsable', type: 'person' });
+      const d = new Date();
+      const iso = (k: number) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate() + k); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+      const nom = base.properties[0]!.id;
+      for (let i = 0; i < 5; i++) {
+        await api(admin.request, 'POST', `/bases/${id}/rows`, { values: { [nom]: `Élément ${i}`, [debut.id]: iso(0), [fin.id]: iso(i % 2), [statut.id]: statut.options[i % 3]!.id, [qui.id]: me.user.id } });
+      }
+      await api(admin.request, 'POST', `/bases/${id}/rows`, { values: { [nom]: 'En retard', [debut.id]: iso(-3), [qui.id]: me.user.id } });
+      await api(admin.request, 'POST', `/bases/${id}/rows`, { values: { [nom]: 'Sans date' } });
+      const detail = (await (await api(admin.request, 'GET', `/bases/${id}`)).json()) as { views: { id: string }[] };
+      await api(admin.request, 'PATCH', `/bases/${id}/views/${detail.views[0]!.id}`, { config: { type: 'calendar', mode: 'month', dateId: debut.id, endId: fin.id, sort: [], filters: [], hidden: [] } });
+      await admin.close();
+
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.goto(`/p/${id}`);
+      await page.getByRole('grid').waitFor();
+      await page.getByRole('progressbar').waitFor();
+      const found = await violations(page, 'calendrier (mois)');
+      await page.getByRole('button', { name: /autres? éléments?/ }).first().click();
+      await page.locator('.popover .cal-ev').first().waitFor();
+      found.push(...await violations(page, 'calendrier (+N de plus)'));
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: /^Élément 0, le/ }).click();
+      await page.getByRole('form', { name: /Ligne Élément 0/ }).waitFor();
+      found.push(...await violations(page, 'calendrier (fiche)'));
+      await page.keyboard.press('Escape');
+      await page.getByLabel('Affichage').selectOption('week');
+      await page.locator('.cal-week').waitFor();
+      found.push(...await violations(page, 'calendrier (semaine)'));
+      await page.getByRole('button', { name: 'Liste par date' }).click();
+      await page.getByRole('table', { name: /Calendrier sous forme de liste/ }).waitFor();
+      await page.getByText('Sans date (1)').click();
+      found.push(...await violations(page, 'calendrier (liste par date)'));
+      await page.getByRole('button', { name: 'S’abonner (iCalendar)' }).click();
+      await page.getByRole('dialog', { name: 'S’abonner depuis un agenda' }).locator('.notice, .btn-primary').first().waitFor();
+      found.push(...await violations(page, 'flux iCalendar'));
+      await page.keyboard.press('Escape');
+      await page.goto('/tasks');
+      await page.getByRole('heading', { name: `A11y calendrier ${scheme}` }).waitFor();
+      found.push(...await violations(page, 'mes tâches'));
+      expect(found).toEqual([]);
+    });
+
     test('paramètres : toutes les sections', async ({ page }) => {
       await loginUi(page, ADMIN.email, ADMIN.password);
       const found: string[] = [];

@@ -4,6 +4,14 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [3.16.0] - 2026-11-10
+
+### Ajouté
+- **Bases : vue Calendrier** : mois et semaine (lundi premier), événements sur plusieurs jours, colonnes de début et de fin au choix (par défaut celles des réglages de la base), couleur par statut, « +N de plus », ajout d'une ligne en cliquant un jour. Déplacement à la souris ou au clavier (Alt + flèches), grille navigable aux flèches et « Liste par date » équivalente pour lecteur d'écran.
+- **Bases : flux iCalendar** : adresse secrète par base (jeton de 192 bits, jamais conservé : seule son empreinte l'est, montré une seule fois, révocable ou renouvelable) pour s'abonner depuis un agenda. Le flux ne contient que le titre et les dates des lignes. Il n'est servi que si le partage public est actif pour l'instance et l'espace, que la base n'est pas en corbeille et que sa restriction n'a pas changé ; il est supprimé avec la corbeille, un changement d'espace, la coupure du partage et la désactivation ou suppression du compte de son créateur. Création et renouvellement par session web (pas de jeton d'API) ; une base restreinte demande une confirmation. `GET/POST/DELETE /api/v3/bases/:id/ical`, `GET /ical/:jeton.ics`. Les sauvegardes n'incluent pas les flux : à recréer après une restauration. Migration v33.
+- **Mes tâches** : page `/tasks` et entrée de la barre latérale (pastille des tâches en retard) : les lignes qui vous sont assignées par une colonne Personne, dans toutes les bases que vous pouvez lire, triées en retard puis par échéance, filtre « à faire / toutes ». `GET /api/v3/my-tasks`.
+- **Progression d'une base** : barre « N sur M terminées » dans l'en-tête d'une base (colonne Statut : dernière option = terminé ; à défaut, première colonne case à cocher). Champ `progress` ajouté à `GET /api/v3/bases/:id`.
+
 ## [3.15.0] - 2026-11-09
 
 ### Ajouté

@@ -59,15 +59,21 @@ export interface Option { id: string; name: string; color: typeof OPTION_COLORS[
 
 // Vue : tri, filtres, colonnes masquées. Rien d'exécutable : des identifiants de colonnes, des opérateurs d'une liste fermée.
 export const FILTER_OPS = ['contains', 'eq', 'neq', 'gt', 'lt', 'empty', 'notempty'] as const;
-export const VIEW_TYPES = ['table', 'kanban', 'timeline'] as const;
+export const VIEW_TYPES = ['table', 'kanban', 'timeline', 'calendar'] as const;
 export const TIMELINE_SCALES = ['day', 'week', 'month', 'quarter'] as const;
+export const CALENDAR_MODES = ['month', 'week'] as const;
 export const viewConfigSchema = z.object({
   // `kanban` : les lignes sont des cartes rangées en colonnes selon la valeur d'une colonne Sélection ou Statut (`groupBy`).
   // `timeline` : barres entre les colonnes de début et de fin des réglages de la base ; `groupBy` et `colorBy` facultatifs.
+  // `calendar` : grille mois ou semaine (`mode`) ; `dateId` et `endId` (colonnes Date, facultatives) ; à défaut, les colonnes
+  // de début et de fin des réglages (voir calendarColumns).
   type: z.enum(VIEW_TYPES).default('table'),
   groupBy: z.string().max(40).optional(),
   scale: z.enum(TIMELINE_SCALES).optional(),
   colorBy: z.string().max(40).optional(),
+  mode: z.enum(CALENDAR_MODES).optional(),
+  dateId: z.string().max(40).optional(),
+  endId: z.string().max(40).optional(),
   sort: z.array(z.object({ propertyId: z.string().max(40), dir: z.enum(['asc', 'desc']) })).max(3).default([]),
   filters: z.array(z.object({
     propertyId: z.string().max(40),
@@ -341,13 +347,19 @@ export function removeProperty(db: DB, baseId: string, id: string, touched?: Set
 function remapView(c: ViewConfig, map: (id: string) => string | undefined): ViewConfig {
   const groupBy = c.groupBy === undefined ? undefined : map(c.groupBy);
   const colorBy = c.colorBy === undefined ? undefined : map(c.colorBy);
+  const dateId = c.dateId === undefined ? undefined : map(c.dateId);
+  const endId = c.endId === undefined ? undefined : map(c.endId);
   const type = c.type === 'kanban' && !groupBy ? 'table' : c.type;
   const ids = (list: string[]) => list.map(map).filter((x): x is string => x !== undefined);
+  // Calendrier : une colonne de date supprimée disparaît de la vue, qui revient aux colonnes par défaut.
   return {
     type,
     ...(groupBy ? { groupBy } : {}),
     ...(type === 'timeline' && c.scale ? { scale: c.scale } : {}),
     ...(type === 'timeline' && colorBy ? { colorBy } : {}),
+    ...(type === 'calendar' && c.mode ? { mode: c.mode } : {}),
+    ...(type === 'calendar' && dateId ? { dateId } : {}),
+    ...(type === 'calendar' && endId ? { endId } : {}),
     sort: c.sort.flatMap((s) => { const p = map(s.propertyId); return p ? [{ ...s, propertyId: p }] : []; }),
     filters: c.filters.flatMap((f) => { const p = map(f.propertyId); return p ? [{ ...f, propertyId: p }] : []; }),
     hidden: ids(c.hidden),
@@ -821,9 +833,13 @@ export const viewsOf = (db: DB, baseId: string) =>
 export function checkViewConfig(db: DB, baseId: string, config: ViewConfig): ViewConfig {
   const props = propertiesOf(db, baseId);
   const ids = new Set(props.map((p) => p.id));
-  const all = [...config.sort.map((s) => s.propertyId), ...config.filters.map((f) => f.propertyId), ...config.hidden, ...(config.groupBy ? [config.groupBy] : []), ...(config.colorBy ? [config.colorBy] : [])];
+  const all = [
+    ...config.sort.map((s) => s.propertyId), ...config.filters.map((f) => f.propertyId), ...config.hidden,
+    ...[config.groupBy, config.colorBy, config.dateId, config.endId].filter((x): x is string => x !== undefined),
+  ];
   if (all.some((id) => !ids.has(id))) throw new HttpError(400, 'La vue cite une colonne inconnue');
   const choice = (id: string | undefined) => { const p = props.find((x) => x.id === id); return !!p && (p.type === 'select' || p.type === 'status'); };
+  const isDateProp = (id: string) => props.some((x) => x.id === id && x.type === 'date');
   if (config.type === 'kanban') {
     if (!choice(config.groupBy)) throw new HttpError(400, 'Un Kanban se range selon une colonne Sélection ou Statut');
   } else if (config.type === 'timeline') {
@@ -831,11 +847,35 @@ export function checkViewConfig(db: DB, baseId: string, config: ViewConfig): Vie
     if (config.colorBy !== undefined && !choice(config.colorBy)) throw new HttpError(400, 'Une chronologie se colore selon une colonne Sélection ou Statut');
   } else if (config.groupBy !== undefined) throw new HttpError(400, 'Seules les vues Kanban et chronologie se rangent par colonne');
   if (config.type !== 'timeline' && (config.scale !== undefined || config.colorBy !== undefined)) throw new HttpError(400, 'Échelle et couleur ne concernent que la chronologie');
-  // Chronologie : échelle par défaut à la semaine (clés dans l'ordre du schéma).
-  if (config.type === 'timeline' && !config.scale) {
-    return { type: config.type, ...(config.groupBy ? { groupBy: config.groupBy } : {}), scale: 'week', ...(config.colorBy ? { colorBy: config.colorBy } : {}), sort: config.sort, filters: config.filters, hidden: config.hidden };
+  if (config.type === 'calendar') {
+    for (const id of [config.dateId, config.endId]) if (id !== undefined && !isDateProp(id)) throw new HttpError(400, 'Un calendrier se place selon des colonnes Date de la base');
+    if (config.dateId !== undefined && config.dateId === config.endId) throw new HttpError(400, 'Le début et la fin sont deux colonnes différentes');
+  } else if (config.mode !== undefined || config.dateId !== undefined || config.endId !== undefined) {
+    throw new HttpError(400, 'Mode et colonnes de date ne concernent que le calendrier');
   }
-  return config;
+  // Valeurs par défaut : chronologie à la semaine, calendrier au mois (clés dans l'ordre du schéma).
+  return {
+    type: config.type,
+    ...(config.groupBy !== undefined ? { groupBy: config.groupBy } : {}),
+    ...(config.type === 'timeline' ? { scale: config.scale ?? 'week' } : {}),
+    ...(config.colorBy !== undefined ? { colorBy: config.colorBy } : {}),
+    ...(config.type === 'calendar' ? { mode: config.mode ?? 'month' } : {}),
+    ...(config.dateId !== undefined ? { dateId: config.dateId } : {}),
+    ...(config.endId !== undefined ? { endId: config.endId } : {}),
+    sort: config.sort, filters: config.filters, hidden: config.hidden,
+  };
+}
+
+/**
+ * Colonnes de date d'une vue calendrier : celles de la vue, sinon la colonne de début des réglages (puis la première colonne
+ * Date) et la colonne de fin des réglages. Sans vue calendrier (`view` absent) : mêmes défauts. La fin est distincte du début.
+ */
+export function calendarColumns(props: Property[], settings: { startPropertyId: string | null; endPropertyId: string | null }, view?: Pick<ViewConfig, 'dateId' | 'endId'>): { dateId: string | null; endId: string | null } {
+  const dates = new Set(props.filter((p) => p.type === 'date').map((p) => p.id));
+  const pick = (id: string | null | undefined) => (id && dates.has(id) ? id : null);
+  const dateId = pick(view?.dateId) ?? pick(settings.startPropertyId) ?? props.find((p) => p.type === 'date')?.id ?? null;
+  const endId = pick(view?.endId) ?? pick(settings.endPropertyId);
+  return { dateId, endId: endId !== dateId ? endId : null };
 }
 
 export function addView(db: DB, baseId: string, name: string, config: ViewConfig): { id: string } {

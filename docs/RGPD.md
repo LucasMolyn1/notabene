@@ -59,6 +59,7 @@ La suppression est une **anonymisation** : le compte et ce qui lui est propre di
 - **Mentions** : une mention dans une page ne conserve que l'identifiant de la personne, jamais son nom, et une mention dans un commentaire est supprimée avec le compte. Le texte d'un commentaire est en revanche un texte libre : si quelqu'un y a tapé le nom de la personne, ce texte reste (comme tout texte écrit par un tiers) ; un administrateur peut supprimer le commentaire.
 - Un compte fédéré (SSO, LDAP) est **recréé** à sa prochaine connexion s'il reste autorisé par l'annuaire : retirez-le d'abord des groupes.
 - Le texte d'un commentaire peut contenir des données personnelles écrites par la personne ; un administrateur peut le supprimer à part si la demande le justifie.
+- **Flux iCalendar** : les flux de bases créés par la personne sont révoqués dès la désactivation de son compte, et à sa suppression.
 - **Sauvegardes** : une personne effacée reste présente dans les sauvegardes existantes jusqu'à leur rotation (`BACKUP_KEEP`, 14 par défaut). Indiquez ce délai dans votre politique ; en cas de restauration, rejouez les effacements demandés depuis la sauvegarde.
 
 - **Espace personnel** : l'effacement du compte ne supprime pas son espace personnel, qui devient orphelin (invisible de tous). Un administrateur doit ensuite le **supprimer** (Paramètres, Espaces, Espaces personnels) ou le **reprendre** s'il contient des documents à conserver. Sans cette étape, des données personnelles subsistent dans la base.

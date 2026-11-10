@@ -28,6 +28,9 @@ export async function backupTo(db: DB, file: string): Promise<void> {
   const copy = new Database(file);
   try {
     copy.pragma('journal_mode = DELETE');
+    // Les flux iCalendar des bases (empreintes de jetons secrets) ne sont jamais gardés dans une sauvegarde.
+    copy.pragma('secure_delete = ON');
+    if (copy.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'base_ical_feeds'").get()) copy.prepare('DELETE FROM base_ical_feeds').run();
   } finally {
     copy.close();
   }

@@ -3,9 +3,10 @@
 // pouvoir la modifier. Une page qui n'est pas une base répond 404 ici, comme une base inexistante.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { can, guard } from '../auth/context.js';
+import { can, guard, requireAuth } from '../auth/context.js';
 import { loadReadablePage, loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
+import { createOrRotateFeed, feedOf, revokeFeed } from '../lib/base-ical.js';
 import {
   cascadeShift, MAX_BLOCKERS, MAX_DEPTH, MAX_SHIFT_DEPTH, MAX_SHIFT_ROWS, setBlockers, setParent, settingsOf, updateSettings,
 } from '../lib/base-project.js';
@@ -14,11 +15,13 @@ import {
   optionSchema, patchRow, presentProperties, presentRows, propertiesOf, PROPERTY_TYPES, reindexBase, relationInput, removeProperty, removeRows,
   rollupInput, rowCount, toCsv, touchBase, updateProperty, viewConfigSchema, viewsOf, type Ctx,
 } from '../lib/bases.js';
+import { MAX_TASK_BASES, MAX_TASKS, myTasks, progressOf } from '../lib/base-tasks.js';
 import { MAX_FORMULA_CHARS } from '../lib/formula.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { canWritePage } from '../lib/page-acl.js';
 import { inPersonalSpace } from '../lib/personal-spaces.js';
 import { toMeta, type PageRow } from '../lib/pages.js';
+import { restrictionKey, sharingEnabled } from '../lib/shares.js';
 
 const propertyName = cleanName(60);
 const viewName = cleanName(60);
@@ -54,9 +57,12 @@ const settingsBody = z.object({
 }).strict();
 const viewBody = z.object({ name: viewName, config: viewConfigSchema.default({ type: 'table', sort: [], filters: [], hidden: [] }) });
 const viewPatch = z.object({ name: viewName.optional(), config: viewConfigSchema.optional() });
+// « Mes tâches » : `done=false` écarte les tâches terminées ; par défaut (`true`), toutes.
+const tasksQuery = z.object({ done: z.enum(['true', 'false']).default('true') });
+const icalBody = z.object({ confirmRestricted: z.boolean().optional() }).nullish();
 
 export default async function baseRoutes(app: FastifyInstance) {
-  const { db, bus } = app;
+  const { db, bus, config } = app;
   const tags = ['bases'];
   const write = { preHandler: guard('write'), config: { rateLimit: { max: 300, timeWindow: '1 minute' } } };
 
@@ -96,6 +102,8 @@ export default async function baseRoutes(app: FastifyInstance) {
       canWrite: can(req.auth, 'write') && canWritePage(db, req.auth, page.id),
       limits: { rows: MAX_ROWS, properties: MAX_PROPERTIES, relations: MAX_RELATIONS, rollups: MAX_ROLLUPS, links: MAX_LINKS, blockers: MAX_BLOCKERS, depth: MAX_DEPTH, shiftDepth: MAX_SHIFT_DEPTH, shiftRows: MAX_SHIFT_ROWS, delete: MAX_DELETE },
       settings: settingsOf(db, page.id),
+      // Agrégat de lignes que le lecteur voit déjà : visible de tout lecteur de la base.
+      progress: progressOf(db, page.id, props),
       properties: presentProperties(ctx, props),
       rows: presentRows(ctx, props, can(req.auth, 'read') && !!req.auth),
       views: viewsOf(db, page.id),
@@ -217,6 +225,56 @@ export default async function baseRoutes(app: FastifyInstance) {
     audit(db, req, 'base.settings', page.id, detail(page, { ...settings }));
     changed(req, page, false);
     return settings;
+  });
+
+  // ----- Flux iCalendar (adresse secrète en lecture, sans compte : routes/ical.ts) -----
+  // Gestion : droit d'écriture sur la base. Lire l'état et créer (ou changer) l'adresse : session web seulement, comme le partage
+  // public d'une page ; révoquer : aussi par jeton d'API de portée write (couper un accès ne doit jamais être plus difficile). Le
+  // jeton n'est rendu qu'à la création ou à la rotation, dans l'adresse ; il n'est ni stocké (empreinte seulement), ni audité.
+  const icalLimit = { preHandler: guard('write'), config: { rateLimit: { max: 30, timeWindow: '1 minute' } } };
+  const spaceAllows = (spaceId: string) => !!db.prepare('SELECT 1 FROM spaces WHERE id = ? AND sharing_enabled = 1').get(spaceId);
+  const icalUrl = (token: string) => `${config.PUBLIC_URL}/ical/${token}.ics`;
+  const needSession = (req: FastifyRequest) => {
+    if (requireAuth(req).via !== 'session') throw new HttpError(403, 'Le flux iCalendar se règle depuis la session web');
+  };
+
+  app.get('/bases/:id/ical', { ...icalLimit, schema: { tags, summary: 'État du flux iCalendar d’une base (jamais l’adresse)', params: idParams } }, async (req) => {
+    needSession(req);
+    const page = openBase(req, (req.params as { id: string }).id, 'write');
+    const feed = feedOf(db, page.id);
+    return { available: sharingEnabled(db) && spaceAllows(page.space_id), active: !!feed, createdAt: feed?.created_at ?? null };
+  });
+
+  app.post('/bases/:id/ical', { ...icalLimit, schema: { tags, summary: 'Créer le flux iCalendar d’une base ou changer son adresse (montrée une seule fois)', params: idParams, body: icalBody } }, async (req, reply) => {
+    needSession(req);
+    const page = openBase(req, (req.params as { id: string }).id, 'write');
+    if (!sharingEnabled(db)) throw new HttpError(403, 'Le partage public n’est pas activé sur cette instance');
+    if (!spaceAllows(page.space_id)) throw new HttpError(403, 'Le partage public est désactivé dans cet espace');
+    // Base restreinte : confirmation demandée, sauf si le flux l'a déjà reçue pour exactement cette restriction (comme un partage).
+    const key = restrictionKey(db, page.id);
+    const confirmed = (req.body as z.output<typeof icalBody>)?.confirmRestricted === true;
+    if (key !== null && !confirmed && feedOf(db, page.id)?.restricted_key !== key) {
+      throw new HttpError(409, 'Cette base a des permissions restreintes : confirmez pour publier son calendrier', { code: 'restricted' });
+    }
+    const { token, rotated } = createOrRotateFeed(db, page.id, userId(req));
+    audit(db, req, rotated ? 'base.ical.rotate' : 'base.ical.create', page.id);
+    return reply.status(rotated ? 200 : 201).send({ url: icalUrl(token) });
+  });
+
+  app.delete('/bases/:id/ical', { ...icalLimit, schema: { tags, summary: 'Révoquer le flux iCalendar d’une base', params: idParams } }, async (req, reply) => {
+    const page = openBase(req, (req.params as { id: string }).id, 'write');
+    if (revokeFeed(db, page.id)) audit(db, req, 'base.ical.revoke', page.id);
+    return reply.status(204).send();
+  });
+
+  // ----- Mes tâches -----
+  app.get('/my-tasks', {
+    preHandler: guard('read'),
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+    schema: { tags, summary: `Mes tâches : lignes où une colonne Personne me désigne (${MAX_TASK_BASES} bases, ${MAX_TASKS} tâches au plus)`, querystring: tasksQuery },
+  }, async (req) => {
+    const q = req.query as z.output<typeof tasksQuery>;
+    return myTasks(db, req.auth!, readableSpaceIds(db, req), q.done === 'true');
   });
 
   // ----- Vues -----
