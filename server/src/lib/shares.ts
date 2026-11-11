@@ -15,8 +15,8 @@ export const sharingEnabled = (db: DB): boolean => {
   try { return !!row && (JSON.parse(row.value) as { enabled?: boolean }).enabled === true; } catch { return false; }
 };
 
-/** Adresse sans le jeton (lien de partage ou flux iCalendar d'une base), pour les journaux. */
-export const maskShareToken = (url: string) => url.replace(/(\/(?:share|public\/shares|ical)\/)[^/?#]+/, '$1[jeton]');
+/** Adresse sans le jeton (lien de partage, flux iCalendar ou formulaire d'une base), pour les journaux. */
+export const maskShareToken = (url: string) => url.replace(/(\/(?:share|public\/shares|ical|form|public\/forms)\/)[^/?#]+/, '$1[jeton]');
 
 /** En-têtes de l'enveloppe de l'application servie sur /share/<jeton>. */
 export function shareShellHeaders(db: DB, url: string): Record<string, string> {

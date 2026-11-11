@@ -20,6 +20,7 @@ import { showMfaSetup, showResetPassword } from './local-auth.js';
 import { refreshUnread } from './notifications.js';
 import { onCommentEvent } from './comments.js';
 import { showShare } from './share.js';
+import { showPublicForm } from './public-form.js';
 import { refreshLateTasks, refreshLateTasksSoon, showTasks } from './tasks.js';
 import { toggleChat } from './ai-chat.js';
 import * as A from './actions.js';
@@ -36,6 +37,7 @@ function route() {
   const r = parseRoute(location.pathname);
   document.body.classList.toggle('share', r.kind === 'share');
   if (r.kind === 'share') { showShare(r.token, r.id); return; } // lisible sans compte, sans barre latérale
+  if (r.kind === 'form') { location.reload(); return; } // formulaire public : démarrage à part (voir boot)
   if (r.kind === 'settings') openSettings(r.section);
   else if (!store.spaces.length) { showNoSpace(); scheduleSidebar(); return; }
   else if (r.kind === 'page') showPage(r.id);
@@ -84,7 +86,7 @@ function onLinkClick(e) {
   if (!a || a.target || a.hasAttribute('download') || a.getAttribute('href').startsWith('#')) return;
   const url = new URL(a.href, location.href);
   if (url.origin !== location.origin || (url.search && url.search !== '?embed')) return;
-  if (parseRoute(url.pathname).kind === 'unknown') return;
+  if (['unknown', 'form'].includes(parseRoute(url.pathname).kind)) return;
   e.preventDefault();
   A.go(url.pathname);
 }
@@ -100,6 +102,16 @@ async function boot() {
     window.addEventListener('navigate', shareRoute);
     document.addEventListener('click', onLinkClick);
     route();
+    return;
+  }
+
+  // Formulaire public d'une base : ni espaces, ni flux temps réel, ni présence. La session (si elle existe) sert au mode
+  // « réservé aux comptes » (identité et jeton CSRF) ; sans elle, un formulaire anonyme reste utilisable.
+  const formRoute = parseRoute(location.pathname);
+  if (formRoute.kind === 'form') {
+    document.body.classList.add('share', 'no-sidebar');
+    try { await session.load(); } catch { /* serveur injoignable : le formulaire affichera l'erreur */ }
+    showPublicForm(formRoute.token);
     return;
   }
 

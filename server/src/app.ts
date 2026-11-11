@@ -14,14 +14,17 @@ import type { Config } from './config.js';
 import type { DB } from './db.js';
 import { OidcClient } from './auth/oidc.js';
 import { Mailer } from './lib/mail.js';
-import { createNotifier, startNotifications } from './lib/notifications.js';
+import { createNotifier, type Notifier, startNotifications } from './lib/notifications.js';
 import { REMINDER_INTERVAL, remindVerifications } from './lib/verifications.js';
 import { startWebhooks } from './lib/webhooks.js';
+import { AutomationEngine } from './lib/base-automations.js';
 import { AuditForwarder } from './lib/audit-forwarder.js';
 import auditRoutes from './routes/audit.js';
 import { RuntimeSettings } from './lib/runtime-settings.js';
 import settingsRoutes from './routes/settings.js';
 import baseRoutes from './routes/bases.js';
+import baseAutomationRoutes from './routes/base-automations.js';
+import baseFormRoutes from './routes/base-forms.js';
 import labelRoutes from './routes/labels.js';
 import { effectiveEmbedHosts } from './lib/embed.js';
 import pageQueryRoutes from './routes/pages-query.js';
@@ -81,6 +84,8 @@ declare module 'fastify' {
     mail: Mailer;
     updates: UpdateChecker;
     auditForwarder: AuditForwarder;
+    automations: AutomationEngine;
+    notifier: Notifier;
   }
 }
 
@@ -108,7 +113,13 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
       ...(typeof logger === 'object' ? logger : {}),
       redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-csrf-token"]'],
       // Le jeton d'un lien de partage est le seul secret du lien : il ne doit jamais figurer dans les journaux.
-      serializers: { req: (req: { method?: string; url?: string; hostname?: string; ip?: string }) => ({ method: req.method, url: maskShareToken(req.url ?? ''), hostname: req.hostname, remoteAddress: req.ip }) },
+      // Formulaires publics : aucune adresse IP non plus (une réponse anonyme ne doit pas pouvoir être rattachée à une adresse).
+      serializers: {
+        req: (req: { method?: string; url?: string; hostname?: string; ip?: string }) => ({
+          method: req.method, url: maskShareToken(req.url ?? ''), hostname: req.hostname,
+          ...(/^\/(?:api\/v3\/public\/forms|form)\//.test(req.url ?? '') ? {} : { remoteAddress: req.ip }),
+        }),
+      },
     },
     // Un nombre = nombre de proxys de confiance en partant de la connexion ; l'adresse du client est lue à droite de X-Forwarded-For.
     // (L'option numérique de Fastify n'a pas cette sémantique : on passe par une fonction.)
@@ -131,10 +142,16 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   app.addHook('onClose', async () => { stopNotifications(); });
   // Rappels de vérification de page : une minute après le démarrage, puis chaque heure (une notification par changement d'état).
   const notifier = createNotifier(db, bus, app.mail, () => rt.get());
+  app.decorate('notifier', notifier);
   const remind = () => { try { remindVerifications(db, notifier); } catch (err) { app.log.warn({ err }, 'rappels de vérification'); } };
   const remindFirst = setTimeout(remind, 60_000).unref();
   const remindEvery = setInterval(remind, REMINDER_INTERVAL).unref();
   app.addHook('onClose', async () => { clearTimeout(remindFirst); clearInterval(remindEvery); });
+  // Automatisations des bases : déclenchées par les routes d'écriture des lignes, récurrences par le planificateur (chaque minute).
+  const automations = new AutomationEngine({ db, bus, box, notifier, allowPrivate: config.WEBHOOK_ALLOW_PRIVATE, log: (err) => app.log.warn({ err }, 'automatisations') });
+  app.decorate('automations', automations);
+  const stopAutomations = automations.start();
+  app.addHook('onClose', async () => { stopAutomations(); await automations.idle(); });
   const stopWebhooks = startWebhooks(db, bus, box, config.WEBHOOK_ALLOW_PRIVATE);
   app.addHook('onClose', async () => { stopWebhooks(); });
   // Journal d'audit vers la sortie standard (AUDIT_STDOUT) et vers le SIEM configuré (voir docs/AUDIT.md).
@@ -316,6 +333,8 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(pageQueryRoutes);
     await scope.register(labelRoutes);
     await scope.register(baseRoutes);
+    await scope.register(baseAutomationRoutes);
+    await scope.register(baseFormRoutes);
     await scope.register(templateRoutes);
     await scope.register(tokenRoutes);
     await scope.register(aiRoutes);
@@ -376,6 +395,10 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
         // Page partagée publiquement : l'application, sans cache ni référent sortant ; indexable seulement si le partage l'autorise.
         const h = shareShellHeaders(db, req.url);
         return reply.header('cache-control', h['cache-control']).header('referrer-policy', h['referrer-policy']).header('x-robots-tag', h['x-robots-tag']).type('text/html; charset=utf-8').send(shellHtml);
+      }
+      if (req.url.startsWith('/form/')) {
+        // Formulaire public d'une base : l'application, sans cache, sans référent sortant (le jeton est dans l'adresse), jamais indexé.
+        return reply.header('cache-control', 'no-store').header('referrer-policy', 'no-referrer').header('x-robots-tag', 'noindex, nofollow').type('text/html; charset=utf-8').send(shellHtml);
       }
       // L'application seule : jamais de contenu ici, donc rien à indexer (les pages publiques passent par routes/seo.ts).
       return reply.header('cache-control', 'no-cache').header('x-robots-tag', 'noindex, nofollow').sendFile('index.html');

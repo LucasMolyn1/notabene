@@ -8,6 +8,7 @@ import { audit } from '../lib/audit.js';
 import { EVERYONE } from '../lib/space-access.js';
 import { reauthInput, requireReauth } from '../lib/reauth.js';
 import { createPersonalSpace, personalSpaceOf, personalSpacesEnabled } from '../lib/personal-spaces.js';
+import { revokeSpaceForms } from '../lib/base-forms.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
 
 const fields = {
@@ -19,7 +20,9 @@ const fields = {
 };
 const spaceBody = z.object({ ...fields, sharing: fields.sharing.default(true), icon: fields.icon.default('folder'), description: fields.description.default(''), visibility: fields.visibility.default('private') });
 // Modification : seuls les champs envoyés changent (sans valeurs par défaut, sinon renommer remettrait la visibilité à « privé »).
-const patchBody = z.object(fields).partial();
+// `forms` : formulaires des bases permis dans l'espace (désactivé par défaut, réservé aux administrateurs, jamais pour un espace
+// personnel) ; le couper révoque les liens des formulaires de l'espace.
+const patchBody = z.object({ ...fields, forms: z.boolean() }).partial();
 // À la création : qui y a accès au départ. Par défaut les administrateurs seuls (qui voient tout) ; « everyone » ouvre l'édition à tous.
 const createBody = spaceBody.extend({ access: z.enum(['admins', 'everyone']).default('admins') });
 const memberBody = z.object({ userId: idSchema.optional(), groupId: idSchema.optional(), role: z.enum(['view', 'edit', 'full']) })
@@ -71,13 +74,25 @@ export default async function spaceRoutes(app: FastifyInstance) {
     if ((req.body as { visibility?: string }).visibility !== undefined && !isAdmin(req)) throw new HttpError(403, 'Seul un administrateur change la visibilité d’un espace');
     const current = db.prepare('SELECT * FROM spaces WHERE id = ?').get(id) as SpaceRow | undefined;
     if (!current) throw new HttpError(404, 'Espace introuvable');
-    const { sharing, ...rest } = req.body as Partial<SpaceRow> & { sharing?: boolean };
+    const { sharing, forms, ...rest } = req.body as Partial<SpaceRow> & { sharing?: boolean; forms?: boolean };
     // Le partage public d'un espace est une décision d'administrateur, comme sa visibilité.
     if (sharing !== undefined && !isAdmin(req)) throw new HttpError(403, 'Seul un administrateur règle le partage public d’un espace');
-    const next = { ...current, ...rest, sharing_enabled: sharing === undefined ? current.sharing_enabled : (sharing ? 1 : 0), updated_at: Date.now() };
+    // Les formulaires (écriture possible sans compte) aussi ; jamais dans un espace personnel.
+    if (forms !== undefined && !isAdmin(req)) throw new HttpError(403, 'Seul un administrateur règle les formulaires d’un espace');
+    if (forms === true && current.kind === 'personal') throw new HttpError(409, 'Pas de formulaire dans un espace personnel');
+    const next = {
+      ...current, ...rest,
+      sharing_enabled: sharing === undefined ? current.sharing_enabled : (sharing ? 1 : 0),
+      forms_enabled: forms === undefined ? current.forms_enabled : (forms ? 1 : 0),
+      updated_at: Date.now(),
+    };
     db.transaction(() => {
-      db.prepare('UPDATE spaces SET name = ?, icon = ?, description = ?, visibility = ?, sharing_enabled = ?, updated_at = ? WHERE id = ?')
-        .run(next.name, next.icon, next.description, next.visibility, next.sharing_enabled, next.updated_at, id);
+      db.prepare('UPDATE spaces SET name = ?, icon = ?, description = ?, visibility = ?, sharing_enabled = ?, forms_enabled = ?, updated_at = ? WHERE id = ?')
+        .run(next.name, next.icon, next.description, next.visibility, next.sharing_enabled, next.forms_enabled, next.updated_at, id);
+      if (next.forms_enabled !== current.forms_enabled) {
+        const revoked = next.forms_enabled === 0 ? revokeSpaceForms(db, id) : 0;
+        audit(db, req, 'space.forms', id, { enabled: next.forms_enabled === 1, revoked });
+      }
       // Fermer le partage d'un espace retire les liens publics de toutes ses pages.
       if (next.sharing_enabled !== current.sharing_enabled) {
         const removed = next.sharing_enabled === 0 ? db.prepare('DELETE FROM page_shares WHERE page_id IN (SELECT id FROM pages WHERE space_id = ?)').run(id).changes : 0;

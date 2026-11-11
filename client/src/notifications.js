@@ -33,6 +33,10 @@ const TEXT = {
   reply: (n) => `${n.actor?.name || 'Quelqu’un'} a répondu à votre commentaire sur`,
   mention: (n) => `${n.actor?.name || 'Quelqu’un'} vous a mentionné dans`,
   'page.updated': (n) => `${n.actor?.name || 'Quelqu’un'} a modifié${n.count > 1 ? ` (${n.count} fois)` : ''}`,
+  // Automatisation d'une base : ni auteur ni contenu de ligne, seulement la base.
+  automation: () => 'Une automatisation vous a notifié depuis la base',
+  // Réponse à un formulaire : regroupée par base, jamais d'auteur (ni nom de répondant ni contenu).
+  form: (n) => (n.count > 1 ? `${n.count} nouvelles réponses à un formulaire de la base` : 'Nouvelle réponse à un formulaire de la base'),
 };
 
 // Rappels de vérification (sans auteur) : le titre est au milieu de la phrase.

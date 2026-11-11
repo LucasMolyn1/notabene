@@ -9,7 +9,7 @@ import { renderAuth, renderMail, renderSpaces, renderUsers } from './settings/ac
 import { renderAudit, renderRetention, renderSiem } from './settings/audit.js';
 import { renderAbout, renderApi, renderAppearance, renderProfile, renderTokens } from './settings/account.js';
 import { renderAi } from './settings/ai.js';
-import { renderDiagrams, renderEmbed, renderEmbeds, renderTools, renderWebhooks } from './settings/features.js';
+import { renderDiagrams, renderEmbed, renderEmbeds, renderForms, renderTools, renderWebhooks } from './settings/features.js';
 import { renderImport, renderInstance } from './settings/instance.js';
 import { renderImages } from './settings/images.js';
 import { renderGroups } from './settings/groups.js';
@@ -37,6 +37,7 @@ const SECTIONS = [
   { group: 'Administration', id: 'embeds', label: 'Contenus intégrés', ico: 'globe', admin: true, sensitive: true, render: renderEmbeds },
   { group: 'Administration', id: 'scim', label: 'Provisionnement SCIM', ico: 'key', admin: true, sensitive: true, render: renderScim },
   { group: 'Administration', id: 'webhooks', label: 'Webhooks', ico: 'webhook', admin: true, render: renderWebhooks },
+  { group: 'Administration', id: 'forms', label: 'Formulaires', ico: 'file', admin: true, render: renderForms },
   { group: 'Administration', id: 'import', label: 'Import', ico: 'upload', admin: true, render: renderImport },
   { group: 'Administration', id: 'users', label: 'Utilisateurs', ico: 'users', admin: true, render: renderUsers },
   { group: 'Administration', id: 'audit', label: 'Journal d’audit', ico: 'file', admin: true, render: renderAudit },

@@ -434,12 +434,20 @@ export function spaceForm(space = null) {
   const isAdmin = session.can('admin') && space?.kind !== 'personal'; // un espace personnel est toujours privé
   const sharing = h('input', { type: 'checkbox', 'aria-label': 'Autoriser le partage public par lien dans cet espace' });
   sharing.checked = space ? space.sharing !== false : true;
+  // Formulaires des bases : désactivés par défaut, réglés sur un espace existant (jamais un espace personnel).
+  const forms = h('input', { type: 'checkbox' });
+  forms.checked = !!space?.forms;
   const access = h('select', { class: 'input', 'aria-label': 'Qui y a accès au départ' },
     h('option', { value: 'admins' }, 'Les administrateurs seulement (j’ajoute ensuite des membres)'),
     h('option', { value: 'everyone' }, 'Tout le monde, en édition'));
 
   const submit = async () => {
+    /** @type {Record<string, any>} */
     const values = { name: name.value.trim() || 'Nouvel espace', icon: spaceIcon, description: desc.value.trim(), ...(isAdmin ? { visibility: visibility.value, sharing: sharing.checked } : {}), ...(space ? {} : { access: access.value }) };
+    if (isAdmin && space && forms.checked !== !!space.forms) {
+      if (!forms.checked && !await confirmModal({ title: 'Couper les formulaires de l’espace', message: 'Les liens des formulaires de cet espace cesseront aussitôt de fonctionner ; les réactiver ne les fera pas revenir.', confirm: 'Couper', danger: true })) return false;
+      values.forms = forms.checked;
+    }
     if (space) return (await attempt(() => store.updateSpace(space.id, values).then(() => true))) ? undefined : false;
     const id = await attempt(() => store.createSpace(values));
     if (!id) return false;
@@ -456,6 +464,7 @@ export function spaceForm(space = null) {
       h('label', { class: 'field' }, h('span', null, 'Description'), desc),
       isAdmin && h('label', { class: 'field' }, h('span', null, 'Visibilité'), visibility),
       isAdmin && h('label', { class: 'check-row' }, sharing, h('span', null, 'Autoriser le partage public par lien', h('small', { class: 'hint' }, 'Décocher retire les liens publics existants de cet espace.'))),
+      isAdmin && space && h('label', { class: 'check-row' }, forms, h('span', null, 'Autoriser les formulaires des bases', h('small', { class: 'hint' }, 'Permet aux bases de cet espace d’ouvrir des formulaires publics (il faut aussi les autoriser sur l’instance). Décocher révoque leurs liens.'))),
       !space && h('label', { class: 'field' }, h('span', null, 'Accès au départ'), access)),
     actions: [{ label: 'Annuler' }, { label: space ? 'Enregistrer' : 'Créer l’espace', primary: true, onClick: submit }],
   });
