@@ -50,7 +50,7 @@ export function periodOf(mode, anchor) {
  *   baseId: string, data: any, rows: any[], config: any, canWrite: boolean, titleOf: (row: any) => string,
  *   state: { cal: any },
  *   patchRow: (row: any, body: any) => Promise<boolean>, addRow: (values: any) => Promise<any>, removeRow: (row: any) => void,
- *   setConfig: (next: any) => void, announce: (text: string) => void,
+ *   setConfig: (next: any) => void, announce: (text: string) => void, rowButtons?: (row: any) => HTMLElement | false,
  * }} ctx
  */
 export function calendarEl(ctx) {
@@ -206,6 +206,8 @@ export function calendarEl(ctx) {
     const field = (input, label) => input && h('div', { class: 'field' }, h('label', { for: input.id }, label), input);
     const form = h('form', { class: 'bt-pop cal-editor', 'aria-label': `Ligne ${title}` },
       field(tIn, titleP.name), field(sIn, ranged ? `${startP.name} : début` : startP.name), field(eIn, ranged ? `${startP.name} : fin` : endP?.name), field(stIn, statusP?.name), err,
+      // Boutons de ligne (automatisations) : le clic ferme la fiche, le résultat est annoncé par un message.
+      ctx.rowButtons?.(row) || null,
       h('div', { class: 'bt-pop-foot cal-editor-foot' },
         h('button', { class: 'btn btn-ghost btn-sm danger', type: 'button', onClick: () => { closePopover(); ctx.removeRow(row); } }, icon('trash', 14), 'Supprimer'),
         h('button', { class: 'btn btn-primary btn-sm', type: 'submit' }, 'Enregistrer')));

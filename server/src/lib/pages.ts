@@ -247,6 +247,8 @@ export function movePage(db: DB, id: string, input: { parentId: string | null; i
       // Changer d'espace change qui gouverne la page : ses liens publics (et ceux de ses sous-pages) ne la suivent pas.
       db.prepare('DELETE FROM page_shares WHERE page_id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));
       db.prepare('DELETE FROM base_ical_feeds WHERE base_id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));
+      // Ni les liens de formulaires : l'espace d'arrivée décide de nouveau (réglage, restriction).
+      db.prepare('UPDATE base_forms SET token_hash = NULL, link_created_at = NULL WHERE base_id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));
     }
     return { row: getPageRow(db, id)!, fromSpaceId: page.space_id };
   })();
@@ -281,6 +283,8 @@ export function trashPage(db: DB, id: string) {
       .run(Date.now(), id, JSON.stringify(ids));
     // Une base à la corbeille perd son flux iCalendar : une restauration ne rouvre pas l'adresse secrète.
     db.prepare('DELETE FROM base_ical_feeds WHERE base_id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));
+    // Ni ses liens de formulaires (la configuration reste, le lien est à recréer).
+    db.prepare('UPDATE base_forms SET token_hash = NULL, link_created_at = NULL WHERE base_id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));
   })();
 }
 

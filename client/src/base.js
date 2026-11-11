@@ -8,13 +8,15 @@ import { session } from './session.js';
 import { pagePath } from './urls.js';
 import { closePopover, confirmModal, openMenu, openModal, openPopover, pageIcon, toast } from './ui.js';
 import {
-  NO_TEMPLATE_TYPES, READ_ONLY_TYPES, applyView, dayNum, descendantsOf, flattenTree, fmtDate, fmtRollup, fold, isDateCol, isoDay,
+  DATE_FILTER_TYPES, NO_TEMPLATE_TYPES, OPERATORS, READ_ONLY_TYPES, applyView, opKind, dayNum, descendantsOf, flattenTree, fmtDate, fmtRollup, fold, isDateCol, isoDay,
   mailtoHref, rangeOf, safeEmail, safePhone, safeUrl, telHref, textOf, urlLabel,
 } from './base-model.js';
 import { SCALES, timelineEl } from './timeline.js';
 import { calendarEl } from './calendar.js';
 import { CHART_GROUP_TYPES, chartConfig, chartEl, openChartWizard } from './chart.js';
 import { crumbsFor, setView, topbar } from './views.js';
+import { openAutomations, runMessage } from './automations.js';
+import { openForms } from './forms.js';
 import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
@@ -34,22 +36,6 @@ const MAX_BLOCKERS = 10;
 const PICK_SHOWN = 200;
 const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
 const COLORS = { gray: 'Gris', red: 'Rouge', orange: 'Orange', yellow: 'Jaune', green: 'Vert', blue: 'Bleu', purple: 'Violet', pink: 'Rose' };
-const OPERATORS = {
-  text: [['contains', 'contient'], ['eq', 'est'], ['neq', 'n’est pas'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
-  number: [['eq', '='], ['neq', '≠'], ['gt', '>'], ['lt', '<'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
-  date: [['eq', 'le'], ['gt', 'après le'], ['lt', 'avant le'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
-  option: [['eq', 'est'], ['neq', 'n’est pas'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
-  multi: [['contains', 'contient'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
-  checkbox: [['eq', 'est']],
-  link: [['contains', 'contient'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
-  formula: [['contains', 'contient'], ['eq', '='], ['neq', '≠'], ['gt', '>'], ['lt', '<'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
-};
-const opKind = (t) => ({
-  text: 'text', number: 'number', date: 'date', select: 'option', status: 'option', multi_select: 'multi', checkbox: 'checkbox', person: 'link', page_link: 'link',
-  formula: 'formula', relation: 'link', rollup: 'number', url: 'text', email: 'text', phone: 'text', unique_id: 'text', created_by: 'link', updated_by: 'link',
-  created_time: 'date', updated_time: 'date', date_range: 'date',
-}[t] ?? 'text');
-const DATE_FILTER_TYPES = new Set(['date', 'created_time', 'updated_time', 'date_range']);
 // replaceChildren transforme null, false et les tableaux en texte : on aplatit et on écarte avant.
 const put = (el, ...parts) => el.replaceChildren(...parts.flat(Infinity).filter(Boolean));
 
@@ -238,6 +224,35 @@ export async function showBase(initial) {
     return true;
   }
   const commit = (row, p, value) => patchRow(row, { values: { [p.id]: value } });
+
+  // ---- Boutons de ligne (automatisations) : visibles et utilisables par qui peut modifier la base, avec ses propres droits ----
+  const rowButtons = () => (canWrite() && Array.isArray(data.buttons) ? data.buttons : []);
+  const running = new Set(); // boutons en cours (ligne et bouton), pour ignorer un double clic
+  async function runButton(btn, row) {
+    const key = `${btn.id}:${row.id}`;
+    if (running.has(key)) return;
+    running.add(key);
+    lastOwnWrite = Date.now();
+    try {
+      const r = await api.post(`/bases/${id}/automations/${btn.id}/run`, { rowId: row.id });
+      const i = data.rows.findIndex((x) => x.id === row.id);
+      if (r?.row && i >= 0) data.rows[i] = r.row;
+      toast(runMessage(btn.label, r), { kind: r?.status === 'ok' ? '' : 'error' });
+      render();
+      // Une action a pu ajouter des lignes ou toucher d'autres cellules (cumuls) : relecture discrète.
+      reloadSoon();
+    } catch (err) {
+      fail(err);
+      // Bouton désactivé entre-temps, ou ligne supprimée : la liste à jour vient du serveur.
+      if (err?.status === 404 || err?.status === 409) load(true);
+    } finally { running.delete(key); }
+  }
+  /** Boutons d'une ligne, chacun nommé avec la ligne pour les lecteurs d'écran ; la clé de focus survit au rendu. */
+  const buttonsEl = (row, extraClass = '', before = null) => rowButtons().length > 0 && h('div', { class: `bt-buttons ${extraClass}`, role: 'group', 'aria-label': `Boutons de ${titleOf(row)}` },
+    rowButtons().map((b) => h('button', {
+      class: 'btn btn-ghost btn-sm bt-run', type: 'button', 'data-focus-key': `run-${b.id}-${row.id}`, 'aria-label': `${b.label} (${titleOf(row)})`,
+      onClick: () => { before?.(); runButton(b, row); },
+    }, icon('wand', 13), b.label)));
 
   /**
    * Choix de plusieurs lignes (relation, « Bloqué par ») : recherche, cases à cocher, plafond.
@@ -897,6 +912,9 @@ export async function showBase(initial) {
           onClick: (e) => openMenu(e.currentTarget, [
             { heading: 'Déplacer vers' },
             ...lanes.map((l) => ({ label: l.label, checked: l.id === lane.id, onClick: () => move(row, l.id) })),
+            rowButtons().length > 0 && { sep: true },
+            rowButtons().length > 0 && { heading: 'Boutons' },
+            ...rowButtons().map((b) => ({ label: b.label, icon: 'wand', onClick: () => runButton(b, row) })),
             { sep: true },
             { label: 'Supprimer la carte', icon: 'trash', danger: true, onClick: () => removeRow(row) },
           ]),
@@ -1136,6 +1154,7 @@ export async function showBase(initial) {
           h('span', { class: 'bt-th-name' }, p.name),
           c.sort.some((s) => s.propertyId === p.id) && h('span', { class: 'bt-sort', 'aria-hidden': 'true' }, c.sort.find((s) => s.propertyId === p.id).dir === 'asc' ? '↑' : '↓')))),
       deps && h('th', { scope: 'col', class: 'bt-th bt-t-blocked' }, h('span', { class: 'bt-th-btn' }, h('span', { class: 'bt-th-name' }, 'Bloqué par'))),
+      rowButtons().length > 0 && h('th', { scope: 'col', class: 'bt-th bt-t-buttons' }, h('span', { class: 'bt-th-btn' }, h('span', { class: 'bt-th-name' }, 'Boutons'))),
       canWrite() && h('th', { scope: 'col', class: 'bt-th bt-add-col' }, h('button', {
         class: 'icon-btn', 'aria-label': 'Ajouter une colonne', title: 'Ajouter une colonne', disabled: props().length >= data.limits.properties,
         onClick: () => openPropertyDialog(null),
@@ -1162,6 +1181,7 @@ export async function showBase(initial) {
     const tbody = h('tbody', null, shownRows.map((l) => h('tr', { 'data-row': l.row.id },
       cols.map((p, i) => cellEl(l.row, p, i === 0 ? treePrefix(l) : null)),
       deps && blockedCell(l.row),
+      rowButtons().length > 0 && h('td', { class: 'bt-cell bt-t-buttons' }, buttonsEl(l.row)),
       canWrite() && h('td', { class: 'bt-cell bt-row-more' }, h('button', {
         class: 'icon-btn', 'aria-label': `Actions de la ligne ${titleOf(l.row)}`, title: subitems ? 'Sous-éléments, modèle' : 'Enregistrer comme modèle', onClick: (e) => rowMenu(e.currentTarget, l.row),
       }, icon('more', 14))),
@@ -1169,7 +1189,7 @@ export async function showBase(initial) {
 
     const mainEl = c.type === 'kanban' ? boardEl(c, rows)
       : c.type === 'timeline' ? timelineEl({ data, rows, config: c, canWrite: canWrite(), titleOf, state: tree, patchRow, setConfig, openSettings, announce })
-        : c.type === 'calendar' ? calendarEl({ baseId: id, data, rows, config: c, canWrite: canWrite(), titleOf, state: tree, patchRow, addRow, removeRow, setConfig, announce })
+        : c.type === 'calendar' ? calendarEl({ baseId: id, data, rows, config: c, canWrite: canWrite(), titleOf, state: tree, patchRow, addRow, removeRow, setConfig, announce, rowButtons: (row) => buttonsEl(row, 'cal-buttons', closePopover) })
         : c.type === 'chart' ? chartEl({ baseId: id, viewId: view().id, data, config: c, canWrite: canWrite(), state: tree, stamp: loadSeq, setConfig, whenSaved, announce })
         : h('div', { class: 'bt-scroll' }, h('table', { class: 'bt-table', 'aria-label': 'Lignes de la base', 'aria-rowcount': String(lines.length + 1) }, head, tbody));
     // Le focus survit au rendu : élément repéré par une clé, ou barre de la chronologie.
@@ -1189,6 +1209,14 @@ export async function showBase(initial) {
           c.type !== 'chart' && h('button', { class: `btn btn-ghost btn-sm${c.sort.length ? ' active' : ''}`, onClick: (e) => sortPopover(e.currentTarget) }, `Trier${c.sort.length ? ` (${c.sort.length})` : ''}`),
           c.type !== 'timeline' && c.type !== 'calendar' && c.type !== 'chart' && h('button', { class: `btn btn-ghost btn-sm${c.hidden.length ? ' active' : ''}`, onClick: (e) => columnsPopover(e.currentTarget) }, `Colonnes${c.hidden.length ? ` (${props().length - c.hidden.length}/${props().length})` : ''}`),
           h('a', { class: 'btn btn-ghost btn-sm', href: `/api/v3/bases/${id}/export`, download: '' }, icon('download', 14), 'CSV'),
+          canWrite() && h('button', {
+            class: 'btn btn-ghost btn-sm', title: 'Automatisations et boutons de ligne',
+            onClick: () => openAutomations({ baseId: id, title: store.page(id)?.title ?? data.page.title, properties: props(), onChange: () => load(true) }),
+          }, icon('wand', 14), 'Automatisations'),
+          canWrite() && h('button', {
+            class: 'btn btn-ghost btn-sm', title: 'Formulaires publics qui ajoutent des lignes',
+            onClick: () => openForms({ baseId: id, title: store.page(id)?.title ?? data.page.title, properties: props() }),
+          }, icon('file', 14), 'Formulaires'),
           canWrite() && h('button', { class: 'btn btn-ghost btn-sm', 'aria-label': 'Réglages de la base', title: 'Sous-éléments, dépendances, chronologie', onClick: () => openSettings() }, icon('settings', 14), 'Réglages'))),
       mainEl,
       rows.length === 0 && c.type !== 'chart' && h('p', { class: 'muted bt-empty' }, data.rows.length ? 'Aucune ligne ne correspond aux filtres.' : 'Aucune ligne pour le moment.'),

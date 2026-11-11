@@ -1686,3 +1686,86 @@ td.bt-cell:has(.bt-linkcell) { padding: 0; }
   .ch-figure { padding: 8px; }
   .ch-legend { justify-content: flex-start; flex-direction: column; }
 }
+
+/* Automatisations : panneau, formulaire, journal ; boutons de ligne */
+.au-panel { display: grid; gap: 14px; min-width: 0; }
+.au-panel p { margin: 0; }
+.au-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); }
+.au-item { display: grid; gap: 6px; padding: 10px 12px; min-width: 0; }
+.au-item + .au-item { border-top: 1px solid var(--border); }
+.au-item-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.au-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.au-summary { font-size: 13.5px; overflow-wrap: anywhere; }
+.au-meta { font-size: 12.5px; }
+.au-item-actions { gap: 4px; }
+.au-foot { gap: 10px; }
+.au-head { gap: 8px; }
+.au-title { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.au-form { min-width: 0; }
+.au-fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin: 0; display: grid; gap: 10px; min-width: 0; }
+.au-fieldset legend { padding: 0 4px; font-size: 13px; font-weight: 600; }
+.au-fieldset .au-fieldset { border-style: dashed; }
+.au-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; min-width: 0; }
+.au-row > .field, .au-row > .au-inline { flex: 1 1 140px; min-width: 0; }
+.au-row > .icon-btn { flex: none; margin-bottom: 4px; }
+.au-inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; min-width: 0; }
+.au-inline > .field { flex: 1 1 140px; min-width: 0; }
+.au-check { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; }
+.au-check input { accent-color: var(--accent); }
+.au-picker { display: grid; gap: 4px; flex: 1 1 180px; min-width: 0; }
+.au-results, .au-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.au-chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 10px; border: 1px solid var(--border-strong); border-radius: 14px; font-size: 13px; }
+.au-chosen { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.au-secret .token-value { min-width: 0; }
+.au-scroll { overflow-x: auto; }
+.au-runs { width: 100%; border-collapse: collapse; font-size: 13px; }
+.au-runs th, .au-runs td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.au-runs th { font-weight: 600; color: var(--text-2); }
+.bt-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
+.bt-t-buttons { white-space: nowrap; }
+.bt-run { white-space: nowrap; }
+.cal-buttons { padding-top: 4px; border-top: 1px solid var(--border); }
+
+/* Formulaires : panneau de la base (réutilise .au-*) et page publique /form/<jeton> */
+.fm-questions { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.fm-question { display: grid; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); min-width: 0; }
+.fm-q-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.fm-q-name { overflow-wrap: anywhere; min-width: 0; }
+.fm-q-tools { display: inline-flex; gap: 2px; margin-left: auto; }
+.fm-q-tools [data-k$='-up'] svg { transform: rotate(180deg); }
+.fm-req { margin-bottom: 8px; }
+.fm-link .token-value { flex: 1 1 220px; }
+.fm-spaces { margin: 0; padding-left: 18px; }
+.pf-page { max-width: 680px; margin: 0 auto; padding: 0 16px 48px; }
+.pf-top { display: flex; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.pf-card { margin-top: 20px; padding: 20px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); display: grid; gap: 12px; min-width: 0; }
+.pf-card > p { margin: 0; }
+.pf-title, .pf-state-title { margin: 0; font-size: 24px; line-height: 1.25; overflow-wrap: anywhere; }
+.pf-state-title:focus, .pf-title:focus { outline: none; }
+.pf-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.pf-who { font-size: 13px; }
+.pf-state { justify-items: center; text-align: center; }
+.pf-form { gap: 16px; }
+.pf-field label, .pf-fieldset legend, .pf-label { font-size: 14px; font-weight: 600; color: var(--text); }
+.pf-fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; min-width: 0; }
+.pf-fieldset legend { padding: 0; margin-bottom: 8px; }
+.pf-req { font-weight: 400; color: var(--text-2); }
+.pf-inline { display: flex; flex-wrap: wrap; gap: 10px; }
+.pf-inline > .field { flex: 1 1 160px; min-width: 0; }
+.pf-inline .field label { font-weight: 500; font-size: 13px; color: var(--text-2); }
+.pf-choices { display: grid; gap: 6px; }
+.pf-check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.pf-check input { margin-top: 3px; flex: none; accent-color: var(--accent); width: 16px; height: 16px; }
+.pf-field .pf-check { font-weight: 400; }
+.pf-field label.pf-check span { font-weight: 600; }
+.pf-results { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.pf-chosen { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; }
+.pf-chosen:empty { display: none; }
+.pf-picker { display: grid; gap: 4px; }
+.pf-error { margin: 0; }
+.pf-foot { gap: 12px; align-items: center; }
+.pf-status { margin: 0; font-size: 13px; }
+.pf-status:empty { display: none; }
+/* Champ piège : hors écran, jamais affiché ni annoncé. */
+.pf-trap { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+@media (max-width: 480px) { .pf-card { padding: 14px; } .pf-title, .pf-state-title { font-size: 20px; } }

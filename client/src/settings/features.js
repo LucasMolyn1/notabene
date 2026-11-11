@@ -9,7 +9,7 @@ import { qrSvg } from '../qr.js';
 import { embedHostsCard, embedOriginsCard } from '../provider-settings.js';
 import { openDrawio, openExcalidraw } from '../diagrams.js';
 import * as A from '../actions.js';
-import { card, pill, status } from './ui.js';
+import { card, pill, status, toggle } from './ui.js';
 
 export function renderDiagrams(el) {
   const drawio = session.config.drawioUrl;
@@ -151,7 +151,7 @@ export function renderTools(el) {
 }
 
 export async function renderWebhooks(el, created = null) {
-  const data = await A.attempt(() => api.get('/admin/webhooks'));
+  const [data, autos] = await Promise.all([A.attempt(() => api.get('/admin/webhooks')), api.get('/admin/automations').catch(() => null)]);
   if (!data) return;
   const name = h('input', { class: 'input', placeholder: 'Nom (ex. Notification Discord)', maxlength: '80' });
   const url = h('input', { class: 'input', placeholder: 'https://…', maxlength: '500' });
@@ -190,8 +190,55 @@ export async function renderWebhooks(el, created = null) {
             },
           }, icon('trash')))))
         : h('p', { class: 'muted' }, 'Aucun webhook configuré.')),
+    autos && automationWebhooksCard(autos),
     card('Nouveau webhook', 'HTTPS obligatoire ; les adresses internes sont refusées (WEBHOOK_ALLOW_PRIVATE=true pour les autoriser en réseau local). Un webhook est désactivé après 10 échecs consécutifs.', h('div', { class: 'stack' },
       name, url,
       h('div', { class: 'row wrap' }, boxes.map((b) => h('label', { class: 'row' }, b.box, b.ev))),
       h('div', null, h('button', { class: 'btn btn-primary btn-sm', onClick: create }, icon('plus', 15), 'Créer le webhook'))))].filter(Boolean));
+}
+
+// Webhooks des automatisations de bases : désactivés par défaut ; les couper bloque aussitôt tout envoi (les automatisations restent).
+function automationWebhooksCard(autos) {
+  const counts = h('p', { class: 'hint' }, `${autos.count} automatisation${autos.count > 1 ? 's' : ''} sur l’instance, dont ${autos.webhookCount} avec un webhook.`);
+  const row = toggle('Autoriser les webhooks d’automatisation', 'Désactivé par défaut. Une fois coupé, aucun envoi n’a lieu ; l’exécution est notée « Webhooks désactivés ».', autos.webhooks, async (on) => {
+    try {
+      await api.put('/admin/automations', { webhooks: on });
+      toast(on ? 'Webhooks d’automatisation autorisés' : 'Webhooks d’automatisation désactivés');
+    } catch (err) {
+      toast(err.message, { kind: 'error' });
+      const input = /** @type {HTMLInputElement | null} */ (row.querySelector('input'));
+      if (input) input.checked = !on;
+    }
+  });
+  return card('Webhooks d’automatisation', 'Permet aux automatisations des bases d’appeler une adresse externe. Chaque envoi passe par le garde réseau (adresses internes refusées), est signé et ne contient que des identifiants. Jamais depuis un espace personnel.',
+    h('div', { class: 'stack' }, row, counts));
+}
+
+// Formulaires des bases : désactivés par défaut. Les couper révoque aussitôt tous les liens publics (les formulaires restent).
+export async function renderForms(el) {
+  const data = await A.attempt(() => api.get('/admin/forms'));
+  if (!data) return;
+  const row = toggle('Autoriser les formulaires des bases', 'Désactivé par défaut. Il faut aussi les autoriser dans chaque espace (paramètres de l’espace) ; jamais dans un espace personnel. Désactiver révoque aussitôt tous les liens.', data.enabled, async (on) => {
+    const input = /** @type {HTMLInputElement | null} */ (row.querySelector('input'));
+    if (!on && data.activeCount > 0 && !await confirmModal({
+      title: 'Désactiver les formulaires',
+      message: `${data.activeCount} lien${data.activeCount > 1 ? 's' : ''} de formulaire cesser${data.activeCount > 1 ? 'ont' : 'a'} aussitôt de fonctionner. Les réactiver ne les fera pas revenir : il faudra créer de nouveaux liens.`,
+      confirm: 'Désactiver', danger: true,
+    })) { if (input) input.checked = true; return; }
+    try {
+      const r = await api.put('/admin/forms', { enabled: on });
+      toast(on ? 'Formulaires autorisés' : `Formulaires désactivés${r.revoked ? ` : ${r.revoked} lien${r.revoked > 1 ? 's' : ''} révoqué${r.revoked > 1 ? 's' : ''}` : ''}`);
+      renderForms(el);
+    } catch (err) {
+      toast(err.message, { kind: 'error' });
+      if (input) input.checked = !on;
+    }
+  });
+  const spaces = store.spaces.filter((s) => s.kind !== 'personal' && s.forms);
+  el.replaceChildren(
+    card('Formulaires des bases', 'Un formulaire ajoute des lignes à une base depuis un lien public, avec un compte ou de façon anonyme si son auteur le choisit. La page du formulaire ne montre jamais les lignes. Anti-robot intégré (sans service tiers), débit et nombre de réponses plafonnés.',
+      h('div', { class: 'stack' }, row,
+        h('p', { class: 'hint' }, `${data.count} formulaire${data.count > 1 ? 's' : ''} sur l’instance, ${data.activeCount} avec un lien actif, dont ${data.anonymousCount} anonyme${data.anonymousCount > 1 ? 's' : ''}.`))),
+    card('Espaces où les formulaires sont permis', 'Réglage de chaque espace : Paramètres, Espaces, Modifier. Le couper révoque les liens des formulaires de l’espace.',
+      spaces.length ? h('ul', { class: 'fm-spaces' }, spaces.map((s) => h('li', null, s.name))) : h('p', { class: 'muted' }, 'Aucun espace ne les permet pour le moment.')));
 }

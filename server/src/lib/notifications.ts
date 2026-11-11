@@ -13,7 +13,7 @@ import { canReadPage } from './page-acl.js';
 import { getPageRow } from './pages.js';
 
 const EMAIL_CHANGES_INTERVAL = 60 * 60_000;
-export type NotificationType = 'comment' | 'reply' | 'page.updated' | 'mention' | 'verification.expiring' | 'verification.expired';
+export type NotificationType = 'comment' | 'reply' | 'page.updated' | 'mention' | 'verification.expiring' | 'verification.expired' | 'automation' | 'form';
 
 interface UserRow { id: string; name: string; email: string | null; role: 'admin' | 'editor' | 'reader'; disabled: number }
 const asAuth = (u: UserRow): Auth => ({ user: { id: u.id, name: u.name, email: u.email, role: u.role }, via: 'session', scopes: new Set(['read']) });
@@ -28,8 +28,11 @@ export const watch = (db: DB, userId: string, pageId: string) =>
   db.prepare('INSERT OR IGNORE INTO page_watch (user_id, page_id, created_at) VALUES (?, ?, ?)').run(userId, pageId, Date.now());
 
 export interface Notifier {
-  /** Dépose une notification (et l'e-mail correspondant) si le destinataire est actif et lit encore la page ; true si déposée. */
-  deliver: (userId: string, type: NotificationType, pageId: string, actorId: string | null) => boolean;
+  /**
+   * Dépose une notification (et l'e-mail correspondant) si le destinataire est actif et lit encore la page ; true si déposée.
+   * `allowSelf` : notifier aussi la personne qui agit (automatisation « me notifier »).
+   */
+  deliver: (userId: string, type: NotificationType, pageId: string, actorId: string | null, opts?: { allowSelf?: boolean }) => boolean;
 }
 
 // Dépôt des notifications, partagé par l'abonnement au bus (ci-dessous) et par les rappels de vérification (verifications.ts).
@@ -37,18 +40,21 @@ export function createNotifier(db: DB, bus: EventBus, mailer: Mailer, config: ()
   const user = (id: string) => db.prepare('SELECT id, name, email, role, disabled FROM users WHERE id = ?').get(id) as UserRow | undefined;
 
   // Renvoie true si une notification a été déposée.
-  const deliver = (userId: string, type: NotificationType, pageId: string, actorId: string | null): boolean => {
+  const deliver = (userId: string, type: NotificationType, pageId: string, actorId: string | null, opts?: { allowSelf?: boolean }): boolean => {
     const target = user(userId);
-    if (!target || target.disabled || userId === actorId) return false;
+    if (!target || target.disabled || (userId === actorId && !opts?.allowSelf)) return false;
     // Accès relu à chaque envoi : une page restreinte ne notifie jamais quelqu'un qui n'y a plus accès.
     if (!canReadPage(db, asAuth(target), pageId)) return false;
     const now = Date.now();
-    // Les modifications se regroupent : une notification non lue par page et par personne.
-    const open = type === 'page.updated'
-      ? db.prepare("SELECT id FROM notifications WHERE user_id = ? AND page_id = ? AND type = 'page.updated' AND read_at IS NULL").get(userId, pageId) as { id: string } | undefined
+    // Les modifications, les automatisations et les réponses aux formulaires se regroupent : une notification non lue par page
+    // (ou base) et par personne.
+    const open = type === 'page.updated' || type === 'automation' || type === 'form'
+      ? db.prepare('SELECT id FROM notifications WHERE user_id = ? AND page_id = ? AND type = ? AND read_at IS NULL').get(userId, pageId, type) as { id: string } | undefined
       : undefined;
-    if (open) db.prepare('UPDATE notifications SET count = count + 1, created_at = ?, actor_id = ? WHERE id = ?').run(now, actorId, open.id);
-    else db.prepare('INSERT INTO notifications (id, user_id, type, page_id, actor_id, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(newId(), userId, type, pageId, actorId, now);
+    // Automatisation et formulaire : aucun auteur enregistré (le nom de la personne qui a déclenché ou répondu ne sort pas).
+    const storedActor = type === 'automation' || type === 'form' ? null : actorId;
+    if (open) db.prepare('UPDATE notifications SET count = count + 1, created_at = ?, actor_id = ? WHERE id = ?').run(now, storedActor, open.id);
+    else db.prepare('INSERT INTO notifications (id, user_id, type, page_id, actor_id, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(newId(), userId, type, pageId, storedActor, now);
     bus.publish({ type: 'notification', data: { userId } });
     void email(target, type, pageId, actorId).catch(() => undefined);
     return true;
@@ -77,6 +83,19 @@ export function createNotifier(db: DB, bus: EventBus, mailer: Mailer, config: ()
     if (type === 'verification.expiring' || type === 'verification.expired') {
       const state = type === 'verification.expiring' ? 'arrive à échéance' : 'a expiré';
       await mailer.send({ to: target.email, ...mails.notification(`BeNote : la vérification de « ${title} » ${state}`, `La vérification de la page « ${title} », dont vous êtes vérificateur, ${state}.\n\nOuvrir la page : ${url}`) });
+      return;
+    }
+    // Automatisation d'une base : ni auteur ni contenu de ligne, seulement le titre de la base et le lien. Au plus un e-mail par
+    // personne, par base et par heure (la notification de la cloche, regroupée, est toujours mise à jour).
+    // Réponse à un formulaire : même règle, sans le contenu de la réponse ni le nom de la personne qui a répondu.
+    if (type === 'automation' || type === 'form') {
+      const last = (db.prepare('SELECT MAX(emailed_at) AS t FROM notifications WHERE user_id = ? AND page_id = ? AND type = ?').get(target.id, pageId, type) as { t: number | null }).t;
+      if (last && Date.now() - last < EMAIL_CHANGES_INTERVAL) return;
+      db.prepare('UPDATE notifications SET emailed_at = ? WHERE id = (SELECT id FROM notifications WHERE user_id = ? AND page_id = ? AND type = ? ORDER BY created_at DESC LIMIT 1)').run(Date.now(), target.id, pageId, type);
+      const mail = type === 'form'
+        ? mails.notification(`BeNote : nouvelle réponse sur « ${title} »`, `Un formulaire de la base « ${title} » a reçu une réponse.\n\nOuvrir la base : ${url}`)
+        : mails.notification(`BeNote : automatisation sur « ${title} »`, `Une automatisation de la base « ${title} » vous a notifié.\n\nOuvrir la base : ${url}`);
+      await mailer.send({ to: target.email, ...mail });
       return;
     }
     const actor = actorId ? user(actorId)?.name ?? 'Quelqu’un' : 'Quelqu’un';

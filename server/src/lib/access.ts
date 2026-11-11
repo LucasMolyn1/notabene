@@ -19,6 +19,7 @@ export interface SpaceRow {
   kind: 'shared' | 'personal';
   owner_id: string | null;
   sharing_enabled: number;
+  forms_enabled: number;
   position: number;
   created_at: number;
   updated_at: number;
@@ -33,6 +34,7 @@ export const toSpace = (s: SpaceRow) => ({
   kind: s.kind,
   ownerId: s.owner_id,
   sharing: !!s.sharing_enabled,
+  forms: !!s.forms_enabled,
   createdAt: s.created_at,
   updatedAt: s.updated_at,
 });

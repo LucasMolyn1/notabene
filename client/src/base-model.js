@@ -19,6 +19,24 @@ export const NO_TEMPLATE_TYPES = new Set([...READ_ONLY_TYPES, 'relation']);
 /** Colonnes de dates lues par la chronologie et le calendrier (une plage porte à la fois le début et la fin). */
 export const isDateCol = (p) => !!p && (p.type === 'date' || p.type === 'date_range');
 
+// ---- Filtres : conditions proposées selon le type de colonne (vues et automatisations) ----
+export const OPERATORS = {
+  text: [['contains', 'contient'], ['eq', 'est'], ['neq', 'n’est pas'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
+  number: [['eq', '='], ['neq', '≠'], ['gt', '>'], ['lt', '<'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
+  date: [['eq', 'le'], ['gt', 'après le'], ['lt', 'avant le'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
+  option: [['eq', 'est'], ['neq', 'n’est pas'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
+  multi: [['contains', 'contient'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
+  checkbox: [['eq', 'est']],
+  link: [['contains', 'contient'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
+  formula: [['contains', 'contient'], ['eq', '='], ['neq', '≠'], ['gt', '>'], ['lt', '<'], ['empty', 'est vide'], ['notempty', 'n’est pas vide']],
+};
+export const opKind = (t) => ({
+  text: 'text', number: 'number', date: 'date', select: 'option', status: 'option', multi_select: 'multi', checkbox: 'checkbox', person: 'link', page_link: 'link',
+  formula: 'formula', relation: 'link', rollup: 'number', url: 'text', email: 'text', phone: 'text', unique_id: 'text', created_by: 'link', updated_by: 'link',
+  created_time: 'date', updated_time: 'date', date_range: 'date',
+}[t] ?? 'text');
+export const DATE_FILTER_TYPES = new Set(['date', 'created_time', 'updated_time', 'date_range']);
+
 /** Plage de dates : { start, end } (fin facultative) ; null si la valeur n'en est pas une. */
 export function rangeOf(v) {
   if (!v || typeof v !== 'object' || typeof v.start !== 'string') return null;

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { can, guard, requireAuth } from '../auth/context.js';
 import { loadReadablePage, loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
+import { breakUsing, buttonsOf } from '../lib/base-automations.js';
 import { computeChart } from '../lib/base-chart.js';
 import { createOrRotateFeed, feedOf, revokeFeed } from '../lib/base-ical.js';
 import {
@@ -108,9 +109,10 @@ export default async function baseRoutes(app: FastifyInstance) {
   const present = (req: FastifyRequest, page: PageRow) => {
     const props = propertiesOf(db, page.id);
     const ctx = ctxOf(req, page);
+    const canWrite = can(req.auth, 'write') && canWritePage(db, req.auth, page.id);
     return {
       page: toMeta(page),
-      canWrite: can(req.auth, 'write') && canWritePage(db, req.auth, page.id),
+      canWrite,
       limits: { rows: MAX_ROWS, properties: MAX_PROPERTIES, relations: MAX_RELATIONS, rollups: MAX_ROLLUPS, links: MAX_LINKS, blockers: MAX_BLOCKERS, depth: MAX_DEPTH, shiftDepth: MAX_SHIFT_DEPTH, shiftRows: MAX_SHIFT_ROWS, delete: MAX_DELETE, templates: MAX_TEMPLATES },
       settings: settingsOf(db, page.id),
       // Agrégat de lignes que le lecteur voit déjà : visible de tout lecteur de la base.
@@ -119,6 +121,8 @@ export default async function baseRoutes(app: FastifyInstance) {
       rows: presentRows(ctx, props, can(req.auth, 'read') && !!req.auth),
       views: viewsOf(db, page.id),
       rowTemplates: presentTemplates(ctx, props, !!req.auth),
+      // Boutons de ligne actifs (identifiant et libellé), seulement pour qui peut cliquer (droit d'écriture, POST .../automations/:aid/run).
+      buttons: canWrite ? buttonsOf(db, page.id) : [],
     };
   };
 
@@ -172,6 +176,8 @@ export default async function baseRoutes(app: FastifyInstance) {
     const page = openBase(req, p.id, 'write');
     const ctx = ctxOf(req, page);
     removeProperty(db, page.id, p.propId, ctx.touched);
+    // Automatisations qui citaient la colonne (ici ou depuis une autre base) : mises en panne, jamais exécutées à moitié.
+    breakUsing(db, p.propId);
     audit(db, req, 'base.property.remove', page.id, ctx.touched?.size ? detail(page, { linked: [...ctx.touched] }) : undefined);
     changed(req, page);
     changedOthers(req, ctx);
@@ -188,6 +194,8 @@ export default async function baseRoutes(app: FastifyInstance) {
     if (b.blockedBy !== undefined) setBlockers(ctx, id, b.blockedBy);
     return { id, shifted: cascadeShift(ctx, id, uid) };
   })();
+  const rowVals = (baseId: string, rowId: string) =>
+    JSON.parse((db.prepare('SELECT vals FROM base_rows WHERE id = ? AND base_id = ?').get(rowId, baseId) as { vals: string } | undefined)?.vals ?? '{}') as Record<string, unknown>;
   // Le texte de recherche ne dépend ni des cases cochées, ni des personnes, ni des pages ou lignes liées : inutile de le refaire pour elles.
   const indexedBy = (pageId: string, patch: Record<string, unknown>, shifted: number) => {
     const props = propertiesOf(db, pageId);
@@ -199,6 +207,8 @@ export default async function baseRoutes(app: FastifyInstance) {
     const b = req.body as z.output<typeof rowCreateBody>;
     const ctx = ctxOf(req, page);
     const { id, shifted } = writeRow(ctx, null, b, userId(req));
+    // Déclencheurs « ligne ajoutée » (écriture d'une personne seulement ; les écritures d'automatisation ne redéclenchent rien).
+    app.automations.rowWritten(page.id, id, null, userId(req));
     changed(req, page, b.templateId !== undefined || indexedBy(page.id, b.values, shifted.length));
     changedOthers(req, ctx);
     return reply.status(201).send(presentRows(ctx, propertiesOf(db, page.id), !!req.auth, id)[0]);
@@ -210,7 +220,12 @@ export default async function baseRoutes(app: FastifyInstance) {
     const page = openBase(req, p.id, 'write');
     const b = req.body as z.output<typeof rowBody>;
     const ctx = ctxOf(req, page);
+    const before = rowVals(page.id, p.rowId);
     const { id, shifted } = writeRow(ctx, p.rowId, b, userId(req));
+    // Déclencheurs « propriété modifiée » : colonnes dont la valeur stockée a réellement changé.
+    const after = rowVals(page.id, id);
+    const diff = new Set([...Object.keys(before), ...Object.keys(after)].filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k])));
+    if (diff.size) app.automations.rowWritten(page.id, id, diff, userId(req));
     changed(req, page, indexedBy(page.id, b.values, shifted.length));
     changedOthers(req, ctx);
     const all = presentRows(ctx, propertiesOf(db, page.id), !!req.auth, [id, ...shifted]);

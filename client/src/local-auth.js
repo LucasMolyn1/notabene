@@ -5,6 +5,14 @@ import { request } from './api.js';
 import { qrSvg } from './qr.js';
 import { toast } from './ui.js';
 
+// Retour après connexion : seulement vers le formulaire public d'une base de cette instance (lien d'un formulaire « réservé
+// aux comptes », voir public-form.js), jamais vers une autre adresse.
+export const FORM_RETURN = /^\/form\/[A-Za-z0-9_-]{32}$/;
+function afterLogin(redirect) {
+  const back = new URLSearchParams(location.search).get('returnTo');
+  location.href = back && FORM_RETURN.test(back) ? back : redirect || '/';
+}
+
 const field = (label, input) => h('label', { class: 'field' }, h('span', null, label), input);
 const input = (props) => h('input', { class: 'input', ...props });
 
@@ -41,7 +49,7 @@ export function localLoginForm(setupRequired) {
         ? { code: setup.value.trim(), email: mail.value, name: name.value, password: pass.value }
         : { email: mail.value, password: pass.value, code: code.value.trim() || undefined };
       const { redirect } = await request('POST', setupRequired ? '/auth/local/setup' : '/auth/local/login', body);
-      location.href = redirect || '/';
+      afterLogin(redirect);
     });
     if (err?.data?.mfaRequired) {
       codeField.hidden = false;
@@ -158,7 +166,7 @@ export function ldapLoginForm() {
     e.preventDefault();
     await submit(button, error, async () => {
       const { redirect } = await request('POST', '/auth/ldap/login', { username: user.value, password: pass.value });
-      location.href = redirect || '/';
+      afterLogin(redirect);
     });
   } }, field('Identifiant de l’annuaire', user), field('Mot de passe', pass), error, button);
 }

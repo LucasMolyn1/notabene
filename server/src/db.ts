@@ -927,6 +927,149 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX base_row_templates_base ON base_row_templates(base_id, position);
   `,
+  // v35 : automatisations et boutons de ligne des bases (lib/base-automations.ts).
+  // - base_automations : déclencheur et actions en JSON validé par le serveur (identifiants et opérateurs fermés, jamais
+  //   d'expression libre) ; adresse et secret du webhook chiffrés (SecretBox), jamais rendus en clair ; `author_id` : personne
+  //   dont les droits sont revérifiés à chaque exécution ; `status` : état posé par le serveur (coupe-circuit, droits, colonne
+  //   disparue) ; fenêtres de comptage pour le coupe-circuit de fréquence. Suit la base (ON DELETE CASCADE).
+  // - base_automation_runs : historique borné des exécutions (codes fermés, nombre de lignes ; jamais de contenu de ligne).
+  // - notifications refaite (SQLite ne modifie pas un CHECK) pour accepter le type `automation`, avec `emailed_at` (dernier
+  //   e-mail envoyé pour cette notification : plafond d'un e-mail d'automatisation par personne, par base et par heure).
+  // Additive (aucune donnée existante modifiée, aucun accès nouveau). Retour arrière : DROP TABLE base_automation_runs;
+  // DROP TABLE base_automations (ses déclencheurs suivent) ; DELETE FROM notifications WHERE type = 'automation' puis refaire
+  // `notifications` avec la contrainte v27, ou restaurer la sauvegarde prise avant la mise à jour.
+  `
+  CREATE TABLE base_automations (
+    id             TEXT PRIMARY KEY,
+    base_id        TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    name           TEXT NOT NULL,
+    kind           TEXT NOT NULL CHECK (kind IN ('row_added', 'property_changed', 'recurrence', 'button')),
+    trigger        TEXT NOT NULL,
+    actions        TEXT NOT NULL,
+    enabled        INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'suspended', 'broken')),
+    status_reason  TEXT CHECK (status_reason IS NULL OR status_reason IN ('errors', 'frequency', 'author', 'access', 'config')),
+    author_id      TEXT REFERENCES users(id) ON DELETE SET NULL,
+    webhook_url    TEXT,
+    webhook_secret TEXT,
+    failures       INTEGER NOT NULL DEFAULT 0,
+    minute_start   INTEGER NOT NULL DEFAULT 0,
+    minute_runs    INTEGER NOT NULL DEFAULT 0,
+    hour_start     INTEGER NOT NULL DEFAULT 0,
+    hour_runs      INTEGER NOT NULL DEFAULT 0,
+    next_run_at    INTEGER,
+    last_run_at    INTEGER,
+    position       REAL NOT NULL DEFAULT 0,
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL
+  );
+  CREATE INDEX base_automations_base ON base_automations(base_id, position);
+  CREATE INDEX base_automations_due ON base_automations(next_run_at) WHERE kind = 'recurrence' AND enabled = 1 AND status = 'active';
+  CREATE INDEX base_automations_author ON base_automations(author_id) WHERE author_id IS NOT NULL;
+  -- Auteur désactivé ou supprimé : ses automatisations (hors boutons, qui agissent avec les droits de la personne qui clique)
+  -- sont suspendues aussitôt, par toutes les voies (administration, SCIM, annuaire). L'exécution le revérifie de toute façon.
+  CREATE TRIGGER base_automations_user_disabled AFTER UPDATE OF disabled ON users WHEN NEW.disabled = 1 AND OLD.disabled = 0
+    BEGIN UPDATE base_automations SET status = 'suspended', status_reason = 'author' WHERE author_id = NEW.id AND kind != 'button'; END;
+  CREATE TRIGGER base_automations_user_deleted BEFORE DELETE ON users
+    BEGIN UPDATE base_automations SET status = 'suspended', status_reason = 'author' WHERE author_id = OLD.id AND kind != 'button'; END;
+
+  CREATE TABLE base_automation_runs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    automation_id TEXT NOT NULL REFERENCES base_automations(id) ON DELETE CASCADE,
+    base_id       TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    at            INTEGER NOT NULL,
+    kind          TEXT NOT NULL,
+    status        TEXT NOT NULL CHECK (status IN ('ok', 'error', 'skipped')),
+    code          TEXT NOT NULL,
+    rows          INTEGER NOT NULL DEFAULT 0,
+    actor_id      TEXT REFERENCES users(id) ON DELETE SET NULL
+  );
+  CREATE INDEX base_automation_runs_automation ON base_automation_runs(automation_id, id);
+  CREATE INDEX base_automation_runs_base ON base_automation_runs(base_id, at);
+  CREATE INDEX base_automation_runs_actor ON base_automation_runs(actor_id) WHERE actor_id IS NOT NULL;
+
+  CREATE TABLE notifications_v35 (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type       TEXT NOT NULL CHECK (type IN ('comment', 'reply', 'page.updated', 'mention', 'verification.expiring', 'verification.expired', 'automation')),
+    page_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    actor_id   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    count      INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    read_at    INTEGER,
+    emailed_at INTEGER
+  );
+  INSERT INTO notifications_v35 (id, user_id, type, page_id, actor_id, count, created_at, read_at)
+    SELECT id, user_id, type, page_id, actor_id, count, created_at, read_at FROM notifications;
+  DROP TABLE notifications;
+  ALTER TABLE notifications_v35 RENAME TO notifications;
+  CREATE INDEX notifications_user ON notifications(user_id, created_at DESC);
+  `,
+  // v36 : formulaires des bases (lib/base-forms.ts).
+  // - spaces.forms_enabled : formulaires permis dans l'espace, désactivé par défaut (réglage d'administrateur ; toujours 0 pour
+  //   un espace personnel).
+  // - base_forms : configuration d'un formulaire (questions en JSON validé par le serveur : colonne, libellé, obligatoire),
+  //   mode `accounts` (par défaut) ou `anonymous` ; `token_hash` : empreinte SHA-256 du jeton du lien public (jamais le jeton),
+  //   NULL = aucun lien, révoqué si le compte qui l'a créé (`link_by`) est désactivé ou supprimé ; `restricted_key` : restriction de la base confirmée ; `author_id` : dernière personne qui a configuré
+  //   le formulaire (destinataire de la notification facultative) ; fenêtre horaire pour le plafond de réponses. Suit la base.
+  // - notifications refaite (SQLite ne modifie pas un CHECK) pour accepter le type `form` ; l'auteur des notifications
+  //   d'automatisation est effacé (il n'est plus enregistré pour les types `automation` et `form`).
+  // Additive : aucune donnée existante modifiée, aucun accès nouveau (tout est désactivé). Retour arrière : DROP TABLE base_forms ;
+  // ALTER TABLE spaces DROP COLUMN forms_enabled ; DELETE FROM notifications WHERE type = 'form' puis refaire `notifications`
+  // avec la contrainte v35, ou restaurer la sauvegarde prise avant la mise à jour.
+  `
+  ALTER TABLE spaces ADD COLUMN forms_enabled INTEGER NOT NULL DEFAULT 0 CHECK (forms_enabled IN (0, 1));
+
+  CREATE TABLE base_forms (
+    id                 TEXT PRIMARY KEY,
+    base_id            TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    title              TEXT NOT NULL,
+    description        TEXT NOT NULL DEFAULT '',
+    thanks             TEXT NOT NULL DEFAULT '',
+    questions          TEXT NOT NULL,
+    mode               TEXT NOT NULL DEFAULT 'accounts' CHECK (mode IN ('accounts', 'anonymous')),
+    notify             INTEGER NOT NULL DEFAULT 0 CHECK (notify IN (0, 1)),
+    token_hash         TEXT,
+    link_created_at    INTEGER,
+    link_by            TEXT REFERENCES users(id) ON DELETE SET NULL,
+    restricted_key     TEXT,
+    author_id          TEXT REFERENCES users(id) ON DELETE SET NULL,
+    hour_start         INTEGER NOT NULL DEFAULT 0,
+    hour_count         INTEGER NOT NULL DEFAULT 0,
+    responses          INTEGER NOT NULL DEFAULT 0,
+    last_response_at   INTEGER,
+    position           REAL NOT NULL DEFAULT 0,
+    created_at         INTEGER NOT NULL,
+    updated_at         INTEGER NOT NULL
+  );
+  CREATE INDEX base_forms_base ON base_forms(base_id, position);
+  CREATE UNIQUE INDEX base_forms_token ON base_forms(token_hash) WHERE token_hash IS NOT NULL;
+  CREATE INDEX base_forms_author ON base_forms(author_id) WHERE author_id IS NOT NULL;
+  CREATE INDEX base_forms_link_by ON base_forms(link_by) WHERE link_by IS NOT NULL;
+  -- Compte qui a créé (ou renouvelé) le lien désactivé ou supprimé : le lien est révoqué aussitôt, par toutes les voies
+  -- (administration, SCIM, annuaire), comme un flux iCalendar. La configuration reste.
+  CREATE TRIGGER base_forms_user_disabled AFTER UPDATE OF disabled ON users WHEN NEW.disabled = 1 AND OLD.disabled = 0
+    BEGIN UPDATE base_forms SET token_hash = NULL, link_created_at = NULL WHERE link_by = NEW.id; END;
+  CREATE TRIGGER base_forms_user_deleted BEFORE DELETE ON users
+    BEGIN UPDATE base_forms SET token_hash = NULL, link_created_at = NULL WHERE link_by = OLD.id; END;
+
+  CREATE TABLE notifications_v36 (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type       TEXT NOT NULL CHECK (type IN ('comment', 'reply', 'page.updated', 'mention', 'verification.expiring', 'verification.expired', 'automation', 'form')),
+    page_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    actor_id   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    count      INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    read_at    INTEGER,
+    emailed_at INTEGER
+  );
+  INSERT INTO notifications_v36 (id, user_id, type, page_id, actor_id, count, created_at, read_at, emailed_at)
+    SELECT id, user_id, type, page_id, CASE WHEN type = 'automation' THEN NULL ELSE actor_id END, count, created_at, read_at, emailed_at FROM notifications;
+  DROP TABLE notifications;
+  ALTER TABLE notifications_v36 RENAME TO notifications;
+  CREATE INDEX notifications_user ON notifications(user_id, created_at DESC);
+  `,
 ];
 
 export function openDb(file: string): DB {
