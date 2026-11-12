@@ -1,7 +1,16 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { ADMIN } from './accounts';
 import { adminContext, api, createLocalUser, loginUi, PASSWORD, sessionContext } from './helpers';
+
+// Valide la cellule en cours et attend la réponse du serveur : la liste se redessine à l'arrivée de la réponse, et un éditeur
+// ouvert entre-temps serait détruit (test instable sur un runner lent).
+async function saveCell(page: Page) {
+  const saved = page.waitForResponse((r) => r.request().method() === 'PATCH' && /\/rows\//.test(r.url()));
+  await page.keyboard.press('Enter');
+  await saved;
+}
+
 
 async function csrfOf(ctx: import('@playwright/test').BrowserContext) {
   return ((await (await ctx.request.get('/api/v3/me')).json()) as { csrf: string }).csrf;
@@ -48,10 +57,10 @@ test('créer une base, ses colonnes et ses lignes, filtrer, trier, exporter', as
     const row = page.locator('tbody tr').last();
     await row.getByRole('button', { name: /modifier Nom\)?$/i }).click();
     await page.getByRole('textbox', { name: 'Nom' }).fill(nom);
-    await page.keyboard.press('Enter');
+    await saveCell(page);
     await row.getByRole('button', { name: /modifier Quantité\)?$/i }).click();
     await page.getByRole('spinbutton', { name: 'Quantité' }).fill(qte);
-    await page.keyboard.press('Enter');
+    await saveCell(page);
     await row.getByRole('button', { name: /modifier État\)?$/i }).click();
     await page.getByRole('combobox', { name: 'État' }).selectOption({ label: etat });
     await expect(row.getByText(etat)).toBeVisible();
