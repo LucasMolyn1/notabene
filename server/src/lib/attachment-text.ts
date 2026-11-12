@@ -111,7 +111,8 @@ export interface AttachmentHit {
 }
 
 /** Pages dont une pièce jointe contient les mots cherchés (nom ou texte). Les droits sont vérifiés par l'appelant, page par page. */
-export function searchAttachments(db: DB, query: string, spaceIds: string[], limit = 100, label: string | null = null): AttachmentHit[] {
+// `offset` permet la lecture par lots (ordre stable : rang puis numéro de ligne).
+export function searchAttachments(db: DB, query: string, spaceIds: string[], limit = 100, label: string | null = null, offset = 0): AttachmentHit[] {
   const match = ftsQuery(query, 'AND');
   if (!match) return [];
   return db.prepare(
@@ -124,6 +125,6 @@ export function searchAttachments(db: DB, query: string, spaceIds: string[], lim
        JOIN pages p ON p.id = a.page_id
      WHERE attachments_fts MATCH ? AND p.deleted_at IS NULL AND p.space_id IN (SELECT value FROM json_each(?))
        AND (? IS NULL OR EXISTS (SELECT 1 FROM page_labels l WHERE l.page_id = p.id AND l.name = ?))
-     ORDER BY rank LIMIT ?`,
-  ).all(match, JSON.stringify(spaceIds), label, label, limit) as AttachmentHit[];
+     ORDER BY rank, t.seq LIMIT ? OFFSET ?`,
+  ).all(match, JSON.stringify(spaceIds), label, label, limit, offset) as AttachmentHit[];
 }

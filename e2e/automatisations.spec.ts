@@ -243,3 +243,71 @@ test('automatisations sur téléphone (375 px) : panneau et boutons sans défile
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
   await ctx.close();
 });
+
+test('automatisation : nom de la personne et titre de la page choisies, lus dans les libellés du serveur', async ({ page, browser }) => {
+  const b = await autoBase(browser, 'Automatisations libellés e2e');
+  const admin = await adminContext(browser);
+  const me = (await (await admin.request.get('/api/v3/me')).json()) as { user: { id: string } };
+  const qui = (await (await api(admin.request, 'POST', `/bases/${b.id}/properties`, { name: 'Responsable', type: 'person' })).json()) as Prop;
+  const lien = (await (await api(admin.request, 'POST', `/bases/${b.id}/properties`, { name: 'Référence', type: 'page_link' })).json()) as Prop;
+  expect((await api(admin.request, 'POST', `/bases/${b.id}/automations`, {
+    name: 'Attribuer', trigger: { type: 'button', label: 'Attribuer' },
+    actions: [{ type: 'set_property', propertyId: qui.id, value: me.user.id }, { type: 'set_property', propertyId: lien.id, value: b.id }],
+  })).status()).toBe(201);
+  await admin.close();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto(`/p/${b.id}`);
+  await openPanel(page);
+  const dlg = panel(page);
+  await dlg.getByRole('button', { name: 'Modifier Attribuer' }).click();
+  // Le nom et le titre remplacent le texte générique.
+  const a1 = dlg.getByRole('group', { name: 'Action 1' });
+  await expect(a1.locator('.au-chosen')).toContainText('Admin E2E');
+  await expect(a1).not.toContainText('Personne déjà choisie');
+  const a2 = dlg.getByRole('group', { name: 'Action 2' });
+  await expect(a2.locator('.au-chosen')).toContainText('Automatisations libellés e2e');
+  await expect(a2).not.toContainText('Page déjà choisie');
+  await dlg.getByRole('button', { name: 'Annuler' }).click();
+});
+
+test('chronologie : boutons de ligne dans la fiche d’une barre et dans le tableau des dates, focus conservé', async ({ page, browser }) => {
+  const b = await autoBase(browser, 'Chronologie boutons e2e');
+  const [todo, , done] = b.statut.options;
+  const admin = await adminContext(browser);
+  const debut = (await (await api(admin.request, 'POST', `/bases/${b.id}/properties`, { name: 'Début', type: 'date' })).json()) as Prop;
+  const detail = (await (await api(admin.request, 'GET', `/bases/${b.id}`)).json()) as { rows: { id: string }[]; views: { id: string }[] };
+  const today = new Date().toISOString().slice(0, 10);
+  expect((await api(admin.request, 'PATCH', `/bases/${b.id}/rows/${detail.rows[0]!.id}`, { values: { [debut.id]: today, [b.statut.id]: todo!.id } })).ok()).toBeTruthy();
+  expect((await api(admin.request, 'PATCH', `/bases/${b.id}/settings`, { startPropertyId: debut.id })).ok()).toBeTruthy();
+  expect((await api(admin.request, 'PATCH', `/bases/${b.id}/views/${detail.views[0]!.id}`, { config: { type: 'timeline', scale: 'week', sort: [], filters: [], hidden: [] } })).ok()).toBeTruthy();
+  expect((await api(admin.request, 'POST', `/bases/${b.id}/automations`, {
+    name: 'Marquer terminé', trigger: { type: 'button', label: 'Terminer' }, actions: [{ type: 'set_property', propertyId: b.statut.id, value: done!.id }],
+  })).status()).toBe(201);
+  await admin.close();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto(`/p/${b.id}`);
+
+  // Barres : Entrée sur la barre ouvre la fiche, qui porte les boutons ; le clic ferme la fiche et rend le focus à la barre.
+  const bar = page.getByRole('button', { name: /^Existante, le/ });
+  await bar.focus();
+  await page.keyboard.press('Enter');
+  const fiche = page.getByRole('form', { name: 'Dates de Existante' });
+  await expect(fiche.getByRole('group', { name: 'Boutons de Existante' })).toBeVisible();
+  const run = page.waitForResponse((r) => r.url().includes('/run') && r.request().method() === 'POST');
+  await fiche.getByRole('button', { name: 'Terminer (Existante)' }).click();
+  expect((await run).ok()).toBeTruthy();
+  await expect(page.locator('.toast').filter({ hasText: '« Terminer » : fait.' })).toBeVisible();
+  await expect(fiche).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Existante, le/ })).toBeFocused();
+
+  // Tableau des dates : colonne « Boutons », focus gardé sur le bouton après le nouveau rendu.
+  await page.getByRole('button', { name: 'Tableau des dates' }).click();
+  const table = page.getByRole('table', { name: 'Chronologie sous forme de tableau' });
+  await expect(table.getByRole('columnheader', { name: 'Boutons' })).toBeVisible();
+  const run2 = page.waitForResponse((r) => r.url().includes('/run') && r.request().method() === 'POST');
+  await table.getByRole('button', { name: 'Terminer (Existante)' }).click();
+  expect((await run2).ok()).toBeTruthy();
+  await expect(page.getByRole('button', { name: 'Terminer (Existante)' })).toBeFocused();
+});

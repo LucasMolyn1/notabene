@@ -714,6 +714,21 @@ function syncMirrors(ctx: Ctx, props: Property[], rowId: string, before: Record<
   }
 }
 
+// Lecture paginée des lignes : ordre de la base (position, création, identifiant), curseur de clé sur ces trois valeurs.
+// Les filtres et tris des vues ne sont pas appliqués ici ; formules et cumuls restent calculés ligne par ligne comme en lecture complète.
+export const MAX_ROW_PAGE = 500;
+export type RowCursor = { p: number; c: number; i: string };
+export function rowPage(db: DB, baseId: string, after: RowCursor | null, limit: number): { ids: string[]; next: RowCursor | null } {
+  const rows = db.prepare(
+    `SELECT id, position, created_at FROM base_rows WHERE base_id = ?
+       AND (? IS NULL OR position > ? OR (position = ? AND (created_at > ? OR (created_at = ? AND id > ?))))
+     ORDER BY position, created_at, id LIMIT ?`,
+  ).all(baseId, after ? 1 : null, after?.p ?? 0, after?.p ?? 0, after?.c ?? 0, after?.c ?? 0, after?.i ?? '', limit + 1) as { id: string; position: number; created_at: number }[];
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return { ids: page.map((r) => r.id), next: rows.length > limit && last ? { p: last.position, c: last.created_at, i: last.id } : null };
+}
+
 export const rowCount = (db: DB, baseId: string) => (db.prepare('SELECT COUNT(*) AS n FROM base_rows WHERE base_id = ?').get(baseId) as { n: number }).n;
 
 const baseChars = (db: DB, baseId: string) => (db.prepare('SELECT COALESCE(SUM(length(vals)), 0) AS n FROM base_rows WHERE base_id = ?').get(baseId) as { n: number }).n;
@@ -839,8 +854,8 @@ interface Target { level: Level; title: Property | undefined; props: Map<string,
 export function presentRows(ctx: Ctx, props: Property[], canSeeNames: boolean, only?: string | string[], budget: Budget = readBudget()): PresentedRow[] {
   const { db, baseId } = ctx;
   const rows = (only !== undefined
-    ? db.prepare('SELECT * FROM base_rows WHERE base_id = ? AND id IN (SELECT value FROM json_each(?)) ORDER BY position, created_at').all(baseId, JSON.stringify(Array.isArray(only) ? only : [only]))
-    : db.prepare('SELECT * FROM base_rows WHERE base_id = ? ORDER BY position, created_at LIMIT ?').all(baseId, MAX_ROWS)) as RowRow[];
+    ? db.prepare('SELECT * FROM base_rows WHERE base_id = ? AND id IN (SELECT value FROM json_each(?)) ORDER BY position, created_at, id').all(baseId, JSON.stringify(Array.isArray(only) ? only : [only]))
+    : db.prepare('SELECT * FROM base_rows WHERE base_id = ? ORDER BY position, created_at, id LIMIT ?').all(baseId, MAX_ROWS)) as RowRow[];
   const parsed = rows.map((r) => ({ r, vals: JSON.parse(r.vals) as Record<string, unknown> }));
   // Auteurs de création et de modification : nommés comme une cellule personne (mêmes règles de lecture).
   const authors: string[] = [];

@@ -6,6 +6,7 @@ import { clonerFor, loadReadablePage, loadWritablePage, readableSpaceIds } from 
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
 import { hasPageLink } from '../lib/content.js';
+import { fillReadable } from '../lib/fill.js';
 import { labelsOf, normalizeLabel, pageIdsWithLabel } from '../lib/labels.js';
 import { filterReadable } from '../lib/page-acl.js';
 import { searchAttachments } from '../lib/attachment-text.js';
@@ -20,6 +21,10 @@ const patchBody = z.object({
 });
 
 const etag = (version: number) => `"${version}"`;
+
+// Plafonds de la recherche paginée : pages lisibles retenues, pièces jointes lisibles retenues.
+const SEARCH_MAX = 500;
+const SEARCH_MAX_ATTACHMENTS = 200;
 
 export default async function pageQueryRoutes(app: FastifyInstance) {
   const { db, bus } = app;
@@ -106,18 +111,34 @@ export default async function pageQueryRoutes(app: FastifyInstance) {
 
   app.get('/search', {
     schema: { tags: ['search'], summary: 'Recherche plein texte paginée', querystring: pageQuery.extend({ q: z.string().trim().min(1).max(200), spaceId: idSchema.optional(), label: z.string().min(1).max(80).optional() }) },
+    // Une recherche peut relancer plusieurs requêtes plein texte quand beaucoup de résultats sont illisibles : limite propre.
+    config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
   }, async (req) => {
     const { q, limit, cursor, spaceId, label } = req.query as { q: string; limit: number; cursor?: string; spaceId?: string; label?: string };
     const { o: offset } = decodeCursor(cursor, z.object({ o: z.number().int().min(0).max(1000) })) ?? { o: 0 };
     // Le classement est recalculé à chaque appel : le curseur est un décalage dans la liste filtrée (limité à 500 résultats).
     const spaces = readableSpaceIds(db, req).filter((id) => !spaceId || id === spaceId);
     const lbl = label === undefined ? null : normalizeLabel(label);
-    const all: (Omit<ReturnType<typeof searchPages>[number], 'text' | 'rank'> & { attachment?: { id: string; name: string } })[] = filterReadable(db, req.auth, searchPages(db, q, spaces, 500, 'AND', lbl))
+    // Remplissage borné : les résultats illisibles sont écartés lot par lot jusqu'à 500 pages lisibles (2000 lignes lues au
+    // plus). L'arrêt ne dépend que de la requête et des données, jamais du décalage : les curseurs restent cohérents.
+    const pageHits = fillReadable<ReturnType<typeof searchPages>[number], number>({
+      want: SEARCH_MAX, batch: SEARCH_MAX, start: 0,
+      fetch: (from, n) => searchPages(db, q, spaces, n, 'AND', lbl, from ?? 0, false),
+      keep: (rows) => filterReadable(db, req.auth, rows),
+      advance: (from, rows) => (from ?? 0) + rows.length,
+    }).items;
+    const all: (Omit<ReturnType<typeof searchPages>[number], 'text' | 'rank'> & { attachment?: { id: string; name: string } })[] = pageHits
       .map(({ text: _text, rank: _rank, ...r }) => r);
     // Pièces jointes (texte des PDF, Word et fichiers texte, ou nom du fichier) : la page porteuse est ajoutée après les pages qui
     // correspondent elles-mêmes, et seulement si elle est lisible (mêmes droits que pour le texte des pages).
     const byId = new Map(all.map((r) => [r.id, r]));
-    for (const hit of filterReadable(db, req.auth, searchAttachments(db, q, spaces, 200, lbl))) {
+    const attachmentHits = fillReadable<ReturnType<typeof searchAttachments>[number], number>({
+      want: SEARCH_MAX_ATTACHMENTS, batch: SEARCH_MAX_ATTACHMENTS, start: 0, maxRows: 600,
+      fetch: (from, n) => searchAttachments(db, q, spaces, n, lbl, from ?? 0),
+      keep: (rows) => filterReadable(db, req.auth, rows),
+      advance: (from, rows) => (from ?? 0) + rows.length,
+    }).items;
+    for (const hit of attachmentHits) {
       const known = byId.get(hit.id);
       if (known) { known.attachment ??= { id: hit.attachmentId, name: hit.attachmentName }; continue; }
       const { attachmentId, attachmentName, rank: _rank, ...page } = hit;

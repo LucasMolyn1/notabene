@@ -163,6 +163,8 @@ describe('pages à permissions restreintes', () => {
     const ed2 = await login('ed2');
     const refused = await call(ed2, 'PUT', '/api/v3/pages/secret/share', {});
     expect(refused.statusCode).toBe(409);
+    // Le code métier arrive au client (problem+json), il n'est plus écrasé par la catégorie générique.
+    expect(refused.json()).toMatchObject({ status: 409, code: 'restricted' });
     expect((await call(ed2, 'GET', '/api/v3/pages/secret/share')).json().restricted).toBe(true);
     const ok = await call(ed2, 'PUT', '/api/v3/pages/secret/share', { confirmRestricted: true });
     expect(ok.statusCode).toBe(201);

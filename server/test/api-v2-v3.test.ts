@@ -5,6 +5,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { type DB, openDb } from '../src/db.js';
 import { hashPassword } from '../src/lib/password.js';
+import { createPage } from '../src/lib/pages.js';
 import { seedDemo } from '../src/seed.js';
 
 const env = { NODE_ENV: 'test',  PUBLIC_URL: 'http://localhost:3000', ENCRYPTION_KEY: randomBytes(32).toString('base64'), AUTH_LOCAL: 'true', SEED_DEMO: 'false' };
@@ -62,6 +63,8 @@ describe('API v2', () => {
     expect(res.statusCode).toBe(400);
     expect(res.headers['content-type']).toContain('application/problem+json');
     expect(res.json()).toMatchObject({ type: 'about:blank', title: 'Bad Request', status: 400, instance: '/api/v3/pages' });
+    // Sans code métier, `code` garde la catégorie générique (compatibilité).
+    expect(['http', 'validation']).toContain(res.json().code);
     // Les routes d'authentification gardent le format { error, message }.
     const auth = await app.inject({ method: 'POST', url: '/auth/local/login', payload: { email: 'x@example.com', password: 'faux' } });
     expect(auth.json()).toMatchObject({ error: 'http' });
@@ -156,6 +159,26 @@ describe('API v3 : permissions par page', () => {
     const ed = await login('ed1@example.com');
     expect((await call(ed, 'PUT', `/api/v3/pages/${secret()}/permissions`, { entries: [] })).statusCode).toBe(403);
     expect((await call(await login('admin@example.com'), 'PUT', `/api/v3/pages/${secret()}/permissions`, { entries: [{ userId: 'fantome', level: 'read' }] })).statusCode).toBe(400);
+  });
+
+  it('recherche : les résultats lisibles arrivent malgré plus de 500 résultats restreints en tête (remplissage borné)', async () => {
+    const admin = await login('admin@example.com');
+    const ed2 = await login('ed2@example.com');
+    await restrict(admin, [{ userId: 'ed1', level: 'write' }]);
+    // 600 sous-pages cachées au titre court (mieux classées), puis 3 pages lisibles au titre long (moins bien classées).
+    db.transaction(() => {
+      for (let i = 0; i < 600; i++) createPage(db, { spaceId: teamSpace(), parentId: secret(), title: `zorglub ${i}` }, null);
+      for (let i = 0; i < 3; i++) createPage(db, { spaceId: teamSpace(), title: `zorglub lisible numéro ${i} avec un titre nettement plus long que les autres` }, null);
+    })();
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const body = (await call(ed2, 'GET', `/api/v3/search?q=zorglub&limit=2${cursor ? `&cursor=${cursor}` : ''}`)).json() as { items: { title: string }[]; nextCursor: string | null };
+      seen.push(...body.items.map((i) => i.title));
+      cursor = body.nextCursor;
+    } while (cursor);
+    expect(seen).toHaveLength(3);
+    expect(seen.every((t) => t.startsWith('zorglub lisible'))).toBe(true);
   });
 
   it('cache une page restreinte partout (liste, lecture, recherche, export, IA, versions, sous-pages)', async () => {

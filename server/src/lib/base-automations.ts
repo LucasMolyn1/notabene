@@ -42,7 +42,7 @@ import type { EventBus } from './events.js';
 import { HttpError, idSchema, newId } from './http.js';
 import { readersAmong } from './mentions.js';
 import type { Notifier } from './notifications.js';
-import { canReadPage } from './page-acl.js';
+import { canReadPage, filterReadable } from './page-acl.js';
 import { inPersonalSpace } from './personal-spaces.js';
 import { spaceRoles } from './space-access.js';
 import { postSigned } from './webhooks.js';
@@ -403,6 +403,11 @@ export interface PresentedAutomation {
   id: string; name: string; enabled: boolean; status: Status; statusReason: Reason | null; trigger: Trigger | null; actions: unknown[];
   author: { id: string; name: string } | null; masked: boolean; failures: number; nextRunAt: number | null; lastRunAt: number | null;
   createdAt: number; updatedAt: number;
+  /**
+   * Libellés des valeurs fixes de colonnes Personne et Page (`set_property.value`, `add_row.values`) : identifiant -> nom ou
+   * titre, `null` si le lecteur ne peut pas le voir (personne qui ne lit pas la base visée, page illisible ou à la corbeille).
+   */
+  labels: { people: Record<string, string | null>; pages: Record<string, string | null> };
 }
 
 /**
@@ -421,15 +426,25 @@ export function presentAutomation(db: DB, viewer: Auth | null, row: AutomationRo
     if (p.type === 'page_link') return { keep: canReadPage(db, viewer, v) };
     return { keep: true };
   };
+  // Valeurs fixes gardées à nommer : personnes par base visée (une personne n'est nommée que si elle lit cette base, comme
+  // dans une cellule), pages (titre seulement si le lecteur les lit).
+  const peopleByBase = new Map<string, Set<string>>();
+  const pageIds = new Set<string>();
+  const collect = (baseId: string, propId: string, v: unknown) => {
+    const p = propsOf(baseId).find((x) => x.id === propId);
+    if (typeof v !== 'string' || !p) return;
+    if (p.type === 'person') { if (!peopleByBase.has(baseId)) peopleByBase.set(baseId, new Set()); peopleByBase.get(baseId)!.add(v); }
+    else if (p.type === 'page_link') pageIds.add(v);
+  };
   const actions = (parseActions(row.actions) ?? []).map((a): unknown => {
     if (a.type === 'add_row') {
       if (baseLevel(ctx, a.baseId) === 'none') { masked = true; return { type: 'add_row', baseId: null, values: {} }; }
       const values: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(a.values)) { if (maskValue(a.baseId, k, v).keep) values[k] = v; else masked = true; }
+      for (const [k, v] of Object.entries(a.values)) { if (maskValue(a.baseId, k, v).keep) { values[k] = v; collect(a.baseId, k, v); } else masked = true; }
       return { ...a, values };
     }
     if (a.type === 'set_property') {
-      if (maskValue(row.base_id, a.propertyId, a.value).keep) return a;
+      if (maskValue(row.base_id, a.propertyId, a.value).keep) { collect(row.base_id, a.propertyId, a.value); return a; }
       masked = true;
       return { ...a, value: null };
     }
@@ -441,10 +456,21 @@ export function presentAutomation(db: DB, viewer: Auth | null, row: AutomationRo
     return a;
   });
   const author = row.author_id ? readersAmong(db, row.base_id, [row.author_id], 1)[0] ?? null : null;
+  const labels: PresentedAutomation['labels'] = { people: {}, pages: {} };
+  for (const [baseId, ids] of peopleByBase) {
+    for (const id of ids) labels.people[id] ??= null;
+    if (viewer) for (const u of readersAmong(db, baseId, [...ids], ids.size)) labels.people[u.id] = u.name;
+  }
+  if (pageIds.size) {
+    for (const id of pageIds) labels.pages[id] = null;
+    const found = db.prepare('SELECT id, title FROM pages WHERE deleted_at IS NULL AND id IN (SELECT value FROM json_each(?))')
+      .all(JSON.stringify([...pageIds])) as { id: string; title: string }[];
+    for (const pg of filterReadable(db, viewer, found)) labels.pages[pg.id] = pg.title;
+  }
   return {
     id: row.id, name: row.name, enabled: !!row.enabled, status: row.status, statusReason: row.status_reason, trigger: parseTrigger(row.trigger), actions,
     author, masked, failures: row.failures, nextRunAt: row.kind === 'recurrence' ? row.next_run_at : null, lastRunAt: row.last_run_at,
-    createdAt: row.created_at, updatedAt: row.updated_at,
+    createdAt: row.created_at, updatedAt: row.updated_at, labels,
   };
 }
 

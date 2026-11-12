@@ -1188,7 +1188,7 @@ export async function showBase(initial) {
       canWrite() && h('td', { class: 'bt-cell bt-row-actions' }, h('button', { class: 'icon-btn', 'aria-label': 'Supprimer la ligne', title: 'Supprimer la ligne', onClick: () => removeRow(l.row) }, icon('trash', 14))))));
 
     const mainEl = c.type === 'kanban' ? boardEl(c, rows)
-      : c.type === 'timeline' ? timelineEl({ data, rows, config: c, canWrite: canWrite(), titleOf, state: tree, patchRow, setConfig, openSettings, announce })
+      : c.type === 'timeline' ? timelineEl({ data, rows, config: c, canWrite: canWrite(), titleOf, state: tree, patchRow, setConfig, openSettings, announce, rowButtons: (row, inPopover) => buttonsEl(row, inPopover ? 'tl-buttons' : '', inPopover ? closePopover : null) })
         : c.type === 'calendar' ? calendarEl({ baseId: id, data, rows, config: c, canWrite: canWrite(), titleOf, state: tree, patchRow, addRow, removeRow, setConfig, announce, rowButtons: (row) => buttonsEl(row, 'cal-buttons', closePopover) })
         : c.type === 'chart' ? chartEl({ baseId: id, viewId: view().id, data, config: c, canWrite: canWrite(), state: tree, stamp: loadSeq, setConfig, whenSaved, announce })
         : h('div', { class: 'bt-scroll' }, h('table', { class: 'bt-table', 'aria-label': 'Lignes de la base', 'aria-rowcount': String(lines.length + 1) }, head, tbody));

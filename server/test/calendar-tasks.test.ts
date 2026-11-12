@@ -317,7 +317,9 @@ describe('flux iCalendar : lecture publique', () => {
     await restrict(p.id, [{ userId: 'ed1', level: 'write' }]);
     same(await feed(p.token));
     // Base restreinte : confirmation demandée (409), puis plus pour la même restriction.
-    expect((await createFeed(p.ed, p.id, 409)).json().detail).toContain('permissions restreintes');
+    const refused = (await createFeed(p.ed, p.id, 409)).json();
+    expect(refused.detail).toContain('permissions restreintes');
+    expect(refused.code).toBe('restricted');
     await createFeed(p.ed, p.id, 409, { confirmRestricted: false });
     const t2 = tokenOf((await createFeed(p.ed, p.id, 200, { confirmRestricted: true })).json().url as string);
     expect((await feed(t2)).statusCode).toBe(200);

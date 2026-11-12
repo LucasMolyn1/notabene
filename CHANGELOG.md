@@ -4,6 +4,21 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [3.18.1] - 2026-11-12
+
+### Ajouté
+- **Bases : lecture paginée des lignes** : `GET /api/v3/bases/:id/rows` rend `{ items, total, nextCursor }`. Sans paramètre, toutes les lignes (comme `GET /api/v3/bases/:id`) ; avec `limit` (500 au plus) et `cursor`, une page dans l'ordre de la base. Formules et cumuls calculés comme en lecture complète ; filtres et tris des vues toujours appliqués par le client.
+- **Automatisations : libellés des valeurs fixes** : champ `labels` (`people` : identifiant -> nom, `pages` : identifiant -> titre) dans chaque automatisation rendue, seulement pour ce que la personne qui lit peut voir, `null` sinon.
+
+### Corrigé
+- **Erreurs de l'API v3** : le code métier d'une erreur (`code: "restricted"` des partages publics, du flux iCalendar et des formulaires) n'est plus écrasé par la catégorie générique `http` ; sans code métier, `code` garde sa valeur (`http`, `validation`, `internal`). Les formulaires gardent aussi `reason`.
+- **Notifications et recherche** : quand des pages devenues restreintes sont écartées, la page de résultats est remplie par une boucle bornée (tours et lignes lues plafonnés) ; si le plafond est atteint, le curseur des notifications reprend après la dernière ligne lue au lieu de perdre la suite. La recherche et l'assistant (RAG) relisent de même au-delà des premiers résultats illisibles.
+- **Sécurité (documentation)** : décision D8 ajoutée aux limites connues (`GET /pages/:id/mentionable` inchangée).
+- **Interface : boutons de ligne dans la chronologie** : la fiche d'une barre (clic ou Entrée) porte les boutons de ligne, comme celle du calendrier ; le « Tableau des dates » a une colonne « Boutons ». Le focus revient à la barre ou reste sur le bouton après l'exécution.
+- **Interface : automatisations** : une personne ou une page choisie comme valeur fixe s'affiche par son nom ou son titre (champ `labels`), au lieu de « Personne déjà choisie » ou « Page déjà choisie » ; le texte générique reste quand le serveur ne le donne pas.
+- **Interface : notifications** : une page courte ou vide accompagnée d'un curseur n'est plus prise pour la fin de la liste ; le chargement continue (5 requêtes au plus), puis un bouton « Charger plus » prend le relais.
+- **Interface : formulaires** : la confirmation d'une base restreinte reconnaît le code métier dans `code` comme dans `reason`.
+
 ## [3.18.0] - 2026-11-11
 
 ### Ajouté

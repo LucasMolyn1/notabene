@@ -49,7 +49,8 @@ export function openForms({ baseId, title, properties }) {
    */
   async function withRestriction(call) {
     try { return await call(false); } catch (err) {
-      if (err?.status !== 409 || err.data?.reason !== 'restricted') throw err;
+      // Code métier lu dans `reason` ou dans `code` (problem+json v3, qui porte désormais le code métier).
+      if (err?.status !== 409 || (err.data?.reason !== 'restricted' && err.data?.code !== 'restricted')) throw err;
       const ok = await confirmModal({
         title: 'Base à permissions restreintes',
         message: 'Cette base n’est pas lisible par tout l’espace. Un formulaire permet à des personnes qui n’y ont pas accès d’y ajouter des lignes (sans jamais les lire). Si la restriction change ensuite, le formulaire se ferme jusqu’à une nouvelle confirmation.',

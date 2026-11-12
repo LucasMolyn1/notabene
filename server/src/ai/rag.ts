@@ -1,6 +1,7 @@
 // Recherche augmentée (RAG) : on retrouve les passages pertinents par recherche plein
 // texte, limitée aux espaces lisibles par l'utilisateur, puis on les fournit au modèle.
 import type { DB } from '../db.js';
+import { fillReadable } from '../lib/fill.js';
 import { searchPages } from '../lib/pages.js';
 
 const MAX_DOCS = 6;
@@ -66,7 +67,13 @@ export function buildContext(
   visible: <T extends { id: string }>(items: T[]) => T[] = (items) => items,
   pinned?: PinnedPage,
 ) {
-  const results = visible(searchPages(db, question, spaceIds, MAX_DOCS * 3, 'OR')).filter((r) => r.id !== pinned?.id).slice(0, MAX_DOCS);
+  // Remplissage borné : les pages illisibles (et la page courante) sont écartées lot par lot jusqu'à MAX_DOCS documents.
+  const results = fillReadable<ReturnType<typeof searchPages>[number], number>({
+    want: MAX_DOCS, batch: MAX_DOCS * 3, start: 0, maxRounds: 5, maxRows: 200,
+    fetch: (from, n) => searchPages(db, question, spaceIds, n, 'OR', null, from ?? 0),
+    keep: (rows) => visible(rows).filter((r) => r.id !== pinned?.id),
+    advance: (from, rows) => (from ?? 0) + rows.length,
+  }).items;
   const terms = (question.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).slice(0, 10);
   const sources: Source[] = [];
   let budget = TOTAL;

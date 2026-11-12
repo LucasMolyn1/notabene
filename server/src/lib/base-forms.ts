@@ -181,7 +181,7 @@ export function presentForm(db: DB, form: FormRow, props = propertiesOf(db, form
 export function confirmRestriction(db: DB, baseId: string, confirmed: boolean | undefined, current: FormRow | null): string | null {
   const key = restrictionKey(db, baseId);
   if (key !== null && confirmed !== true && current?.restricted_key !== key) {
-    throw new HttpError(409, 'Cette base a des permissions restreintes : confirmez pour y ouvrir un formulaire', { reason: 'restricted' });
+    throw new HttpError(409, 'Cette base a des permissions restreintes : confirmez pour y ouvrir un formulaire', { reason: 'restricted', code: 'restricted' });
   }
   return key;
 }

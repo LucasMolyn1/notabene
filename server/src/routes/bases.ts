@@ -15,13 +15,14 @@ import {
 import {
   cleanName, addProperty, addRow, addView, checkViewConfig, createBase, MAX_DELETE, MAX_LINKS, MAX_PROPERTIES, MAX_RELATIONS, MAX_ROLLUPS, MAX_ROWS,
   optionSchema, patchRow, presentProperties, presentRows, propertiesOf, PROPERTY_TYPES, reindexBase, relationInput, removeProperty, removeRows,
-  rollupInput, rowCount, toCsv, touchBase, uniqueIdInput, updateProperty, viewConfigSchema, viewsOf, type Ctx,
+  rollupInput, rowCount, rowPage, MAX_ROW_PAGE, toCsv, touchBase, uniqueIdInput, updateProperty, viewConfigSchema, viewsOf, type Ctx,
 } from '../lib/bases.js';
 import {
   addTemplate, MAX_TEMPLATE_NAME, MAX_TEMPLATES, presentTemplates, removeTemplate, updateTemplate, valuesFromTemplate,
 } from '../lib/base-templates.js';
 import { MAX_TASK_BASES, MAX_TASKS, myTasks, progressOf } from '../lib/base-tasks.js';
 import { MAX_FORMULA_CHARS } from '../lib/formula.js';
+import { decodeCursor, encodeCursor } from '../lib/cursor.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { canWritePage } from '../lib/page-acl.js';
 import { inPersonalSpace } from '../lib/personal-spaces.js';
@@ -138,6 +139,25 @@ export default async function baseRoutes(app: FastifyInstance) {
 
   app.get('/bases/:id', { schema: { tags, summary: 'Lire une base (colonnes, lignes, vues)', params: idParams } }, async (req) =>
     present(req, openBase(req, (req.params as { id: string }).id, 'read')));
+
+  // Lignes seules, avec le total. Sans `limit` ni `cursor` : toutes les lignes, comme GET /bases/:id. Avec : une page dans l'ordre
+  // de la base (curseur opaque). Les filtres et tris des vues restent appliqués par le client sur l'ensemble des lignes.
+  const rowsQuery = z.object({
+    limit: z.coerce.number().int().min(1).max(MAX_ROW_PAGE).optional(),
+    cursor: z.string().max(300).optional(),
+  });
+  app.get('/bases/:id/rows', { schema: { tags, summary: `Lire les lignes d’une base (toutes, ou par pages de ${MAX_ROW_PAGE} au plus)`, params: idParams, querystring: rowsQuery } }, async (req) => {
+    const page = openBase(req, (req.params as { id: string }).id, 'read');
+    const q = req.query as z.output<typeof rowsQuery>;
+    const props = propertiesOf(db, page.id);
+    const ctx = ctxOf(req, page);
+    const canSeeNames = can(req.auth, 'read') && !!req.auth;
+    const total = rowCount(db, page.id);
+    if (q.limit === undefined && q.cursor === undefined) return { items: presentRows(ctx, props, canSeeNames), total, nextCursor: null };
+    const after = decodeCursor(q.cursor, z.object({ p: z.number(), c: z.number().int(), i: idSchema }));
+    const { ids, next } = rowPage(db, page.id, after, q.limit ?? 100);
+    return { items: ids.length ? presentRows(ctx, props, canSeeNames, ids) : [], total, nextCursor: next ? encodeCursor(next) : null };
+  });
 
   app.get('/bases/:id/export', {
     config: { rateLimit: { max: 30, timeWindow: '1 minute' } },

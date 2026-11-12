@@ -6,6 +6,7 @@ import { guard, requireAuth } from '../auth/context.js';
 import { loadReadablePage, loadWritablePage } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
 import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
+import { fillReadable } from '../lib/fill.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
 import { getPrefs, watch } from '../lib/notifications.js';
 import { type AclEntry, entriesOf, filterReadable, governingPage, pageLevel } from '../lib/page-acl.js';
@@ -244,20 +245,20 @@ export default async function v3Routes(app: FastifyInstance) {
     const auth = requireAuth(req);
     const q = req.query as { cursor?: string; limit: number; unread: 'true' | 'false' };
     const after = decodeCursor(q.cursor, z.object({ c: z.number(), i: z.string() }));
-    // Les pages devenues restreintes sont filtrées après lecture : on relit par lots jusqu'à remplir la page demandée.
-    const rows: NotifRow[] = [];
-    let cursor = after;
-    for (let round = 0; round < 20 && rows.length <= q.limit; round++) {
-      const batch = inbox(auth.user.id, q.unread === 'true', cursor, q.limit * 2);
-      if (!batch.length) break;
-      rows.push(...(visible(req, batch) as unknown as NotifRow[]));
-      const last = batch.at(-1)!;
-      cursor = { c: last.created_at, i: last.id };
-      if (batch.length < q.limit * 2) break;
-    }
-    const items = rows.slice(0, q.limit);
+    // Les pages devenues restreintes sont filtrées après lecture : remplissage borné (tours et lignes lues plafonnés). Si le
+    // plafond arrête la lecture avant d'avoir rempli la page, le curseur reprend après la dernière ligne lue : la page peut
+    // être plus courte que `limit`, jamais la suite perdue. Une notification illisible ne sort jamais.
+    type Pos = { c: number; i: string };
+    const fill = fillReadable<NotifRow, Pos>({
+      want: q.limit + 1, batch: q.limit * 2, start: after,
+      fetch: (from, n) => inbox(auth.user.id, q.unread === 'true', from, n),
+      keep: (rows) => visible(req, rows) as unknown as NotifRow[],
+      advance: (_from, rows) => ({ c: rows.at(-1)!.created_at, i: rows.at(-1)!.id }),
+    });
+    const items = fill.items.slice(0, q.limit);
     const last = items.at(-1);
-    return { items: items.map(toItem), nextCursor: rows.length > q.limit && last ? encodeCursor({ c: last.created_at, i: last.id }) : null };
+    const next: Pos | null = fill.items.length > q.limit && last ? { c: last.created_at, i: last.id } : fill.more ? fill.scanned : null;
+    return { items: items.map(toItem), nextCursor: next ? encodeCursor(next) : null };
   });
 
   app.get('/notifications/unread-count', { schema: { tags: ['notifications'], summary: 'Nombre de notifications non lues' } }, async (req) => {
