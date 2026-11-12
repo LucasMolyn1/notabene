@@ -172,10 +172,13 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   });
 
   // Format d'erreur : problem+json (RFC 9457) sous /api/v3 ; JSON { error, message } pour /auth/* et le reste.
+  // Sous /api/v3, `code` vaut le code métier transmis dans les détails (ex. 'restricted') ou, à défaut, la catégorie
+  // générique (validation, http, internal) : un code métier n'est plus écrasé par la catégorie.
   const fail = (req: { url: string }, reply: import('fastify').FastifyReply, status: number, legacy: Record<string, unknown>, extensions: Record<string, unknown> = {}) => {
     const message = String(legacy.message ?? '');
     if (usesProblemFormat(req.url)) {
-      return reply.status(status).type('application/problem+json').send(problem(status, message, req.url, { ...extensions, code: legacy.error }));
+      const code = typeof extensions.code === 'string' && extensions.code ? extensions.code : legacy.error;
+      return reply.status(status).type('application/problem+json').send(problem(status, message, req.url, { ...extensions, code }));
     }
     return reply.status(status).send({ ...legacy, ...extensions });
   };

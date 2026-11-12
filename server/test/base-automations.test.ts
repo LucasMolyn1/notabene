@@ -671,3 +671,43 @@ describe('corrections de la revue de sécurité', () => {
     expect(autoOf(btn2.id).status).toBe('active');
   });
 });
+
+describe('libellés des valeurs fixes', () => {
+  type Labelled = Auto & { labels: { people: Record<string, string | null>; pages: Record<string, string | null> } };
+  const list = async (s: S, base: string) => ((await call(s, 'GET', `/api/v3/bases/${base}/automations`)).json() as { items: Labelled[] }).items;
+
+  it('personne -> nom, page -> titre, seulement ce que le lecteur peut voir ; null sinon', async () => {
+    const ed = await login('ed1');
+    const ed2 = await login('ed2');
+    const b = await newBase(ed);
+    const log = await newBase(ed, 'Journal');
+    const qui = (await addProp(ed, b.id, { name: 'Qui', type: 'person' })).id;
+    const lien = (await addProp(ed, b.id, { name: 'Lien', type: 'page_link' })).id;
+    const logQui = (await addProp(ed, log.id, { name: 'Qui', type: 'person' })).id;
+    const logLien = (await addProp(ed, log.id, { name: 'Lien', type: 'page_link' })).id;
+    const ouverte = (await call(ed, 'POST', '/api/v3/pages', { spaceId: teamSpace(), title: 'Ouverte' })).json() as { id: string };
+    const privee = (await call(ed, 'POST', '/api/v3/pages', { spaceId: teamSpace(), title: 'Privée' })).json() as { id: string };
+    await restrict(privee.id, [{ userId: 'ed1', level: 'write' }]);
+    const a = await create(ed, b.id, { trigger: { type: 'button', label: 'Go' }, actions: [
+      { type: 'set_property', propertyId: qui, value: 'ed2' },
+      { type: 'set_property', propertyId: lien, value: privee.id },
+      { type: 'add_row', baseId: log.id, values: { [logQui]: 'rd', [logLien]: ouverte.id } },
+    ] });
+    // Auteur : tout est nommé.
+    const mine = (await list(ed, b.id)).find((x) => x.id === a.id)!;
+    expect(mine.labels).toEqual({ people: { ed2: 'Nom ed2', rd: 'Nom rd' }, pages: { [privee.id]: 'Privée', [ouverte.id]: 'Ouverte' } });
+    // Autre rédacteur : la page privée est masquée (ni valeur, ni titre).
+    const theirs = (await list(ed2, b.id)).find((x) => x.id === a.id)!;
+    expect(theirs.masked).toBe(true);
+    expect(theirs.labels).toEqual({ people: { ed2: 'Nom ed2', rd: 'Nom rd' }, pages: { [ouverte.id]: 'Ouverte' } });
+    expect(JSON.stringify(theirs)).not.toContain('Privée');
+    // Page à la corbeille : identifiant gardé si la valeur l'est, titre jamais rendu.
+    db.prepare('UPDATE pages SET deleted_at = ? WHERE id = ?').run(Date.now(), ouverte.id);
+    const trashed = (await list(ed, b.id)).find((x) => x.id === a.id)!;
+    expect(trashed.labels.pages[ouverte.id] ?? null).toBeNull();
+    expect(JSON.stringify(trashed.labels)).not.toContain('Ouverte');
+    // Réponse de création : même forme.
+    expect(a).toHaveProperty('labels');
+  });
+});
+

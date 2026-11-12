@@ -7,6 +7,8 @@ import { session } from './session.js';
 import { openModal, toast, pageIcon } from './ui.js';
 
 let unread = 0;
+const NOTIF_PAGE = 30;
+const NOTIF_ROUNDS = 5; // requêtes au plus par chargement (pages courtes ou vides possibles)
 const badges = new Set();
 
 function paint() {
@@ -62,19 +64,41 @@ async function openInbox() {
       { label: 'Fermer' },
     ],
   });
-  const render = async () => {
-    const { items } = await api3.get('/notifications?limit=30');
-    list.replaceChildren(...(items.length
-      ? items.map((n) => h('a', {
-        class: `table-row notif${n.read ? '' : ' unread'}`,
-        href: pagePathById(n.page.id),
-        onClick: async () => { m.close(); if (!n.read) { await api3.post('/notifications/read', { ids: [n.id] }).catch(() => null); refreshUnread(); } },
-      },
-      h('span', { class: 'grow' }, describe(n), h('small', null, timeAgo(n.createdAt))),
-      !n.read && h('span', { class: 'pill accent' }, 'Nouveau')))
-      : [h('p', { class: 'muted' }, 'Aucune notification pour le moment. Suivez une page pour être prévenu des commentaires.')]));
+  // Pagination par curseur : le serveur peut renvoyer une page courte, voire vide, avec un curseur non nul (plafond de lecture
+  // atteint). On continue tant que le curseur n'est pas nul, en un nombre de tours borné, puis « Charger plus ».
+  const items = [];
+  let cursor = null;
+  let done = false;
+  const rowOf = (n) => h('a', {
+    class: `table-row notif${n.read ? '' : ' unread'}`,
+    href: pagePathById(n.page.id),
+    onClick: async () => { m.close(); if (!n.read) { await api3.post('/notifications/read', { ids: [n.id] }).catch(() => null); refreshUnread(); } },
+  },
+  h('span', { class: 'grow' }, describe(n), h('small', null, timeAgo(n.createdAt))),
+  !n.read && h('span', { class: 'pill accent' }, 'Nouveau'));
+  const more = h('button', { class: 'btn btn-ghost btn-sm', type: 'button' }, 'Charger plus');
+  const paintList = (focusIndex = -1) => {
+    const rows = items.map(rowOf);
+    const empty = done ? 'Aucune notification pour le moment. Suivez une page pour être prévenu des commentaires.' : 'Aucune notification chargée pour l’instant.';
+    list.replaceChildren(...(items.length ? rows : [h('p', { class: 'muted' }, empty)]), ...(done ? [] : [more]));
+    // Après « Charger plus », le focus va à la première notification ajoutée, sinon au bouton, sinon à la dernière notification.
+    if (focusIndex >= 0) (rows[focusIndex] ?? (done ? rows.at(-1) : more))?.focus();
   };
-  render().catch((err) => { list.textContent = err.message; });
+  const loadMore = async () => {
+    const before = items.length;
+    for (let round = 0; round < NOTIF_ROUNDS && !done && items.length - before < NOTIF_PAGE; round++) {
+      const page = await api3.get(`/notifications?limit=${NOTIF_PAGE}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+      items.push(...(page.items ?? []));
+      cursor = page.nextCursor ?? null;
+      done = !cursor;
+    }
+    return before;
+  };
+  more.addEventListener('click', async () => {
+    more.disabled = true;
+    try { const before = await loadMore(); paintList(before); } catch (err) { toast(err.message, { kind: 'error' }); } finally { more.disabled = false; }
+  });
+  loadMore().then(() => paintList()).catch((err) => { list.textContent = err.message; });
 }
 
 export function bellButton() {

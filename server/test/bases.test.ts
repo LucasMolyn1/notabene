@@ -846,3 +846,45 @@ describe('copie, recherche, événements, migration', () => {
     raw.close();
   });
 });
+
+describe('lecture paginée des lignes', () => {
+  it('sans paramètre : toutes les lignes ; avec limit/cursor : pages cohérentes, total, formules calculées', async () => {
+    const ed = await login('ed1@example.com');
+    const id = (await newBase(ed)).page.id;
+    const prix = (await addProp(ed, id, { name: 'Prix', type: 'number' })).id;
+    const total = (await addProp(ed, id, { name: 'Double', type: 'formula', formula: 'prop("Prix") * 2' })).id;
+    for (let i = 0; i < 7; i++) expect((await call(ed, 'POST', `/api/v3/bases/${id}/rows`, { values: { [prix]: i } })).statusCode).toBe(201);
+    // Deux lignes à la même position : l'ordre reste stable (création puis identifiant).
+    db.prepare('UPDATE base_rows SET position = 0 WHERE base_id = ?').run(id);
+    const full = (await call(ed, 'GET', `/api/v3/bases/${id}/rows`)).json() as { items: { id: string; values: Record<string, unknown> }[]; total: number; nextCursor: string | null };
+    expect(full).toMatchObject({ total: 7, nextCursor: null });
+    expect(full.items.map((r) => r.id)).toEqual((await get(ed, id)).rows.map((r) => r.id));
+    const seen: { id: string; values: Record<string, unknown> }[] = [];
+    let cursor: string | null = null;
+    let calls = 0;
+    do {
+      const res = await call(ed, 'GET', `/api/v3/bases/${id}/rows?limit=3${cursor ? `&cursor=${cursor}` : ''}`);
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as typeof full;
+      expect(body.total).toBe(7);
+      expect(body.items.length).toBeLessThanOrEqual(3);
+      seen.push(...body.items);
+      cursor = body.nextCursor;
+      calls++;
+    } while (cursor);
+    expect(calls).toBe(3);
+    expect(seen).toEqual(full.items);
+    expect(seen.every((r) => r.values[total] === (r.values[prix] as number) * 2)).toBe(true);
+  });
+
+  it('plafond de page, curseur forgé, accès en lecture exigé', async () => {
+    const ed = await login('ed1@example.com');
+    const id = (await newBase(ed)).page.id;
+    expect((await call(ed, 'GET', `/api/v3/bases/${id}/rows?limit=501`)).statusCode).toBe(400);
+    expect((await call(ed, 'GET', `/api/v3/bases/${id}/rows?cursor=forge`)).statusCode).toBe(400);
+    expect((await call(null, 'GET', `/api/v3/bases/${id}/rows`)).statusCode).toBe(404);
+    const admin = await login('admin@example.com');
+    expect((await call(admin, 'PUT', `/api/v3/pages/${id}/permissions`, { entries: [{ userId: 'ed1', level: 'write' }] })).statusCode).toBe(200);
+    expect((await call(await login('ed2@example.com'), 'GET', `/api/v3/bases/${id}/rows?limit=10`)).statusCode).toBe(404);
+  });
+});

@@ -148,4 +148,31 @@ describe('notifications', () => {
     expect(second.items.length).toBeGreaterThan(0);
     expect(JSON.stringify([first, second])).not.toContain('Onboarding');
   });
+
+  it('plafond de lecture : la page peut être courte, le curseur reprend après la dernière ligne lue, rien d’illisible', async () => {
+    const admin = await login('admin@example.com');
+    const ed2 = await login('ed2@example.com');
+    const hidden = (db.prepare("SELECT id FROM pages WHERE title = 'Onboarding'").get() as { id: string }).id;
+    const open = pageId();
+    await call(admin, 'PUT', `/api/v3/pages/${hidden}/permissions`, { entries: [{ userId: 'ed1', level: 'write' }] });
+    const ins = db.prepare("INSERT INTO notifications (id, user_id, type, page_id, actor_id, count, created_at) VALUES (?, 'ed2', 'comment', ?, 'ed1', 1, ?)");
+    db.transaction(() => {
+      for (let i = 0; i < 3; i++) ins.run(`o${i}`, open, 1_000 + i); // anciennes, lisibles
+      for (let i = 0; i < 2_100; i++) ins.run(`h${String(i).padStart(5, '0')}`, hidden, 10_000 + i); // récentes, illisibles
+    })();
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let calls = 0;
+    do {
+      const page: Awaited<ReturnType<typeof inbox>> = await inbox(ed2, `?limit=100${cursor ? `&cursor=${cursor}` : ''}`);
+      if (calls === 0) expect(page.items).toEqual([]);
+      expect(page.items.every((i) => i.page.title === 'Bienvenue sur BeNote')).toBe(true);
+      seen.push(...page.items.map((i) => i.id));
+      cursor = page.nextCursor;
+      calls++;
+    } while (cursor && calls < 10);
+    // Premier appel : 2000 lignes illisibles lues, aucune rendue, mais la suite n'est pas perdue.
+    expect(calls).toBe(2);
+    expect(seen).toEqual(['o2', 'o1', 'o0']);
+  });
 });

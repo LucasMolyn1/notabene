@@ -1724,7 +1724,7 @@ td.bt-cell:has(.bt-linkcell) { padding: 0; }
 .bt-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
 .bt-t-buttons { white-space: nowrap; }
 .bt-run { white-space: nowrap; }
-.cal-buttons { padding-top: 4px; border-top: 1px solid var(--border); }
+.cal-buttons, .tl-buttons { padding-top: 4px; border-top: 1px solid var(--border); }
 
 /* Formulaires : panneau de la base (réutilise .au-*) et page publique /form/<jeton> */
 .fm-questions { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }

@@ -67,6 +67,7 @@ function ticks(scale, d0, d1) {
  *   state: { collapsed: Set<string>, tl: any },
  *   patchRow: (row: any, body: any) => Promise<boolean>,
  *   setConfig: (next: any) => void, openSettings: () => void, announce: (text: string) => void,
+ *   rowButtons?: (row: any, inPopover: boolean) => HTMLElement | false,
  * }} ctx
  */
 export function timelineEl(ctx) {
@@ -263,6 +264,8 @@ export function timelineEl(ctx) {
       h('div', { class: 'field' }, h('label', { for: sIn.id }, ranged ? `${startP.name} : début` : startP.name), sIn),
       eIn && h('div', { class: 'field' }, h('label', { for: eIn.id }, ranged ? `${startP.name} : fin` : endName), eIn),
       err,
+      // Boutons de ligne (automatisations) : le clic ferme la fiche (le focus revient à la barre), le résultat est annoncé.
+      ctx.rowButtons?.(row, true) || null,
       h('div', { class: 'bt-pop-foot' }, h('button', { class: 'btn btn-primary btn-sm', type: 'submit' }, 'Enregistrer')));
     form.addEventListener('submit', (e) => { e.preventDefault(); save(); });
     openPopover(anchor, form);
@@ -477,6 +480,10 @@ export function timelineEl(ctx) {
       });
       return h('td', { class: 'bt-cell' }, input);
     };
+    const page = rowsLines.slice(0, shown);
+    // Boutons de ligne : même colonne que dans le tableau de la base (rien si la base n'en a pas ou si on ne peut pas modifier).
+    const buttons = page.map((l) => ctx.rowButtons?.(l.row, false) || null);
+    const hasButtons = buttons.some(Boolean);
     const table = h('table', { class: 'bt-table tl-table', 'aria-label': 'Chronologie sous forme de tableau' },
       h('thead', null, h('tr', null,
         h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, 'Élément')),
@@ -484,8 +491,9 @@ export function timelineEl(ctx) {
         h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, ranged ? 'Début' : startP.name)),
         h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, endP ? endP.name : 'Fin')),
         h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, 'Durée')),
-        deps && h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, 'Bloqué par')))),
-      h('tbody', null, rowsLines.slice(0, shown).map((l) => {
+        deps && h('th', { scope: 'col', class: 'bt-th' }, h('span', { class: 'bt-th-btn' }, 'Bloqué par')),
+        hasButtons && h('th', { scope: 'col', class: 'bt-th bt-t-buttons' }, h('span', { class: 'bt-th-btn' }, 'Boutons')))),
+      h('tbody', null, page.map((l, k) => {
         const d = datesOf(l.row);
         const raw = rawOf(l.row);
         return h('tr', { 'data-row': l.row.id },
@@ -495,7 +503,8 @@ export function timelineEl(ctx) {
           dateCell(l.row, startP, raw.s, 'start'),
           dateCell(l.row, endP ?? startP, hasEnd ? raw.e : null, 'end'),
           h('td', { class: 'bt-cell' }, d ? plural(d.e - d.s + 1, 'jour', 'jours') : ''),
-          deps && h('td', { class: 'bt-cell' }, (l.row.blockedBy ?? []).map(nameOf).join(', ')));
+          deps && h('td', { class: 'bt-cell' }, (l.row.blockedBy ?? []).map(nameOf).join(', ')),
+          hasButtons && h('td', { class: 'bt-cell bt-t-buttons' }, buttons[k]));
       })));
     return h('div', null, h('div', { class: 'bt-scroll' }, table),
       rowsLines.length > shown && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { tl.shown = shown + TABLE_PAGE; swap(); } }, `Afficher ${Math.min(TABLE_PAGE, rowsLines.length - shown)} lignes de plus (${shown} sur ${rowsLines.length})`));

@@ -514,7 +514,7 @@ describe('base restreinte', () => {
     expect((await call(admin, 'PUT', `/api/v3/pages/${b.id}/permissions`, { entries: [{ userId: 'ed1', level: 'write' }] })).statusCode).toBe(200);
     const res = await call(b.ed, 'POST', `/api/v3/bases/${b.id}/forms`, { title: 'F', mode: 'anonymous', questions: [{ propertyId: b.nom }] });
     expect(res.statusCode).toBe(409);
-    expect(res.json().reason).toBe('restricted');
+    expect(res.json()).toMatchObject({ reason: 'restricted', code: 'restricted' });
     const f = await newForm(b.ed, b.id, { title: 'F', mode: 'anonymous', questions: [{ propertyId: b.nom }], confirmRestricted: true });
     const token = await linkOf(b.ed, b.id, f.id);
     expect((await view(token)).statusCode).toBe(200);

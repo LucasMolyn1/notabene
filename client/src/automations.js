@@ -223,6 +223,10 @@ export function openAutomations({ baseId, title, properties, onChange }) {
       .sort((x, y) => (x.title || '').localeCompare(y.title || '', 'fr'));
     const targetProps = new Map([[baseId, properties]]); // colonnes des bases cibles, lues à la demande
     const names = new Map(); // noms des personnes choisies (identifiant -> nom)
+    const titles = new Map(); // titres des pages choisies (identifiant -> titre)
+    // Noms et titres fournis par le serveur (null : personne ou page inconnue ou illisible, texte générique gardé).
+    for (const [userId, name] of Object.entries(existing?.labels?.people ?? {})) if (typeof name === 'string' && name) names.set(userId, name);
+    for (const [pid, t] of Object.entries(existing?.labels?.pages ?? {})) if (typeof t === 'string' && t) titles.set(pid, t);
     const webhookOk = !!state.webhooksAvailable;
     const keptOrigin = existing?.actions.find((x) => x.type === 'webhook')?.origin ?? null;
     const uid = ++seq;
@@ -319,8 +323,8 @@ export function openAutomations({ baseId, title, properties, onChange }) {
           return h('div', { class: 'au-inline' },
             select(`${k}-mode`, name, mode, [['fixed', 'Page choisie'], ['empty', 'Vide']], (v) => { set(v === 'fixed' ? '' : null); redraw(); }),
             mode === 'fixed' && (value
-              ? h('p', { class: 'au-chosen' }, h('span', null, store.page(value)?.title || 'Page déjà choisie'), h('button', { class: 'btn btn-ghost btn-sm', type: 'button', 'data-k': `${k}-chg`, onClick: () => { set(''); redraw(); } }, 'Changer'))
-              : searchPicker(`Choisir la page (${p.name})`, searchPages, (it) => { set(it.id); redraw(`${k}-chg`); })));
+              ? h('p', { class: 'au-chosen' }, h('span', null, store.page(value)?.title || titles.get(value) || 'Page déjà choisie'), h('button', { class: 'btn btn-ghost btn-sm', type: 'button', 'data-k': `${k}-chg`, onClick: () => { set(''); redraw(); } }, 'Changer'))
+              : searchPicker(`Choisir la page (${p.name})`, searchPages, (it) => { titles.set(it.id, it.label); set(it.id); redraw(`${k}-chg`); })));
         }
         default: {
           const max = p.type === 'email' ? '254' : p.type === 'phone' ? '30' : '2000';
