@@ -7,10 +7,13 @@ import { toast } from './ui.js';
 
 // Retour après connexion : seulement vers le formulaire public d'une base de cette instance (lien d'un formulaire « réservé
 // aux comptes », voir public-form.js), jamais vers une autre adresse.
-export const FORM_RETURN = /^\/form\/[A-Za-z0-9_-]{32}$/;
+export const FORM_RETURN = /^\/form\/([A-Za-z0-9_-]{32})$/;
 function afterLogin(redirect) {
   const back = new URLSearchParams(location.search).get('returnTo');
-  location.href = back && FORM_RETURN.test(back) ? back : redirect || '/';
+  const token = back ? FORM_RETURN.exec(back)?.[1] : null;
+  // L'adresse est reconstruite depuis le seul jeton validé (32 caractères sûrs) : toujours un chemin de cette origine.
+  // nosemgrep: javascript.browser.security.open-redirect.js-open-redirect
+  location.href = token ? `/form/${token}` : redirect || '/';
 }
 
 const field = (label, input) => h('label', { class: 'field' }, h('span', null, label), input);
