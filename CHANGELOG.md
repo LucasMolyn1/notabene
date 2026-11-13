@@ -4,7 +4,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
-## [Non publié]
+## [3.18.2] - 2026-11-13
 
 ### Corrigé
 - **Interface : connexion** : le bouton « Se connecter » ouvre l'écran de connexion quand plusieurs méthodes sont actives (SSO et compte local), au lieu d'aller directement chez le fournisseur d'identité ; l'adresse de retour est conservée.
