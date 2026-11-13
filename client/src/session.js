@@ -48,6 +48,13 @@ export const session = {
     return `/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
   },
 
+  // Un seul fournisseur : on y va directement ; sinon l'écran de connexion propose les méthodes (SSO et compte local).
+  loginHref(returnTo = location.pathname) {
+    const { oidc, devLogin, local, ldap, saml } = this.config.auth;
+    const several = [oidc, devLogin, local, ldap, saml].filter(Boolean).length > 1;
+    return oidc && !several ? this.loginUrl(returnTo) : `/?login&returnTo=${encodeURIComponent(returnTo)}`;
+  },
+
   async devLogin(role) {
     const { redirect } = await request('POST', '/auth/dev-login', { role, returnTo: location.pathname });
     location.href = redirect;

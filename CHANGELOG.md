@@ -4,6 +4,13 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [Non publié]
+
+### Corrigé
+- **Interface : connexion** : le bouton « Se connecter » ouvre l'écran de connexion quand plusieurs méthodes sont actives (SSO et compte local), au lieu d'aller directement chez le fournisseur d'identité ; l'adresse de retour est conservée.
+- **Interface : permissions** : le cadenas de la page est mis en évidence quand la page est restreinte (restriction propre ou héritée).
+- **Interface : visiteur sans compte** : un lien vers une page qui n'est pas publique (base, page restreinte) affiche « Page non publique » au lieu de « Page supprimée ».
+
 ## [3.18.1] - 2026-11-12
 
 ### Ajouté

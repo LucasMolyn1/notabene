@@ -1769,3 +1769,5 @@ td.bt-cell:has(.bt-linkcell) { padding: 0; }
 /* Champ piège : hors écran, jamais affiché ni annoncé. */
 .pf-trap { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
 @media (max-width: 480px) { .pf-card { padding: 14px; } .pf-title, .pf-state-title { font-size: 20px; } }
+
+.icon-btn.is-restricted { color: var(--accent, #5b45f0); background: color-mix(in srgb, var(--accent, #5b45f0) 12%, transparent); }

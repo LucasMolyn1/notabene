@@ -5,6 +5,7 @@ import { pagePathById } from '../urls.js';
 import { icon } from '../icons.js';
 import { store } from '../store.js';
 import { pageIcon } from '../ui.js';
+import { session } from '../session.js';
 
 // ---- Nœuds personnalisés -------------------------------------------------
 
@@ -108,10 +109,12 @@ export const PageLink = Node.create({
       const paint = () => {
         const p = store.page(node.attrs.id);
         const missing = !p || !!p.deletedAt;
+        // Sans compte, une page absente de l'arbre est surtout une page non publique (une base, une page restreinte) : pas « supprimée ».
+        const hidden = missing && !session.user && !p;
         dom.classList.toggle('missing', missing);
         dom.replaceChildren(
           h('span', { class: 'page-link-icon' }, missing ? icon('ban', 14) : pageIcon(p.icon, 14)),
-          h('span', { class: 'page-link-title' }, missing ? 'Page supprimée' : p.title || 'Sans titre'),
+          h('span', { class: 'page-link-title' }, missing ? (hidden ? 'Page non publique' : 'Page supprimée') : p.title || 'Sans titre'),
         );
       };
       paint();
