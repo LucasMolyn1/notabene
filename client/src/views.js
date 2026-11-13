@@ -566,14 +566,16 @@ export function showLogin() {
   document.title = 'Connexion · BeNote';
   const error = new URLSearchParams(location.search).get('auth_error');
   const { oidc, devLogin, local, setupRequired, ldap, saml } = session.config.auth;
+  const back = new URLSearchParams(location.search).get('returnTo');
+  const returnTo = back && back.startsWith('/') && !back.startsWith('//') ? back : location.pathname;
   main().replaceChildren(h('div', { class: 'login' }, h('div', { class: 'login-card' },
     h('div', { class: 'boot-logo' }),
     h('h1', null, 'BeNote'),
     h('p', { class: 'muted' }, 'Le wiki de votre équipe. Connectez-vous pour continuer.'),
     error && h('div', { class: 'notice warning' }, AUTH_ERRORS[error] || 'Connexion impossible.'),
     // Le fournisseur d'identité d'abord (un clic), puis les formulaires à mot de passe ; l'installation initiale passe avant tout.
-    !setupRequired && oidc && h('a', { class: 'btn btn-primary btn-lg', href: session.loginUrl() }, icon('users', 16), 'Se connecter avec Authentik'),
-    !setupRequired && saml && h('a', { class: oidc ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: `/auth/saml/login?returnTo=${encodeURIComponent(location.pathname)}` }, icon('key', 16), 'Se connecter avec le SSO (SAML)'),
+    !setupRequired && oidc && h('a', { class: 'btn btn-primary btn-lg', href: session.loginUrl(returnTo) }, icon('users', 16), 'Se connecter avec Authentik'),
+    !setupRequired && saml && h('a', { class: oidc ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: `/auth/saml/login?returnTo=${encodeURIComponent(returnTo)}` }, icon('key', 16), 'Se connecter avec le SSO (SAML)'),
     !setupRequired && (oidc || saml) && (local || ldap) && h('p', { class: 'or' }, h('span', null, 'ou avec un mot de passe')),
     local && localLoginForm(setupRequired),
     local && !setupRequired && session.config.auth.mail && forgotPasswordForm(),
@@ -601,7 +603,7 @@ export function showMissing(id, status = 404) {
         ? 'Cette page n’existe pas ou nécessite d’être connecté.'
         : status === 404 ? 'Elle a peut-être été supprimée ou déplacée dans la corbeille.' : 'Impossible de charger la page.'),
       h('div', { class: 'row center' },
-        anonymous && (session.config.auth.oidc || session.config.auth.devLogin || session.config.auth.local || session.config.auth.ldap || session.config.auth.saml) && h('a', { class: 'btn btn-primary', href: session.config.auth.oidc ? session.loginUrl() : '/?login' }, 'Se connecter'),
+        anonymous && (session.config.auth.oidc || session.config.auth.devLogin || session.config.auth.local || session.config.auth.ldap || session.config.auth.saml) && h('a', { class: 'btn btn-primary', href: session.loginHref() }, 'Se connecter'),
         h('a', { class: 'btn btn-ghost', href: '/' }, 'Retour à l’accueil')))));
   view = { kind: 'missing', id };
 }

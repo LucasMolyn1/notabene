@@ -9,7 +9,16 @@ import { toast, openModal } from './ui.js';
 
 export function permissionsButton(pageId) {
   if (!session.can('admin')) return null;
-  return h('button', { class: 'icon-btn', title: 'Permissions de la page', 'aria-label': 'Permissions de la page', onClick: () => openPermissions(pageId) }, icon('lock'));
+  const btn = h('button', { class: 'icon-btn', title: 'Permissions de la page', 'aria-label': 'Permissions de la page', onClick: () => openPermissions(pageId) }, icon('lock'));
+  // Une page restreinte (propre ou héritée) n'est pas lisible sans compte, même dans un espace public : on le signale.
+  api.get(`/pages/${pageId}/permissions`).then((state) => {
+    if (!state.entries?.length && !state.inheritedFrom) return;
+    const label = 'Page restreinte : visible seulement des personnes et groupes listés';
+    btn.classList.add('is-restricted');
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  }).catch(() => {});
+  return btn;
 }
 
 async function openPermissions(pageId) {
