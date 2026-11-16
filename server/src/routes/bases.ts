@@ -4,8 +4,8 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { can, guard, requireAuth } from '../auth/context.js';
-import { loadReadablePage, loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
-import { audit } from '../lib/audit.js';
+import { assertWritableParent, loadReadablePage, loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
+import { audit, auditThrottled } from '../lib/audit.js';
 import { breakUsing, buttonsOf } from '../lib/base-automations.js';
 import { computeChart } from '../lib/base-chart.js';
 import { createOrRotateFeed, feedOf, revokeFeed } from '../lib/base-ical.js';
@@ -130,7 +130,7 @@ export default async function baseRoutes(app: FastifyInstance) {
   app.post('/bases', { ...write, schema: { tags, summary: 'Créer une base', body: createBody } }, async (req, reply) => {
     const b = req.body as z.output<typeof createBody>;
     requireSpaceRole(db, req, b.spaceId, 'edit');
-    if (b.parentId && !canWritePage(db, req.auth, b.parentId)) throw new HttpError(403, 'Accès en lecture seule sur la page parente');
+    if (b.parentId) assertWritableParent(db, req, b.parentId);
     const page = createBase(db, b, userId(req));
     audit(db, req, 'base.create', page.id);
     bus.publish({ type: 'page.created', spaceId: page.space_id, pageId: page.id, version: page.version, by: by(req) });
@@ -166,6 +166,8 @@ export default async function baseRoutes(app: FastifyInstance) {
     const page = openBase(req, (req.params as { id: string }).id, 'read');
     const props = propertiesOf(db, page.id);
     const rows = presentRows(ctxOf(req, page), props, !!req.auth);
+    // Sortie de données : journalisée (volume seulement), y compris pour un jeton d'API.
+    if (req.auth) audit(db, req, 'base.export', page.id, detail(page, { rows: rows.length, columns: props.length }));
     const name = (page.title || 'base').normalize('NFKD').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'base';
     return reply.type('text/csv; charset=utf-8').header('Content-Disposition', `attachment; filename="${name}.csv"`).send(toCsv(props, rows));
   });
@@ -227,6 +229,7 @@ export default async function baseRoutes(app: FastifyInstance) {
     const b = req.body as z.output<typeof rowCreateBody>;
     const ctx = ctxOf(req, page);
     const { id, shifted } = writeRow(ctx, null, b, userId(req));
+    audit(db, req, 'base.row.create', page.id, detail(page, { rowId: id, fields: Object.keys(b.values ?? {}).length }));
     // Déclencheurs « ligne ajoutée » (écriture d'une personne seulement ; les écritures d'automatisation ne redéclenchent rien).
     app.automations.rowWritten(page.id, id, null, userId(req));
     changed(req, page, b.templateId !== undefined || indexedBy(page.id, b.values, shifted.length));
@@ -246,6 +249,7 @@ export default async function baseRoutes(app: FastifyInstance) {
     const after = rowVals(page.id, id);
     const diff = new Set([...Object.keys(before), ...Object.keys(after)].filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k])));
     if (diff.size) app.automations.rowWritten(page.id, id, diff, userId(req));
+    if (diff.size || shifted.length) auditThrottled(db, req, 'base.row.update', page.id, [...diff], detail(page, { rowId: id }));
     changed(req, page, indexedBy(page.id, b.values, shifted.length));
     changedOthers(req, ctx);
     const all = presentRows(ctx, propertiesOf(db, page.id), !!req.auth, [id, ...shifted]);

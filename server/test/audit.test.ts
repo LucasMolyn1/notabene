@@ -207,7 +207,8 @@ describe('journal d’audit : export', () => {
     expect(res.headers['x-export-rows']).toBe('2');
     expect(res.headers['x-export-truncated']).toBe('false');
     const lines = res.body.replace(/^\uFEFF/, '').trim().split('\r\n');
-    expect(lines[0]).toBe('id,timestamp,action,outcome,actor_id,actor_name,target,ip,meta,via_token');
+    // Colonnes ajoutées en fin de ligne (ajout compatible) : libellé, type et titre de la cible.
+    expect(lines[0]).toBe('id,timestamp,action,outcome,actor_id,actor_name,target,ip,meta,via_token,label,target_type,target_title');
     expect(lines).toHaveLength(3);
     expect(lines[2]).toContain(`"'=HYPERLINK(""https://evil.example"",""x"")"`);
     expect(lines.slice(1).every((l) => !/(^|,)"[=+\-@]/.test(l))).toBe(true);

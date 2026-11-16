@@ -25,6 +25,7 @@ import { permissionsButton } from './permissions.js';
 import { shareButton } from './share-dialog.js';
 import { showBase } from './base.js';
 import { readOnlyNotice } from './read-only.js';
+import { openMoveDialog } from './move-dialog.js';
 import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
@@ -49,7 +50,8 @@ export function setView(v) { view = v; }
 
 export function topbar(left, right = []) {
   return h('header', { class: 'topbar' },
-    !app.embed && h('button', { class: 'icon-btn sb-open', title: `Barre latérale (${modKey}\\)`, onClick: A.toggleSidebar }, icon('panel')),
+    // Libellé visible « Menu » (pas seulement une icône) : sur tablette et téléphone, c'est l'accès aux pages et à la recherche.
+    !app.embed && h('button', { class: 'icon-btn sb-open', title: `Ouvrir ou fermer la barre latérale (${modKey}\\)`, onClick: A.toggleSidebar }, icon('panel'), h('span', { class: 'sb-open-label' }, 'Menu')),
     left,
     h('div', { class: 'topbar-right' }, right, assistantButton(), !app.embed && bellButton()));
 }
@@ -92,8 +94,10 @@ export async function showPage(id) {
     return;
   }
   if (seq !== navSeq) return;
-  if (page.kind === 'base') { prefs.space = page.spaceId; prefs.lastPage = id; for (const a of store.ancestors(id)) prefs.expanded[a.id] = true; savePrefs(); presence.setPage(id); showBase(page); return; }
-  mountPage(page);
+  if (page.kind === 'base') { prefs.space = page.spaceId; prefs.lastPage = id; for (const a of store.ancestors(id)) prefs.expanded[a.id] = true; savePrefs(); presence.setPage(id); showBase(page); }
+  else mountPage(page);
+  // La barre latérale a pu se dessiner avant la réponse : elle suit l'espace de la page et déplie ses parents.
+  window.dispatchEvent(new Event('page-mounted'));
 }
 
 function mountPage(page) {
@@ -415,6 +419,7 @@ function mountPage(page) {
       { label: 'Exporter en HTML', icon: 'download', onClick: async () => { await flush(); A.exportHTML(id); } },
       { label: 'Exporter en PDF', icon: 'pdf', onClick: async () => { await flush(); A.exportPDF(id); } },
       session.user && { label: 'Exporter en ZIP', icon: 'download', onClick: async () => { await flush(); A.openZipExport({ pageId: id }); } },
+      canWrite && { label: 'Déplacer vers…', icon: 'move', onClick: async () => { await flush(); openMoveDialog(id); } },
       canWrite && { label: 'Dupliquer', icon: 'copy', onClick: async () => { await flush(); A.duplicate(id); } },
       canWrite && { label: 'Ajouter une sous-page', icon: 'plus', onClick: () => A.newPage(p.spaceId, id) },
       canWrite && { label: 'Ajouter une sous-page depuis un modèle', icon: 'layers', onClick: () => A.newPageFromTemplate(p.spaceId, id) },

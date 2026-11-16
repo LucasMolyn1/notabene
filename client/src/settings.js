@@ -15,6 +15,7 @@ import { renderImages } from './settings/images.js';
 import { renderGroups } from './settings/groups.js';
 import { renderScim } from './settings/scim.js';
 import { renderShares } from './settings/shares.js';
+import { renderSecurity } from './settings/security.js';
 import { store } from './store.js';
 
 // ---- Page -----------------------------------------------------------------------------
@@ -22,6 +23,8 @@ import { store } from './store.js';
 const SECTIONS = [
   { group: 'Compte', id: 'profile', label: 'Profil et sessions', ico: 'users', render: renderProfile },
   { group: 'Compte', id: 'appearance', label: 'Apparence', ico: 'sun', render: renderAppearance },
+  // Sécurité : synthèse ; dans « Administration » pour un administrateur (version complète), dans « Compte » sinon.
+  { group: 'Compte', id: 'security', label: 'Sécurité', ico: 'shield', nonAdmin: true, render: renderSecurity },
   { group: 'Compte', id: 'tokens', label: 'Jetons d’API', ico: 'key', render: renderTokens },
   { group: 'Compte', id: 'about', label: 'À propos', ico: 'sparkle', render: renderAbout },
   { group: 'Fonctionnalités', id: 'shares', label: 'Pages partagées', ico: 'globe', write: true, render: renderShares },
@@ -30,6 +33,7 @@ const SECTIONS = [
   { group: 'Fonctionnalités', id: 'tools', label: 'Outils', ico: 'qrcode', render: renderTools },
   { group: 'Fonctionnalités', id: 'api', label: 'API REST', ico: 'code', render: renderApi },
   { group: 'Fonctionnalités', id: 'embed', label: 'Intégration portfolio', ico: 'globe', sensitive: true, render: renderEmbed },
+  { group: 'Administration', id: 'security', label: 'Sécurité', ico: 'shield', admin: true, render: renderSecurity },
   { group: 'Administration', id: 'spaces', label: 'Espaces', ico: 'folder', manager: true, render: renderSpaces },
   { group: 'Administration', id: 'groups', label: 'Groupes', ico: 'users', admin: true, render: renderGroups },
   { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', admin: true, sensitive: true, render: renderAuth },
@@ -51,7 +55,7 @@ export function showSettings(sectionId) {
   beginView();
   // Un gestionnaire d'espace (rôle « full ») accède aux espaces qu'il gère, sans le reste de l'administration.
   const manager = store.spaces.some((s) => s.role === 'full');
-  const sections = SECTIONS.filter((s) => !s.admin || session.can('admin')).filter((s) => !s.manager || session.can('admin') || manager).filter((s) => !s.write || session.can('write'));
+  const sections = SECTIONS.filter((s) => !s.admin || session.can('admin')).filter((s) => !s.nonAdmin || !session.can('admin')).filter((s) => !s.manager || session.can('admin') || manager).filter((s) => !s.write || session.can('write'));
   const section = sections.find((s) => s.id === sectionId) || sections[0];
   document.title = `${section.label} · Paramètres · BeNote`;
 

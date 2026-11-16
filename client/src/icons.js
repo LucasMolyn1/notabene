@@ -1,6 +1,8 @@
 // Icônes au trait (style Lucide), en SVG inline.
 const PATHS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  'zoom-in': '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M11 8v6M8 11h6"/>',
+  'zoom-out': '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M8 11h6"/>',
   plus: '<path d="M5 12h14M12 5v14"/>',
   chevron: '<path d="m9 18 6-6-6-6"/>',
   chevrons: '<path d="m7 15 5 5 5-5M7 9l5-5 5 5"/>',
