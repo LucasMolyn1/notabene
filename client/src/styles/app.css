@@ -941,6 +941,20 @@ select.input { height: 36px; }
 .modal.medium { width: min(620px, calc(100vw - 32px)); }
 .section-label { font-size: 11.5px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; margin-top: 6px; }
 .badge-soft { color: var(--accent-text); background: var(--accent-soft); padding: 0 8px; border-radius: 10px; }
+
+/* ---- Lecture seule : bandeau d'explication et badge (page et base). Badge plein : 7,5:1 en clair, 9,5:1 en sombre. ---- */
+.ro-notice {
+  display: flex; align-items: flex-start; gap: 6px 10px; flex-wrap: wrap; margin: 12px 0 6px; padding: 10px 12px;
+  border: 1px solid var(--info-bd); background: var(--info-bg); border-radius: var(--radius); color: var(--text); font-size: 14px;
+}
+.ro-text { margin: 0; flex: 1 1 260px; min-width: 0; line-height: 1.5; }
+.ro-badge {
+  display: inline-flex; align-items: center; gap: 5px; flex: none; padding: 1px 9px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; line-height: 21px; color: #ffffff; background: #4636d8;
+}
+[data-theme='dark'] .ro-badge { color: #15131f; background: #b8b1ff; }
+/* Cases d'une page en lecture : rien ne laisse croire qu'un clic les cochera. */
+.reading .prose ul[data-type='taskList'] input[type='checkbox'] { cursor: default; }
 .notice { padding: 10px 12px; border-radius: var(--radius); font-size: 13.5px; border: 1px solid; }
 .notice.info { background: var(--info-bg); border-color: var(--info-bd); }
 .notice.warning { background: var(--warning-bg); border-color: var(--warning-bd); }
@@ -1328,6 +1342,9 @@ ul.table { list-style: none; margin: 0; padding: 0; }
 
 /* ---- Bases (tableaux) ---- */
 .bt-wrap { max-width: none; }
+/* Une base prend toute la largeur disponible (une page de texte garde sa largeur de lecture). */
+.page-wrap.bt-wrap { grid-template-columns: minmax(0, 1fr) !important; }
+.bt-title[readonly] { cursor: default; }
 .bt-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .bt-head .page-icon { flex: none; }
 .bt-title { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); font-size: 30px; font-weight: 700; letter-spacing: -0.02em; padding: 4px 6px; border-radius: 6px; }
@@ -1340,6 +1357,25 @@ ul.table { list-style: none; margin: 0; padding: 0; }
 .bt-view.active { background: var(--active); color: var(--text); font-weight: 600; }
 .bt-tools .btn.active { background: var(--accent-soft); color: var(--accent-text); }
 .bt-scroll { overflow: auto; border: 1px solid var(--border-strong); border-radius: var(--radius); max-height: calc(100vh - 260px); background: var(--bg); }
+.bt-scroll:focus-visible, .bt-board:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Débordement horizontal (tableau, Kanban) : ombre sur le bord où il reste du contenu, barre de défilement toujours visible. */
+.bt-frame { position: relative; min-width: 0; --edge-shadow: rgba(15, 15, 30, 0.18); }
+[data-theme='dark'] .bt-frame { --edge-shadow: rgba(0, 0, 0, 0.6); }
+.bt-frame::before, .bt-frame::after {
+  content: ''; position: absolute; top: 1px; bottom: 1px; width: 32px; z-index: 4; pointer-events: none; opacity: 0;
+}
+.bt-frame::before { left: 1px; background: linear-gradient(to right, var(--edge-shadow), transparent); border-radius: var(--radius) 0 0 var(--radius); }
+.bt-frame::after { right: 1px; background: linear-gradient(to left, var(--edge-shadow), transparent); border-radius: 0 var(--radius) var(--radius) 0; }
+.bt-frame.more-left::before, .bt-frame.more-right::after { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) { .bt-frame::before, .bt-frame::after { transition: opacity 0.15s; } }
+.bt-scroll::-webkit-scrollbar, .bt-board::-webkit-scrollbar { width: 12px; height: 12px; }
+.bt-scroll::-webkit-scrollbar-track, .bt-board::-webkit-scrollbar-track { background: var(--bg-soft); border-radius: 6px; }
+.bt-scroll::-webkit-scrollbar-thumb, .bt-board::-webkit-scrollbar-thumb { background: var(--control-border); border-radius: 6px; border: 3px solid var(--bg-soft); }
+.bt-scroll::-webkit-scrollbar-corner { background: var(--bg-soft); }
+@supports not selector(::-webkit-scrollbar) { .bt-scroll, .bt-board { scrollbar-color: var(--control-border) var(--bg-soft); } }
+/* Barre d'outils : « Nouvelle ligne » en haut ; menu « Plus » réservé au téléphone (voir plus bas). */
+.bt-more { display: none; }
+.bt-check input:disabled { cursor: default; }
 .bt-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 14px; }
 .bt-th { position: sticky; top: 0; z-index: 2; background: var(--bg-soft); border-bottom: 1px solid var(--border-strong); border-right: 1px solid var(--border); text-align: left; font-weight: 600; min-width: 140px; padding: 0; white-space: nowrap; }
 .bt-th:first-child, .bt-cell:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg); }
@@ -1385,6 +1421,17 @@ tr:hover .bt-row-actions, .bt-row-actions:focus-within { opacity: 1; }
   .bt-title { font-size: 22px; }
   .bt-scroll { max-height: calc(100vh - 220px); }
   .bt-row-actions { opacity: 1; }
+  /* Une rangée de vues (défilante) et une rangée d'actions : le contenu arrive vite, les actions secondaires sont dans « Plus ». */
+  .bt-toolbar { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 6px; }
+  .bt-views { flex-wrap: nowrap; min-width: 0; }
+  .bt-tabs { flex-wrap: nowrap; overflow-x: auto; min-width: 0; scrollbar-width: thin; }
+  .bt-view { flex: none; white-space: nowrap; }
+  .bt-tools { flex-wrap: nowrap; min-width: 0; }
+  .bt-tools .bt-sec { display: none; }
+  .bt-more { display: inline-flex; }
+  .bt-tools .bt-group { flex: 1 1 auto; min-width: 0; }
+  .bt-top-add { margin-left: auto; }
+  .ro-notice { font-size: 13.5px; }
 }
 @media (prefers-reduced-motion: no-preference) { .bt-cell-btn, .bt-th-btn { transition: background-color 0.12s; } }
 
@@ -1561,6 +1608,17 @@ button.tl-name:hover { background: var(--hover); }
 .task.done .task-name { color: var(--text-2); }
 .task-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12.5px; color: var(--text-2); }
 .task-late { color: var(--danger); }
+/* Groupes d'échéance : titre et compteur ; « En retard » porte une icône, un mot et une couleur (jamais la couleur seule). */
+.tasks-bucket { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; }
+.tasks-n { display: inline-block; min-width: 24px; padding: 0 7px; border-radius: 999px; font-size: 12.5px; line-height: 20px; text-align: center; color: var(--text); background: var(--active); }
+.tasks-late .tasks-bucket { color: var(--danger); }
+.tasks-late .tasks-list { border-color: var(--danger-bd); border-left: 3px solid var(--danger); }
+.tasks-late .task-state { color: var(--danger); }
+.task-base { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--border-strong); }
+.task-base:hover { color: var(--text); text-decoration-color: currentColor; }
+.tasks-empty-title { font-weight: 600; color: var(--text); }
+.tasks-spaces { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 4px; }
+.tasks-spaces a { color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; }
 
 /* Bloc base dans une page */
 .base-block { margin: 12px 0; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; background: var(--bg); }

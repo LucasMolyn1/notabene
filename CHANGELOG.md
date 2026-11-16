@@ -4,6 +4,18 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [Non publié]
+
+### Corrigé
+- **IA : assistant de rédaction avec un modèle à raisonnement** : quand un fournisseur compatible OpenAI renvoie `finish_reason: length` sans aucun texte (le modèle a dépensé tout son budget de jetons en réflexion cachée), l'assistant affichait « Aucune proposition. » sans explication. Il affiche maintenant une erreur claire (« Le modèle n'a rien répondu : la limite de longueur a été atteinte… essayez un modèle sans raisonnement »). Une réponse tronquée après un début de texte est signalée comme chez Anthropic, et un flux sans aucun texte est une erreur. Le plancher de jetons de l'assistant passe de 500 à 2000. Même traitement pour « Demander à l'IA » et le chat.
+- **Interface : lecture seule** : un lecteur qui ouvre une page ne déclenche plus d'enregistrement refusé (403), donc plus de « Échec de l'enregistrement » affiché sans rien avoir touché.
+- **Co-édition : plus de version fantôme à l'ouverture** : ouvrir une page dont le contenu a été posé par l'API, un import ou un modèle ne crée plus de version et n'écrase plus « modifiée par ». L'éditeur complète les valeurs par défaut de son schéma et ajoute un paragraphe vide final ; le serveur compare désormais l'ancien et le nouveau contenu après une mise en forme commune (`server/src/lib/editor-defaults.ts`) et n'enregistre que les vrais changements. Un test vérifie que la liste des valeurs par défaut du serveur suit le schéma de l'éditeur.
+
+### Modifié
+- **Interface : lecture seule expliquée** : une page ou une base en lecture seule affiche un bandeau d'une phrase (ce que la personne peut faire, à qui demander) avec un badge contrasté (clair et sombre). Rien ne change pour un éditeur ni en mode Lecture choisi.
+- **Interface : bases** : la base utilise toute la largeur disponible, un indice (ombre et barre de défilement) signale un tableau qui déborde, « Nouvelle ligne » est aussi en haut, et sur téléphone les actions secondaires passent dans un menu « Plus ».
+- **Interface : « Mes tâches »** : tâches regroupées par échéance (en retard, aujourd'hui, cette semaine, plus tard, sans échéance, terminées), retards signalés en texte et en couleur, état vide expliqué en mots simples.
+
 ## [3.18.2] - 2026-11-13
 
 ### Corrigé

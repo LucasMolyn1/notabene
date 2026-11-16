@@ -284,7 +284,7 @@ for (const scheme of ['light', 'dark'] as const) {
       found.push(...await violations(page, 'flux iCalendar'));
       await page.keyboard.press('Escape');
       await page.goto('/tasks');
-      await page.getByRole('heading', { name: `A11y calendrier ${scheme}` }).waitFor();
+      await page.getByRole('link', { name: `A11y calendrier ${scheme}` }).first().waitFor();
       found.push(...await violations(page, 'mes tâches'));
       expect(found).toEqual([]);
     });

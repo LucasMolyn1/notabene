@@ -8,6 +8,7 @@ import type { AiSettings } from './settings.js';
 // Avis ajoutés par le fournisseur à la fin d'un flux (refus, troncature) : ce ne sont pas des morceaux de la réponse.
 export const REFUSAL_NOTICE = '\n\n_Le modèle a refusé de répondre à cette question._';
 export const TRUNCATED_NOTICE = '\n\n_Réponse tronquée (limite de longueur atteinte)._';
+export const EMPTY_TRUNCATED_MESSAGE = 'Le modèle n’a rien répondu : la limite de longueur a été atteinte avant le début de sa réponse. C’est fréquent avec un modèle « à raisonnement » ; essayez un modèle sans raisonnement.';
 
 export class LlmError extends Error {
   constructor(message: string, readonly status = 502) {
@@ -123,6 +124,15 @@ async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: Ab
 
   const decoder = new TextDecoder();
   let buffer = '';
+  let produced = false;
+  let finish: string | null = null;
+  // Fin du flux : une réponse tronquée est signalée (comme chez Anthropic) ; une réponse vide est une erreur, jamais un silence.
+  // Un modèle « à raisonnement » peut dépenser tout son budget de jetons en réflexion cachée (`reasoning_content`) et ne rien écrire.
+  const conclude = (): string | null => {
+    if (produced) return finish === 'length' ? TRUNCATED_NOTICE : null;
+    if (finish === 'length') throw new LlmError(EMPTY_TRUNCATED_MESSAGE, 502);
+    throw new LlmError('Le modèle n’a renvoyé aucun texte. Réessayez ou choisissez un autre modèle.', 502);
+  };
   for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
     buffer += decoder.decode(chunk, { stream: true });
     let nl: number;
@@ -131,13 +141,22 @@ async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: Ab
       buffer = buffer.slice(nl + 1);
       if (!line.startsWith('data:')) continue;
       const data = line.slice(5).trim();
-      if (data === '[DONE]') return;
+      if (data === '[DONE]') {
+        const notice = conclude();
+        if (notice) yield notice;
+        return;
+      }
       try {
-        const delta = JSON.parse(data)?.choices?.[0]?.delta?.content;
-        if (typeof delta === 'string' && delta) yield delta;
+        const choice = JSON.parse(data)?.choices?.[0];
+        const delta = choice?.delta?.content;
+        if (typeof choice?.finish_reason === 'string') finish = choice.finish_reason;
+        if (typeof delta === 'string' && delta) { produced = true; yield delta; }
       } catch { /* ligne keep-alive ou partielle */ }
     }
   }
+  // Flux fermé sans « [DONE] » (certains serveurs locaux) : même conclusion.
+  const notice = conclude();
+  if (notice) yield notice;
 }
 
 export function streamCompletion(s: AiSettings, prompt: Prompt, signal: AbortSignal) {
