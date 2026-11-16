@@ -186,6 +186,9 @@ function mountPage(page) {
   async function flush() { scheduleSave.cancel(); await pushPending(); }
 
   function queue(patch) {
+    // Sans droit d'écriture (lecteur, page intégrée), jamais d'enregistrement : le serveur le refuserait (403), et la personne
+    // verrait « Échec de l'enregistrement » sans avoir rien touché. Cela arrive quand l'éditeur remet en forme un contenu à l'ouverture.
+    if (app.embed || !canWrite) return;
     Object.assign(pending, patch);
     dirty = true;
     setSave('saving');
@@ -239,12 +242,24 @@ function mountPage(page) {
       onGone: () => { if (view?.id === id) { teardown(); showMissing(id, 404); } },
     });
   }
+  let lastSignature = null; // texte du dernier état connu de l'éditeur (voir onChange)
   const editor = createEditor({
     element: editorHost,
     content: page.content,
     editable: !readOnly() && synced,
     collab: collab && { ydoc: collab.ydoc, provider: collab.provider, user: { name: session.user.name, color: colorFor(session.user.id) } },
-    onChange: () => { if (!useCollab) queue({ content: editor.getJSON() }); presence.touch(); refreshDerived(); },
+    onChange: () => {
+      if (!useCollab) {
+        // L'éditeur peut normaliser un contenu à l'ouverture (venu de l'API, d'un import, d'un modèle) et le signaler comme une
+        // mise à jour : sans frappe réelle, le texte est identique à celui du dernier état connu, on n'enregistre rien (sinon
+        // « modifiée à l'instant » et une version fantôme à chaque ouverture).
+        const json = editor.getJSON();
+        const signature = JSON.stringify(json);
+        if (signature !== lastSignature) { lastSignature = signature; queue({ content: json }); }
+      }
+      presence.touch();
+      refreshDerived();
+    },
     context: {
       navigate: (path) => A.go(path),
       open: (pid) => A.go(`/p/${pid}`),
@@ -262,6 +277,7 @@ function mountPage(page) {
       onAnchorClick: (commentId) => openComments(id, { getEditor: () => editor, focus: commentId }),
     },
   });
+  lastSignature = JSON.stringify(editor.getJSON()); // forme normalisée du contenu à l'ouverture
   // Surlignage du texte commenté, et noms des personnes mentionnées dans la page.
   const anchors = bindAnchors(id, () => editor);
   if (session.user) api.get(`/pages/${id}/mentioned`).then((r) => rememberMentionNames(r.items)).catch(() => undefined);

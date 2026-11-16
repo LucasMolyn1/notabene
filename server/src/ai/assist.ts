@@ -66,7 +66,8 @@ export function buildAssistPrompt(input: AssistInput): Prompt {
   return {
     system: SYSTEM,
     user: `${task}\n\n<texte>\n${fence(input.text)}\n</texte>`,
-    // Réponse du même ordre de grandeur que la sélection (un caractère ~ un quart de jeton), plafonnée.
-    maxTokens: Math.min(4000, Math.max(500, Math.ceil(input.text.length / 2))),
+    // Réponse du même ordre de grandeur que la sélection (un caractère ~ un quart de jeton), plafonnée. Plancher à 2000 :
+    // un modèle à raisonnement dépense plusieurs centaines de jetons à réfléchir avant d'écrire, 500 ne lui laissait aucun texte.
+    maxTokens: Math.min(4000, Math.max(2000, Math.ceil(input.text.length / 2))),
   };
 }

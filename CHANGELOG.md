@@ -4,6 +4,12 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## [Non publié]
+
+### Corrigé
+- **IA : assistant de rédaction avec un modèle à raisonnement** : quand un fournisseur compatible OpenAI renvoie `finish_reason: length` sans aucun texte (le modèle a dépensé tout son budget de jetons en réflexion cachée), l'assistant affichait « Aucune proposition. » sans explication. Il affiche maintenant une erreur claire (« Le modèle n'a rien répondu : la limite de longueur a été atteinte… essayez un modèle sans raisonnement »). Une réponse tronquée après un début de texte est signalée comme chez Anthropic, et un flux sans aucun texte est une erreur. Le plancher de jetons de l'assistant passe de 500 à 2000. Même traitement pour « Demander à l'IA » et le chat.
+- **Interface : lecture seule** : un lecteur qui ouvre une page ne déclenche plus d'enregistrement refusé (403), donc plus de « Échec de l'enregistrement » affiché sans rien avoir touché. Le cas d'un éditeur en co-édition (version « modifiée à l'instant » créée à l'ouverture d'une page dont le contenu a été posé par l'API) reste à traiter.
+
 ## [3.18.2] - 2026-11-13
 
 ### Corrigé
