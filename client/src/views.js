@@ -24,6 +24,7 @@ import { api, listAll } from './api.js';
 import { permissionsButton } from './permissions.js';
 import { shareButton } from './share-dialog.js';
 import { showBase } from './base.js';
+import { readOnlyNotice } from './read-only.js';
 import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
@@ -137,8 +138,11 @@ function mountPage(page) {
   // Accusé de lecture, sous la vérification (masqué sans demande et dans une intégration).
   const readReceipt = app.embed ? null : readReceiptBar(id);
   const editorHost = h('div', { class: 'editor-host' });
+  // Sans droit de modifier (et hors intégration) : bandeau qui explique quoi faire et à qui demander. Le mode Lecture choisi
+  // par un éditeur n'en affiche pas (rien n'est interdit, c'est un choix).
+  const roNotice = !canWrite && !app.embed ? readOnlyNotice({ kind: 'page', lastEditor: page.updatedBy }) : null;
   const tocEl = h('aside', { class: 'toc', 'aria-label': 'Sommaire' });
-  const article = h('article', { class: 'page' }, h('div', { class: 'page-head' }, iconBtn, addIconBtn), titleEl, verification?.el, readReceipt?.el, labels.el, metaEl, editorHost);
+  const article = h('article', { class: 'page' }, h('div', { class: 'page-head' }, iconBtn, addIconBtn), titleEl, roNotice, verification?.el, readReceipt?.el, labels.el, metaEl, editorHost);
   const wrap = h('div', { class: 'page-wrap' }, article, tocEl);
   const scroller = h('div', { class: 'scroller' }, wrap);
 
@@ -341,7 +345,6 @@ function mountPage(page) {
       h('span', null, `${words} mot${words > 1 ? 's' : ''}`),
       h('span', null, `${Math.max(1, Math.round(words / 220))} min de lecture`),
       backlinks.length > 0 && h('button', { class: 'link-btn', type: 'button', onClick: (e) => showBacklinks(e.currentTarget) }, `${backlinks.length} page${backlinks.length > 1 ? 's' : ''} renvoie${backlinks.length > 1 ? 'nt' : ''} ici`),
-      !canWrite && h('span', { class: 'badge-soft' }, 'Lecture seule'),
     ].filter(Boolean));
   }
 

@@ -134,6 +134,12 @@ const MARKS: Record<string, AttrRules> = {
   commentAnchor: { id: (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined) },
 };
 
+/** Attributs gardés par l'assainissement, par type de nœud et de marque (lecture seule ; sert au test de dérive des valeurs par défaut). */
+export const allowedAttrs = (): { nodes: Record<string, string[]>; marks: Record<string, string[]> } => ({
+  nodes: Object.fromEntries(Object.entries(NODES).map(([k, v]) => [k, Object.keys(v)])),
+  marks: Object.fromEntries(Object.entries(MARKS).map(([k, v]) => [k, Object.keys(v)])),
+});
+
 function cleanAttrs(rules: AttrRules, attrs: unknown): Record<string, unknown> | undefined {
   if (!attrs || typeof attrs !== 'object') return undefined;
   const out: Record<string, unknown> = {};

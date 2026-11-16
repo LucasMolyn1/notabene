@@ -38,3 +38,42 @@ test('lecteur : ouvrir une page ne tente aucun enregistrement', async ({ browser
   await expect(page.locator('[data-state="error"]')).toHaveCount(0);
   await reader.close();
 });
+
+// Co-édition : l'éditeur complète le document Yjs à l'ouverture (valeurs par défaut du schéma, paragraphe vide final). Le serveur
+// n'y voit pas une modification : ni nouvelle version, ni « modifiée par » la personne qui a seulement ouvert la page.
+test('éditeur : ouvrir une page sans rien taper ne crée pas de version', async ({ browser }) => {
+  const EDITOR = { email: 'editeur.sans.version@e2e.test', name: 'Éditeur Sans Version' };
+  const admin = await adminContext(browser);
+  await createLocalUser(admin.request, EDITOR.email, EDITOR.name, 'editor');
+  const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+  const spaceId = spaces.find((s) => s.visibility === 'public')!.id;
+  const content = {
+    type: 'doc',
+    content: [
+      para('Contenu posé par l’API.'),
+      { type: 'taskList', content: [{ type: 'taskItem', content: [para('Une tâche')] }] },
+      { type: 'codeBlock', attrs: { language: 'bash' }, content: [text('systemctl status service')] },
+    ],
+  };
+  const created = await api(admin.request, 'POST', '/pages', { spaceId, title: 'Ouverture sans version', content });
+  expect(created.ok()).toBeTruthy();
+  const { id } = await created.json();
+  const meta = async () => {
+    const p = await (await api(admin.request, 'GET', `/pages/${id}`)).json();
+    return { version: p.version, updatedBy: p.updatedBy };
+  };
+  const before = await meta();
+
+  const editor = await sessionContext(browser, EDITOR.email, PASSWORD);
+  const page = await editor.newPage();
+  await page.goto(`/p/${id}`);
+  await expect(page.locator('.ProseMirror[contenteditable="true"]')).toContainText('Contenu posé par l’API.');
+  await page.waitForTimeout(2500); // enregistrement différé de la salle de co-édition : 2 s
+  expect(await meta()).toEqual(before);
+  // Fermeture de la page : la salle enregistre aussitôt, toujours rien à enregistrer.
+  await page.close();
+  await new Promise((r) => setTimeout(r, 500));
+  expect(await meta()).toEqual(before);
+  await editor.close();
+  await admin.close();
+});
