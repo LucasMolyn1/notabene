@@ -2,6 +2,7 @@
 // portées du jeton API. Une session navigateur dispose de toutes les portées de son rôle.
 import type { FastifyRequest } from 'fastify';
 import { HttpError } from '../lib/http.js';
+import { markDenied } from './denials.js';
 
 export type Role = 'admin' | 'editor' | 'reader';
 export type Scope = 'read' | 'write' | 'ai' | 'admin';
@@ -23,6 +24,9 @@ export interface Auth {
   tokenId?: string;
   // Nom donné au jeton par son propriétaire : l'audit l'affiche pour distinguer un outil d'une personne.
   tokenName?: string;
+  // Jeton limité à certains espaces : seuls ces espaces existent pour lui (lib/space-access.ts). null ou absent = tous les espaces
+  // auxquels la personne a accès (session navigateur, jeton sans limite).
+  spaceIds?: Set<string> | null;
   // Compte local sans MFA alors que LOCAL_REQUIRE_MFA est actif : seules l'activation de la MFA et /me restent permises.
   mfaPending?: boolean;
 }
@@ -52,7 +56,10 @@ export function requireAuth(req: FastifyRequest): Auth {
 
 export function requireScope(req: FastifyRequest, scope: Scope): Auth {
   const auth = requireAuth(req);
-  if (!can(auth, scope)) throw new HttpError(403, 'Permission insuffisante');
+  if (!can(auth, scope)) {
+    markDenied(req, 'scope');
+    throw new HttpError(403, 'Permission insuffisante');
+  }
   return auth;
 }
 

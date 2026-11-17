@@ -73,7 +73,7 @@ export default async function authRoutes(app: FastifyInstance) {
       if (previous) destroySession(db, previous);
       startSession(reply, userId, idToken);
       req.auth = { user: { id: userId, name: displayName(profile), email: null, role }, via: 'session', scopes: new Set() };
-      audit(db, req, 'auth.login', userId, { role });
+      audit(db, req, 'auth.login', userId, { role }, { actorId: userId });
       return reply.redirect(returnTo);
     } catch (err) {
       req.log.warn({ err }, 'échec du callback OIDC');

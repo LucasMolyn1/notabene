@@ -24,6 +24,8 @@ import { api, listAll } from './api.js';
 import { permissionsButton } from './permissions.js';
 import { shareButton } from './share-dialog.js';
 import { showBase } from './base.js';
+import { readOnlyNotice } from './read-only.js';
+import { openMoveDialog } from './move-dialog.js';
 import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
@@ -48,7 +50,8 @@ export function setView(v) { view = v; }
 
 export function topbar(left, right = []) {
   return h('header', { class: 'topbar' },
-    !app.embed && h('button', { class: 'icon-btn sb-open', title: `Barre latérale (${modKey}\\)`, onClick: A.toggleSidebar }, icon('panel')),
+    // Libellé visible « Menu » (pas seulement une icône) : sur tablette et téléphone, c'est l'accès aux pages et à la recherche.
+    !app.embed && h('button', { class: 'icon-btn sb-open', title: `Ouvrir ou fermer la barre latérale (${modKey}\\)`, onClick: A.toggleSidebar }, icon('panel'), h('span', { class: 'sb-open-label' }, 'Menu')),
     left,
     h('div', { class: 'topbar-right' }, right, assistantButton(), !app.embed && bellButton()));
 }
@@ -91,8 +94,10 @@ export async function showPage(id) {
     return;
   }
   if (seq !== navSeq) return;
-  if (page.kind === 'base') { prefs.space = page.spaceId; prefs.lastPage = id; for (const a of store.ancestors(id)) prefs.expanded[a.id] = true; savePrefs(); presence.setPage(id); showBase(page); return; }
-  mountPage(page);
+  if (page.kind === 'base') { prefs.space = page.spaceId; prefs.lastPage = id; for (const a of store.ancestors(id)) prefs.expanded[a.id] = true; savePrefs(); presence.setPage(id); showBase(page); }
+  else mountPage(page);
+  // La barre latérale a pu se dessiner avant la réponse : elle suit l'espace de la page et déplie ses parents.
+  window.dispatchEvent(new Event('page-mounted'));
 }
 
 function mountPage(page) {
@@ -137,8 +142,11 @@ function mountPage(page) {
   // Accusé de lecture, sous la vérification (masqué sans demande et dans une intégration).
   const readReceipt = app.embed ? null : readReceiptBar(id);
   const editorHost = h('div', { class: 'editor-host' });
+  // Sans droit de modifier (et hors intégration) : bandeau qui explique quoi faire et à qui demander. Le mode Lecture choisi
+  // par un éditeur n'en affiche pas (rien n'est interdit, c'est un choix).
+  const roNotice = !canWrite && !app.embed ? readOnlyNotice({ kind: 'page', lastEditor: page.updatedBy }) : null;
   const tocEl = h('aside', { class: 'toc', 'aria-label': 'Sommaire' });
-  const article = h('article', { class: 'page' }, h('div', { class: 'page-head' }, iconBtn, addIconBtn), titleEl, verification?.el, readReceipt?.el, labels.el, metaEl, editorHost);
+  const article = h('article', { class: 'page' }, h('div', { class: 'page-head' }, iconBtn, addIconBtn), titleEl, roNotice, verification?.el, readReceipt?.el, labels.el, metaEl, editorHost);
   const wrap = h('div', { class: 'page-wrap' }, article, tocEl);
   const scroller = h('div', { class: 'scroller' }, wrap);
 
@@ -186,6 +194,9 @@ function mountPage(page) {
   async function flush() { scheduleSave.cancel(); await pushPending(); }
 
   function queue(patch) {
+    // Sans droit d'écriture (lecteur, page intégrée), jamais d'enregistrement : le serveur le refuserait (403), et la personne
+    // verrait « Échec de l'enregistrement » sans avoir rien touché. Cela arrive quand l'éditeur remet en forme un contenu à l'ouverture.
+    if (app.embed || !canWrite) return;
     Object.assign(pending, patch);
     dirty = true;
     setSave('saving');
@@ -239,12 +250,24 @@ function mountPage(page) {
       onGone: () => { if (view?.id === id) { teardown(); showMissing(id, 404); } },
     });
   }
+  let lastSignature = null; // texte du dernier état connu de l'éditeur (voir onChange)
   const editor = createEditor({
     element: editorHost,
     content: page.content,
     editable: !readOnly() && synced,
     collab: collab && { ydoc: collab.ydoc, provider: collab.provider, user: { name: session.user.name, color: colorFor(session.user.id) } },
-    onChange: () => { if (!useCollab) queue({ content: editor.getJSON() }); presence.touch(); refreshDerived(); },
+    onChange: () => {
+      if (!useCollab) {
+        // L'éditeur peut normaliser un contenu à l'ouverture (venu de l'API, d'un import, d'un modèle) et le signaler comme une
+        // mise à jour : sans frappe réelle, le texte est identique à celui du dernier état connu, on n'enregistre rien (sinon
+        // « modifiée à l'instant » et une version fantôme à chaque ouverture).
+        const json = editor.getJSON();
+        const signature = JSON.stringify(json);
+        if (signature !== lastSignature) { lastSignature = signature; queue({ content: json }); }
+      }
+      presence.touch();
+      refreshDerived();
+    },
     context: {
       navigate: (path) => A.go(path),
       open: (pid) => A.go(`/p/${pid}`),
@@ -262,6 +285,7 @@ function mountPage(page) {
       onAnchorClick: (commentId) => openComments(id, { getEditor: () => editor, focus: commentId }),
     },
   });
+  lastSignature = JSON.stringify(editor.getJSON()); // forme normalisée du contenu à l'ouverture
   // Surlignage du texte commenté, et noms des personnes mentionnées dans la page.
   const anchors = bindAnchors(id, () => editor);
   if (session.user) api.get(`/pages/${id}/mentioned`).then((r) => rememberMentionNames(r.items)).catch(() => undefined);
@@ -325,7 +349,6 @@ function mountPage(page) {
       h('span', null, `${words} mot${words > 1 ? 's' : ''}`),
       h('span', null, `${Math.max(1, Math.round(words / 220))} min de lecture`),
       backlinks.length > 0 && h('button', { class: 'link-btn', type: 'button', onClick: (e) => showBacklinks(e.currentTarget) }, `${backlinks.length} page${backlinks.length > 1 ? 's' : ''} renvoie${backlinks.length > 1 ? 'nt' : ''} ici`),
-      !canWrite && h('span', { class: 'badge-soft' }, 'Lecture seule'),
     ].filter(Boolean));
   }
 
@@ -396,6 +419,7 @@ function mountPage(page) {
       { label: 'Exporter en HTML', icon: 'download', onClick: async () => { await flush(); A.exportHTML(id); } },
       { label: 'Exporter en PDF', icon: 'pdf', onClick: async () => { await flush(); A.exportPDF(id); } },
       session.user && { label: 'Exporter en ZIP', icon: 'download', onClick: async () => { await flush(); A.openZipExport({ pageId: id }); } },
+      canWrite && { label: 'Déplacer vers…', icon: 'move', onClick: async () => { await flush(); openMoveDialog(id); } },
       canWrite && { label: 'Dupliquer', icon: 'copy', onClick: async () => { await flush(); A.duplicate(id); } },
       canWrite && { label: 'Ajouter une sous-page', icon: 'plus', onClick: () => A.newPage(p.spaceId, id) },
       canWrite && { label: 'Ajouter une sous-page depuis un modèle', icon: 'layers', onClick: () => A.newPageFromTemplate(p.spaceId, id) },

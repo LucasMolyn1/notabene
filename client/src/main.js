@@ -176,6 +176,7 @@ async function boot() {
   window.addEventListener('hashchange', route);
   document.addEventListener('click', onLinkClick);
   window.addEventListener('avatars-changed', scheduleSidebar);
+  window.addEventListener('page-mounted', scheduleSidebar);
   document.addEventListener('keydown', onKey);
   // Le lien d'évitement déplace le focus au lieu de changer l'adresse.
   document.getElementById('skip-link').addEventListener('click', (e) => { e.preventDefault(); document.getElementById('main').focus(); });

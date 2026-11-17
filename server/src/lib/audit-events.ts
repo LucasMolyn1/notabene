@@ -3,6 +3,7 @@
 // Rien d'autre que ce que contient déjà `audit_log` ne sort ; `meta` est en plus filtré (aucun secret ni texte de page).
 import { z } from 'zod';
 import type { DB } from '../db.js';
+import { type AuditTarget, auditLabel, resolveTargets } from './audit-labels.js';
 
 export const AUDIT_SCHEMA = 'notabene.audit/1';
 
@@ -14,6 +15,8 @@ export interface AuditEvent {
   id: number;
   timestamp: string;
   action: string;
+  // Libellé français lisible de l'action (ajout compatible du schéma 1).
+  label: string;
   outcome: 'success' | 'failure';
   // `via` : jeton d'API utilisé quand l'action vient d'un outil (absent pour une session navigateur). Ajout compatible du schéma 1.
   actor: { id: string; name: string | null; via?: { type: 'token'; id: string; name: string | null } } | null;
@@ -66,12 +69,24 @@ export const toAuditEvent = (r: AuditRow): AuditEvent => ({
   id: r.id,
   timestamp: new Date(r.at).toISOString(),
   action: r.action,
+  label: auditLabel(r.action),
   outcome: outcomeOf(r.action),
   actor: r.user_id ? { id: r.user_id, name: r.user_name ?? null, ...(r.token_id ? { via: { type: 'token' as const, id: r.token_id, name: r.token_name ?? null } } : {}) } : null,
   target: r.target,
   ip: r.ip,
   meta: sanitizeMeta(r.meta),
 });
+
+/**
+ * Évènements pour la liste et l'export réservés aux administrateurs : en plus du format stable, `targetInfo` donne la cible
+ * résolue ({ type, id, title }, titre actuel), une requête groupée par type d'objet pour tout le lot. `target` reste
+ * l'identifiant (schéma 1 : aucun champ ne change de type). Le SIEM et la sortie standard n'ont pas `targetInfo`.
+ */
+export type PresentedAuditEvent = AuditEvent & { targetInfo: AuditTarget | null };
+export function presentAuditEvents(db: DB, rows: AuditRow[]): PresentedAuditEvent[] {
+  const targets = resolveTargets(db, rows);
+  return rows.map((r, i) => ({ ...toAuditEvent(r), targetInfo: targets[i] ?? null }));
+}
 
 // Une famille (« auth ») couvre l'action du même nom et toutes celles qui commencent par « auth. ».
 export const matchesFamily = (action: string, families: readonly string[]) =>
@@ -108,7 +123,7 @@ export function auditWhere(f: AuditFilters): { sql: string; args: unknown[] } {
     if (f.action.endsWith('.')) { parts.push('substr(a.action, 1, ?) = ?'); args.push(f.action.length, f.action); }
     else { parts.push('a.action = ?'); args.push(f.action); }
   }
-  if (f.userId) { parts.push('a.user_id = ?'); args.push(f.userId); }
+  if (f.userId) { parts.push(`${ACTOR_SQL} = ?`); args.push(f.userId); }
   if (f.target) { parts.push('a.target = ?'); args.push(f.target); }
   if (f.outcome) {
     const failure = "(a.action = 'auth.denied' OR substr(a.action, -7) = '.failed')";
@@ -122,7 +137,9 @@ export function auditWhere(f: AuditFilters): { sql: string; args: unknown[] } {
   return { sql: parts.length ? parts.join(' AND ') : '1', args };
 }
 
-const SELECT = `SELECT a.id, a.at, a.user_id, u.name AS user_name, a.action, a.target, a.ip, a.meta, a.token_id, a.token_name FROM audit_log a LEFT JOIN users u ON u.id = a.user_id`;
+// Auteur : celui de la ligne ; pour une connexion écrite avant que l'auteur ne soit enregistré, la personne connectée (la cible).
+export const ACTOR_SQL = "COALESCE(a.user_id, CASE WHEN a.action = 'auth.login' THEN a.target END)";
+const SELECT = `SELECT a.id, a.at, ${ACTOR_SQL} AS user_id, u.name AS user_name, a.action, a.target, a.ip, a.meta, a.token_id, a.token_name FROM audit_log a LEFT JOIN users u ON u.id = ${ACTOR_SQL}`;
 
 // Lignes plus anciennes que `beforeId` (exclu), de la plus récente à la plus ancienne.
 export function auditPage(db: DB, f: AuditFilters, beforeId: number | null, limit: number): AuditRow[] {
@@ -167,7 +184,8 @@ export function eventJson(e: AuditEvent): string {
 export const auditMaxId = (db: DB) => (db.prepare('SELECT COALESCE(MAX(id), 0) AS n FROM audit_log').get() as { n: number }).n;
 
 // ---- Export CSV ----------------------------------------------------------------------------------
-export const CSV_COLUMNS = ['id', 'timestamp', 'action', 'outcome', 'actor_id', 'actor_name', 'target', 'ip', 'meta', 'via_token'] as const;
+// Colonnes ajoutées en fin de ligne (compatibles) : libellé, type et titre actuel de la cible.
+export const CSV_COLUMNS = ['id', 'timestamp', 'action', 'outcome', 'actor_id', 'actor_name', 'target', 'ip', 'meta', 'via_token', 'label', 'target_type', 'target_title'] as const;
 
 // Cellule CSV (RFC 4180, toujours entre guillemets). Une valeur qui commence par = + - @, une tabulation ou un retour
 // chariot est préfixée d'une apostrophe : un tableur ne l'exécute pas comme une formule (injection CSV).
@@ -178,5 +196,5 @@ export function csvCell(v: unknown): string {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
-export const csvLine = (e: AuditEvent) =>
-  [e.id, e.timestamp, e.action, e.outcome, e.actor?.id, e.actor?.name, e.target, e.ip, e.meta ? JSON.stringify(e.meta) : null, e.actor?.via?.name].map(csvCell).join(',');
+export const csvLine = (e: PresentedAuditEvent) =>
+  [e.id, e.timestamp, e.action, e.outcome, e.actor?.id, e.actor?.name, e.target, e.ip, e.meta ? JSON.stringify(e.meta) : null, e.actor?.via?.name, e.label, e.targetInfo?.type, e.targetInfo?.title].map(csvCell).join(',');

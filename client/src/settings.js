@@ -15,22 +15,26 @@ import { renderImages } from './settings/images.js';
 import { renderGroups } from './settings/groups.js';
 import { renderScim } from './settings/scim.js';
 import { renderShares } from './settings/shares.js';
+import { renderSecurity } from './settings/security.js';
 import { store } from './store.js';
 
 // ---- Page -----------------------------------------------------------------------------
 
 // Chaque onglet regroupe une ou plusieurs parties ; chaque partie garde son propre contrôle d'accès.
-/** @param {string} id @param {string} label @param {(el: HTMLElement) => any} render @param {{ admin?: boolean, manager?: boolean, write?: boolean, sensitive?: boolean }} [opts] */
+/** @param {string} id @param {string} label @param {(el: HTMLElement) => any} render @param {{ admin?: boolean, nonAdmin?: boolean, manager?: boolean, write?: boolean, sensitive?: boolean }} [opts] */
 const P = (id, label, render, opts = {}) => ({ id, label, render, ...opts });
 const SECTIONS = [
   { group: 'Compte', id: 'account', label: 'Compte', ico: 'users', parts: [
     P('profile', 'Profil et sessions', renderProfile), P('appearance', 'Apparence', renderAppearance),
+    // Sécurité : synthèse ; ici pour une personne non administratrice, dans « Administration » pour un administrateur.
+    P('mysecurity', 'Sécurité', renderSecurity, { nonAdmin: true }),
     P('tokens', 'Jetons d’API', renderTokens), P('about', 'À propos', renderAbout)] },
   { group: 'Fonctionnalités', id: 'sharing', label: 'Partage', ico: 'globe', parts: [
     P('shares', 'Pages partagées', renderShares, { write: true }), P('embed', 'Intégration portfolio', renderEmbed, { sensitive: true })] },
   { group: 'Fonctionnalités', id: 'ai', label: 'Recherche IA', ico: 'sparkle', parts: [P('ai', 'Recherche IA', renderAi, { sensitive: true })] },
   { group: 'Fonctionnalités', id: 'tools', label: 'Outils', ico: 'qrcode', parts: [
     P('diagrams', 'Diagrammes', renderDiagrams), P('tools', 'Outils', renderTools), P('api', 'API REST', renderApi)] },
+  { group: 'Administration', id: 'security', label: 'Sécurité', ico: 'shield', parts: [P('security', 'Sécurité', renderSecurity, { admin: true })] },
   { group: 'Administration', id: 'spaces', label: 'Espaces', ico: 'folder', parts: [P('spaces', 'Espaces', renderSpaces, { manager: true })] },
   { group: 'Administration', id: 'people', label: 'Utilisateurs et groupes', ico: 'users', parts: [
     P('users', 'Utilisateurs', renderUsers, { admin: true }), P('groups', 'Groupes', renderGroups, { admin: true })] },
@@ -54,11 +58,13 @@ export function showSettings(sectionId) {
   beginView();
   // Un gestionnaire d'espace (rôle « full ») accède aux espaces qu'il gère, sans le reste de l'administration.
   const manager = store.spaces.some((s) => s.role === 'full');
-  const allowed = (p) => (!p.admin || session.can('admin')) && (!p.manager || session.can('admin') || manager) && (!p.write || session.can('write'));
+  const allowed = (p) => (!p.admin || session.can('admin')) && (!p.nonAdmin || !session.can('admin')) && (!p.manager || session.can('admin') || manager) && (!p.write || session.can('write'));
   const sections = SECTIONS.map((s) => ({ ...s, parts: s.parts.filter(allowed) })).filter((s) => s.parts.length);
-  const wanted = sections.find((s) => s.id === sectionId) || sections.find((s) => s.id === PART_TO_SECTION.get(sectionId));
+  // « /settings/security » : l'onglet Sécurité d'un administrateur, la partie Sécurité du Compte pour les autres.
+  const target = sectionId === 'security' && !session.can('admin') ? 'mysecurity' : sectionId;
+  const wanted = sections.find((s) => s.id === target) || sections.find((s) => s.id === PART_TO_SECTION.get(target));
   const section = wanted || sections[0];
-  const anchor = section.parts.find((p) => p.id === sectionId)?.id;
+  const anchor = section.parts.find((p) => p.id === target)?.id;
   document.title = `${section.label} · Paramètres · BeNote`;
 
   let group = null;

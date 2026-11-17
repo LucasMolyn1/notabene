@@ -3,6 +3,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { clonerFor, loadReadablePage, loadWritablePage, readableSpaceIds } from '../lib/access.js';
+import { audit, auditThrottled } from '../lib/audit.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
 import { hasPageLink } from '../lib/content.js';
@@ -104,6 +105,8 @@ export default async function pageQueryRoutes(app: FastifyInstance) {
       if (err instanceof HttpError && err.statusCode === 409 && !(err instanceof SyncedBlockConflict)) throw new HttpError(412, 'La page a changé depuis votre lecture (ETag périmé)', err.details);
       throw err;
     }
+    // Champs modifiés seulement, jamais leur valeur ; au plus une ligne par minute pour une même page et un même auteur.
+    auditThrottled(db, req, 'page.update', id, Object.keys(body).filter((k) => body[k as keyof typeof body] !== undefined));
     bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: id, version: row.version, by: { id: req.auth.user.id, name: req.auth.user.name } });
     reply.header('etag', etag(row.version));
     return toMeta(row, isFavorite(db, userId(req), id));
@@ -147,6 +150,9 @@ export default async function pageQueryRoutes(app: FastifyInstance) {
       all.push(item);
     }
     const items = all.slice(offset, offset + limit);
+    // Recherche par jeton d'API : journalisée (nombre de résultats, filtres employés), jamais le texte cherché. Les recherches
+    // d'une session navigateur ne le sont pas (bruit).
+    if (req.auth?.via === 'token') audit(db, req, 'search', null, { results: all.length, returned: items.length, offset, spaceFilter: !!spaceId, labelFilter: !!label });
     return { items, nextCursor: offset + limit < all.length ? encodeCursor({ o: offset + limit }) : null };
   });
 }

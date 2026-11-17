@@ -1,6 +1,6 @@
 // Accès aux pages : arborescence, versions, corbeille, recherche plein texte.
 // Toutes les requêtes sont préparées ; les contrôles d'accès se font dans les routes.
-import type { DB } from '../db.js';
+import { type DB, foldText } from '../db.js';
 import type { AttachmentCloner } from './attachments.js';
 import { type DocNode, docText, emptyDoc, sanitizeDoc } from './content.js';
 import { copyBaseData } from './bases.js';
@@ -336,19 +336,24 @@ export function ftsQuery(input: string, operator: 'AND' | 'OR' = 'AND', maxTerms
   return terms.length ? terms.join(` ${operator} `) : null;
 }
 
-// `offset` permet la lecture par lots (ordre stable : rang puis numéro de page) ; `withText` à false évite de charger le
-// texte intégral quand seul l'extrait sert (recherche paginée).
+type SearchHit = { id: string; spaceId: string; parentId: string | null; title: string; icon: string; updatedAt: number; text: string; snippet: string; rank: number };
+
+// `offset` permet la lecture par lots (ordre stable) ; `withText` à false évite de charger le texte intégral quand seul l'extrait
+// sert (recherche paginée). Ordre : titre exactement égal à la requête (sans casse ni accents), puis titre qui la contient, puis le
+// reste ; dans chaque groupe, la pertinence (bm25) puis le numéro de page. L'ordre ne dépend que de la requête et des données :
+// les lots successifs (et les curseurs) restent cohérents.
 export function searchPages(db: DB, query: string, spaceIds: string[], limit = 20, operator: 'AND' | 'OR' = 'AND', label: string | null = null, offset = 0, withText = true) {
   const match = ftsQuery(query, operator);
   if (!match) return [];
-  return db.prepare(
+  const folded = foldText(query);
+  const rows = db.prepare(
     `SELECT p.id, p.space_id AS spaceId, p.parent_id AS parentId, p.title, p.icon, p.updated_at AS updatedAt, ${withText ? 'p.text' : "'' AS text"},
-            snippet(pages_fts, 1, char(2), char(3), '…', 20) AS snippet, bm25(pages_fts, 8.0, 1.0) AS rank
+            snippet(pages_fts, 1, char(2), char(3), '…', 20) AS snippet, bm25(pages_fts, 8.0, 1.0) AS rank,
+            CASE WHEN fold_fr(p.title) = @q THEN 0 WHEN instr(fold_fr(p.title), @q) > 0 THEN 1 ELSE 2 END AS tier
      FROM pages_fts JOIN pages p ON p.seq = pages_fts.rowid
-     WHERE pages_fts MATCH ? AND p.deleted_at IS NULL AND p.space_id IN (SELECT value FROM json_each(?))
-       AND (? IS NULL OR EXISTS (SELECT 1 FROM page_labels l WHERE l.page_id = p.id AND l.name = ?))
-     ORDER BY rank, p.seq LIMIT ? OFFSET ?`,
-  ).all(match, JSON.stringify(spaceIds), label, label, limit, offset) as {
-    id: string; spaceId: string; parentId: string | null; title: string; icon: string; updatedAt: number; text: string; snippet: string; rank: number;
-  }[];
+     WHERE pages_fts MATCH @match AND p.deleted_at IS NULL AND p.space_id IN (SELECT value FROM json_each(@spaces))
+       AND (@label IS NULL OR EXISTS (SELECT 1 FROM page_labels l WHERE l.page_id = p.id AND l.name = @label))
+     ORDER BY tier, rank, p.seq LIMIT @limit OFFSET @offset`,
+  ).all({ match, spaces: JSON.stringify(spaceIds), label, limit, offset, q: folded || '\u0000' }) as (SearchHit & { tier: number })[];
+  return rows.map(({ tier: _tier, ...r }) => r);
 }
