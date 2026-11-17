@@ -4,7 +4,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
-## [Non publié]
+## [3.18.3] - 2026-11-17
 
 ### Ajouté
 - **API : jetons limités à certains espaces** : un jeton peut être restreint à un ou plusieurs espaces (champ `spaceIds` à la création ; migration 37). La limite s'applique à toutes les routes (pages, recherche, IA, exports, bases, notifications, MCP, flux d'évènements) ; un objet hors périmètre répond 404 comme un objet inexistant. Un jeton limité ne porte pas la portée `admin`, ne crée pas d'espace ni d'automatisation. Un jeton dont tous les espaces ont été supprimés n'ouvre plus rien. La liste des jetons indique les espaces, le nombre de requêtes et la dernière utilisation.
