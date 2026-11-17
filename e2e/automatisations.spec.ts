@@ -142,7 +142,7 @@ test('webhooks d’automatisation : réglage d’administration, secret montré 
 
   // Réglage d'administration.
   await page.goto('/settings');
-  await page.locator('.set-nav-item').filter({ hasText: /^Webhooks$/ }).click();
+  await page.locator('.set-nav-item').filter({ hasText: /^Intégrations$/ }).click();
   const toggle = page.getByLabel('Autoriser les webhooks d’automatisation');
   await expect(toggle).not.toBeChecked();
   const put = page.waitForResponse((r) => r.url().endsWith('/admin/automations') && r.request().method() === 'PUT');

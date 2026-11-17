@@ -83,10 +83,12 @@ test('page Sécurité : synthèse complète pour un administrateur, réduite pou
   const editor = await sessionContext(browser, 'securite.editeur@e2e.test', PASSWORD);
   const p2 = await editor.newPage();
   await p2.goto('/settings/security');
-  await expect(p2.getByRole('heading', { level: 1, name: 'Sécurité' })).toBeVisible();
+  // Pour un compte non administrateur, la synthèse est une partie de l'onglet « Compte ».
+  await expect(p2.getByRole('heading', { level: 1, name: 'Compte' })).toBeVisible();
+  await expect(p2.getByRole('heading', { level: 2, name: 'Sécurité', exact: true })).toBeVisible();
   const items = await p2.getByRole('navigation', { name: 'Sections des paramètres' }).locator('.set-nav-group, .set-nav-item').allTextContents();
   expect(items).not.toContain('Administration');
-  expect(items.indexOf('Sécurité')).toBeGreaterThan(items.indexOf('Compte'));
+  expect(items).not.toContain('Sécurité');
   await expect(p2.locator('.sec-item strong').filter({ hasText: 'Double authentification' })).toBeVisible();
   await expect(p2.locator('.sec-item strong').filter({ hasText: 'Durée de session' })).toHaveCount(0);
   await expect(p2.getByText('réservés aux administrateurs')).toBeVisible();
