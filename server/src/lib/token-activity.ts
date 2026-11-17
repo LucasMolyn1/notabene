@@ -43,9 +43,11 @@ export class TokenActivity {
 
   constructor(private readonly db: DB, private readonly now: () => number = Date.now) {}
 
-  start() {
+  /** Démarre l'écriture périodique ; l'arrêt du serveur écrit le reste (hook de fermeture, pas une route). */
+  start(app?: { addHook(name: 'onClose', fn: () => void): unknown }) {
     this.#timer = setInterval(() => { this.flush(false); this.flushCounts(); }, COUNT_FLUSH_MS);
     this.#timer.unref();
+    app?.addHook('onClose', () => this.stop());
   }
 
   stop() {

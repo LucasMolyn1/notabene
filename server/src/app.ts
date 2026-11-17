@@ -170,8 +170,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   // Activité des jetons d'API : agrégat `api.access`, refus `auth.denied`, compteur de requêtes (lib/token-activity.ts).
   const tokenActivity = new TokenActivity(db);
   app.decorate('tokenActivity', tokenActivity);
-  tokenActivity.start();
-  app.addHook('onClose', async () => { tokenActivity.stop(); });
+  tokenActivity.start(app);
   app.decorate('oidc', new OidcClient(() => rt.get(), db));
   app.decorateRequest('auth', null);
 
