@@ -3,7 +3,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard, requireAuth } from '../auth/context.js';
-import { loadReadablePage, loadWritablePage } from '../lib/access.js';
+import { loadReadablePage, loadWritablePage, tokenPageClause } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
 import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
 import { fillReadable } from '../lib/fill.js';
@@ -105,6 +105,7 @@ export default async function v3Routes(app: FastifyInstance) {
       for (const m of mentioned) db.prepare('INSERT INTO comment_mentions (comment_id, user_id) VALUES (?, ?)').run(id, m.id);
     })();
     const row = toComment(byPage(page.id, id)!, mentionsOf([id]));
+    audit(db, req, 'comment.create', id, { pageId: page.id, reply: !!b.parentId, mentions: mentioned.length });
     announce('comment.created', page.space_id, page.id, req, { commentId: id });
     return reply.status(201).send(row);
   });
@@ -124,6 +125,7 @@ export default async function v3Routes(app: FastifyInstance) {
     const now = Date.now();
     if (b.body !== undefined) db.prepare('UPDATE page_comments SET body = ?, updated_at = ? WHERE id = ?').run(b.body, now, cid);
     if (b.resolved !== undefined) db.prepare('UPDATE page_comments SET resolved_at = ?, resolved_by = ?, updated_at = ? WHERE id = ?').run(b.resolved ? now : null, b.resolved ? auth.user.id : null, now, cid);
+    audit(db, req, 'comment.update', cid, { pageId: page.id, edited: b.body !== undefined, ...(b.resolved !== undefined ? { resolved: b.resolved } : {}) });
     announce('comment.updated', page.space_id, page.id, req, { commentId: cid });
     return toComment(byPage(page.id, cid)!, mentionsOf([cid]));
   });
@@ -141,7 +143,7 @@ export default async function v3Routes(app: FastifyInstance) {
     // Suppression logique : le texte est effacé, le fil (réponses) reste cohérent.
     db.prepare("UPDATE page_comments SET deleted_at = ?, body = '', anchor_text = NULL, updated_at = ? WHERE id = ?").run(Date.now(), Date.now(), cid);
     db.prepare('DELETE FROM comment_mentions WHERE comment_id = ?').run(cid);
-    if (row.author_id !== auth.user.id) audit(db, req, 'comment.delete', cid, { pageId: page.id });
+    audit(db, req, 'comment.delete', cid, { pageId: page.id, own: row.author_id === auth.user.id });
     announce('comment.deleted', page.space_id, page.id, req, { commentId: cid });
     return reply.status(204).send();
   });
@@ -273,8 +275,10 @@ export default async function v3Routes(app: FastifyInstance) {
     const b = req.body as { ids?: string[]; all?: boolean };
     const now = Date.now();
     let changes = 0;
-    if (b.all) changes = db.prepare('UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL').run(now, auth.user.id).changes;
-    else for (const id of b.ids!) changes += db.prepare('UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ? AND read_at IS NULL').run(now, id, auth.user.id).changes;
+    // Jeton limité à certains espaces : seules les notifications de ses espaces sont marquées.
+    const scope = tokenPageClause(req, 'page_id');
+    if (b.all) changes = db.prepare(`UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL AND ${scope.sql}`).run(now, auth.user.id, ...scope.params).changes;
+    else for (const id of b.ids!) changes += db.prepare(`UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ? AND read_at IS NULL AND ${scope.sql}`).run(now, id, auth.user.id, ...scope.params).changes;
     return { updated: changes };
   });
 
@@ -305,7 +309,8 @@ export default async function v3Routes(app: FastifyInstance) {
   });
   app.delete('/pages/:id/watch', { schema: { tags: ['notifications'], summary: 'Ne plus suivre une page', params: idParams } }, async (req) => {
     const auth = requireAuth(req);
-    db.prepare('DELETE FROM page_watch WHERE user_id = ? AND page_id = ?').run(auth.user.id, (req.params as { id: string }).id);
+    const scope = tokenPageClause(req, 'page_id');
+    db.prepare(`DELETE FROM page_watch WHERE user_id = ? AND page_id = ? AND ${scope.sql}`).run(auth.user.id, (req.params as { id: string }).id, ...scope.params);
     return { watching: false };
   });
 }

@@ -10,6 +10,15 @@ L'API REST est servie sous `/api/v3`. Les versions et leur état sont publiés s
 - Les jetons d'API, les portées et le contrôle d'accès sont communs à toutes les versions : une version ne peut pas élargir les droits d'un jeton.
 - Le point d'accès MCP (`/mcp`) et l'authentification (`/auth/*`) ne sont pas versionnés par préfixe.
 
+## Jetons limités à certains espaces
+
+Un jeton peut être limité à un ou plusieurs espaces (`spaceIds` à la création, `POST /api/v3/tokens`, depuis une session web seulement ; 50 espaces au plus). Absent ou vide : tous les espaces auxquels la personne a accès, comme avant.
+
+- Chaque espace demandé doit exister et être lisible par la personne (sinon 404, sans dire lequel). Un jeton limité ne porte pas la portée `admin` (400) ; il garde `read`, `write` et `ai` selon le rôle.
+- Pour ce jeton, tout autre espace est introuvable (404, jamais 403), par toutes les routes : pages, recherche (y compris pièces jointes), listes, libellés, rétroliens, modèles, corbeille, versions, commentaires, bases et « Mes tâches », export ZIP, import, copie ou déplacement vers un autre espace, notifications, flux d'évènements (`/events`), recherche IA, blocs synchronisés, pièces jointes et MCP. Un espace public hors de la liste n'est pas lu non plus par le jeton. Créer un espace (partagé ou personnel) lui est refusé (403).
+- `GET /api/v3/tokens` et la réponse de création portent `spaces` : `null` (tous) ou `[{ id, name }]`, avec le nom actuel. Un espace supprimé disparaît de la liste ; un jeton dont tous les espaces ont été supprimés n'ouvre plus aucun espace (il ne redevient jamais « tous les espaces »).
+- Le journal garde `via.type: "token"` ; `token.create` enregistre les identifiants des espaces autorisés.
+
 ## Versions
 
 | Version | État | Contenu |

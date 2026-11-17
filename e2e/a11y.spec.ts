@@ -9,7 +9,7 @@ import { adminContext, api, createLocalUser, loginUi, PASSWORD, sessionContext }
 // Sans animation : axe mesure les contrastes d'un menu ou d'une palette en pleine transition, d'où de fausses alertes.
 test.use({ reducedMotion: 'reduce' });
 
-const SECTIONS = ['profile', 'appearance', 'tokens', 'about', 'ai', 'diagrams', 'tools', 'api', 'embed', 'shares', 'spaces', 'groups', 'auth', 'mail', 'embeds', 'scim', 'webhooks', 'import', 'users', 'audit', 'siem', 'retention', 'instance', 'images'];
+const SECTIONS = ['profile', 'appearance', 'security', 'tokens', 'about', 'ai', 'diagrams', 'tools', 'api', 'embed', 'shares', 'spaces', 'groups', 'auth', 'mail', 'embeds', 'scim', 'webhooks', 'import', 'users', 'audit', 'siem', 'retention', 'instance', 'images'];
 
 async function violations(page: Page, label: string) {
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
@@ -40,6 +40,29 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.keyboard.press('Shift+F10');
       await page.getByRole('menuitem').first().waitFor();
       found.push(...await violations(page, 'menu de page'));
+      expect(found).toEqual([]);
+    });
+
+    test('fenêtres « Déplacer vers… » et loupe d’un schéma', async ({ page, browser }) => {
+      const admin = await adminContext(browser);
+      const spaces = (await (await api(admin.request, 'GET', '/spaces')).json()) as { id: string; visibility: string }[];
+      const created = await (await api(admin.request, 'POST', '/pages', {
+        spaceId: spaces.find((s) => s.visibility === 'public')!.id, title: `A11y schéma ${scheme}`,
+        content: { type: 'doc', content: [{ type: 'mermaid', attrs: { code: 'flowchart LR\n  A[Idée] --> B[Fin]' } }] },
+      })).json();
+      await admin.close();
+      await loginUi(page, ADMIN.email, ADMIN.password);
+      await page.goto(`/p/${created.id}`);
+      await page.locator('.mermaid-preview svg').waitFor();
+      const found = await violations(page, 'page avec schéma');
+      await page.getByRole('button', { name: 'Plus d’options' }).click();
+      await page.getByRole('menuitem', { name: 'Déplacer vers…' }).click();
+      await page.getByRole('dialog', { name: /Déplacer/ }).getByRole('option').first().waitFor();
+      found.push(...await violations(page, 'déplacer vers'));
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: 'Agrandir le schéma Mermaid' }).click();
+      await page.getByRole('dialog', { name: 'Schéma Mermaid agrandi' }).locator('.zoom-img').waitFor();
+      found.push(...await violations(page, 'loupe'));
       expect(found).toEqual([]);
     });
 

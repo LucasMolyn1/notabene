@@ -25,7 +25,7 @@ test('aucun écran ne déborde en largeur, et les boutons se touchent du doigt',
 
 test('la barre du haut se limite à l’essentiel ; le reste est dans le menu « … »', async ({ page }) => {
   await loginUi(page, ADMIN.email, ADMIN.password);
-  await page.getByRole('button', { name: /Barre latérale/ }).click();
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
   await page.getByRole('treeitem', { name: 'Bienvenue sur BeNote' }).click();
   await expect(page.locator('.topbar .icon-btn:visible')).toHaveCount(4); // menu, commentaires, « … », notifications (+ le bouton lecture/édition)
   await expect(page.locator('.tb-secondary:visible')).toHaveCount(0);
@@ -39,7 +39,7 @@ test('la barre du haut se limite à l’essentiel ; le reste est dans le menu «
 
 test('la barre de mise en forme apparaît dans l’éditeur, met en gras et ouvre le menu d’insertion', async ({ page }) => {
   await loginUi(page, ADMIN.email, ADMIN.password);
-  await page.getByRole('button', { name: /Barre latérale/ }).click(); // le tiroir de navigation est fermé au départ
+  await page.getByRole('button', { name: 'Menu', exact: true }).click(); // le tiroir de navigation est fermé au départ
   await page.getByRole('button', { name: /Nouvelle page/ }).first().click();
   const toolbar = page.getByRole('toolbar', { name: 'Mise en forme' });
   await page.locator('.tiptap').click();

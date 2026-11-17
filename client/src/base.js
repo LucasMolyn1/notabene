@@ -489,7 +489,8 @@ export async function showBase(initial) {
       const cb = h('input', { type: 'checkbox', 'aria-label': p.name, disabled: !canWrite() });
       cb.checked = v === true;
       cb.addEventListener('change', () => commit(row, p, cb.checked ? true : null));
-      return wrap(h('td', { class: 'bt-cell bt-check' }), cb);
+      // Le libellé autour de la case agrandit sa zone de clic sur écran tactile (voir mobile.css).
+      return wrap(h('td', { class: 'bt-cell bt-check' }), h('label', { class: 'bt-check-hit' }, cb));
     }
     const content = display(p, v);
     const td = h('td', { class: `bt-cell bt-t-${p.type}` });

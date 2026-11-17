@@ -189,7 +189,7 @@ test.describe('largeur téléphone (375 px)', () => {
     expect(width).toBeLessThanOrEqual(375);
     await dialog.getByRole('button', { name: 'Fermer' }).first().click();
 
-    await page.getByRole('button', { name: /Barre latérale/ }).click();
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
     await page.getByRole('complementary', { name: 'Navigation' }).getByRole('button', { name: 'Pages à revoir' }).click();
     const list = page.getByRole('dialog', { name: 'Pages à revoir' });
     const row = list.getByRole('link', { name: /Vérification mobile e2e/ });

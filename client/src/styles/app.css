@@ -1021,7 +1021,7 @@ select.input { height: 36px; }
 .mermaid-code { display: none; width: 100%; min-height: 180px; padding: 12px 14px; border: 0; border-right: 1px solid var(--border); resize: vertical; outline: none; font: 13px/1.6 var(--mono); background: var(--bg); color: var(--text); }
 .diagram.editing .mermaid-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .diagram.editing .mermaid-code { display: block; }
-.reading .diagram-actions { display: none; }
+.reading .diagram-actions .diagram-edit { display: none; }
 .diagram-overlay { position: fixed; inset: 0; z-index: 80; display: flex; flex-direction: column; background: var(--bg); }
 .diagram-overlay-head { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--border); }
 .overlay-status { color: var(--text-3); font-size: 13px; }
@@ -1829,3 +1829,75 @@ td.bt-cell:has(.bt-linkcell) { padding: 0; }
 @media (max-width: 480px) { .pf-card { padding: 14px; } .pf-title, .pf-state-title { font-size: 20px; } }
 
 .icon-btn.is-restricted { color: var(--accent, #5b45f0); background: color-mix(in srgb, var(--accent, #5b45f0) 12%, transparent); }
+
+/* ==========================================================================
+   Barre latérale : bouton « Menu » (libellé visible) et filtre des pages
+   ========================================================================== */
+.icon-btn.sb-open { width: auto; min-width: 30px; padding: 0 8px; grid-auto-flow: column; gap: 6px; }
+.sb-open-label { font-size: 13.5px; font-weight: 500; }
+.tree-filter-wrap { position: relative; display: flex; align-items: center; margin: 2px 0 6px; }
+.tree-filter-wrap > .ico { position: absolute; left: 9px; color: var(--text-3); pointer-events: none; display: grid; }
+.tree-filter { width: 100%; height: 30px; padding-left: 28px; font-size: 13.5px; }
+
+/* ==========================================================================
+   Fenêtre « Déplacer vers… »
+   ========================================================================== */
+.move-list { list-style: none; margin: 0; padding: 4px; max-height: min(48vh, 420px); overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+.move-opt { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.move-opt:hover { background: var(--hover); }
+.move-opt[aria-selected='true'] { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.move-opt.current { cursor: default; }
+.move-opt.current strong { font-weight: 400; }
+.move-ico { flex: none; width: 20px; display: grid; place-items: center; color: var(--text-2); }
+.move-text { display: grid; min-width: 0; }
+.move-text strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.move-text small { color: var(--text-2); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.move-status { margin: 0; }
+
+/* ==========================================================================
+   Loupe des schémas
+   ========================================================================== */
+.modal.zoom-modal { width: calc(100vw - 32px); max-width: 1400px; height: calc(100dvh - 32px); max-height: none; }
+.zoom-modal .modal-inner { height: 100%; max-height: none; }
+.zoom-modal .modal-body { flex: 1; min-height: 0; display: flex; padding: 0 12px 12px; overflow: hidden; }
+.zoom-body { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.zoom-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.zoom-icon-btn { width: 36px; padding: 0; justify-content: center; }
+.zoom-level { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text-2); }
+.zoom-hint { margin-left: auto; }
+.zoom-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); touch-action: none; cursor: grab; user-select: none; }
+.zoom-stage.dragging { cursor: grabbing; }
+.zoom-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.zoom-img { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; pointer-events: none; }
+.zoom-img.opaque { background: #fff; }
+@media (max-width: 640px) {
+  .modal.zoom-modal { width: calc(100vw - 16px); height: calc(100dvh - 16px); }
+  .zoom-hint { display: none; }
+}
+@media print { .diagram-actions { display: none !important; } }
+
+/* ==========================================================================
+   Journal d'audit, synthèse « Sécurité », jetons limités à des espaces
+   ========================================================================== */
+.audit-main { display: grid; gap: 2px; min-width: 0; }
+.table code.audit-code { font-size: 11.5px; color: var(--text-2); padding: 1px 5px; }
+.audit-target { color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; }
+.audit-meta { margin-top: 2px; }
+.audit-meta summary { cursor: pointer; width: fit-content; font-size: 12.5px; color: var(--text-2); }
+.audit-meta pre { margin: 6px 0 0; max-height: 240px; overflow: auto; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sec-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.sec-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+.sec-item:first-child { border-top: 0; padding-top: 0; }
+.sec-item-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.sec-item-text small { color: var(--text-3); font-size: 12.5px; }
+.sec-item > .btn { flex: none; }
+.sec-value { font-weight: 500; color: var(--text-2); font-size: 13px; }
+@media (max-width: 640px) { .sec-item { flex-direction: column; align-items: stretch; gap: 8px; } .sec-item > .btn { align-self: flex-start; } }
+.plain-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.plain-fieldset legend { padding: 0; margin-bottom: 6px; font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+.token-spaces { margin: 4px 0 0 26px; max-height: 220px; overflow: auto; }
+.token-spaces-line { display: block; }
+
+/* Case d'une colonne « case à cocher » : zone de clic agrandie sur écran tactile (voir mobile.css), même dessin. */
+.bt-check-hit { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; cursor: pointer; }
+.bt-check-hit:has(input:disabled) { cursor: default; }

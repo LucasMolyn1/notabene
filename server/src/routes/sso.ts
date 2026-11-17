@@ -42,7 +42,7 @@ export default async function ssoRoutes(app: FastifyInstance, opts: { ldap?: Lda
     if (previous) destroySession(db, previous);
     const session = createSession(db, userId, null, config.SESSION_TTL_HOURS);
     reply.setCookie(cookieName, session.token, { ...cookieOptions, expires: new Date(session.expiresAt) });
-    audit(db, req, 'auth.login', userId, { role: input.role, method: input.method });
+    audit(db, req, 'auth.login', userId, { role: input.role, method: input.method }, { actorId: userId });
     return true;
   };
 

@@ -5,9 +5,9 @@ import { can, guard, requireAuth } from '../auth/context.js';
 import { mentionIds } from '../lib/content.js';
 import { copyTree } from '../lib/page-copy.js';
 import { readersAmong } from '../lib/mentions.js';
-import { clonerFor, loadReadablePage, loadWritablePage, readableSpaceIds, requireSpaceRole } from '../lib/access.js';
+import { assertWritableParent, clonerFor, loadReadablePage, loadWritablePage, readableSpaceIds, requireSpaceRole, tokenPageClause } from '../lib/access.js';
 import type { AttachmentCloner } from '../lib/attachments.js';
-import { assertMoveKeepsRestriction, canReadPage, canWritePage, filterReadable, governingPage } from '../lib/page-acl.js';
+import { assertMoveKeepsRestriction, canReadPage, filterReadable, governingPage } from '../lib/page-acl.js';
 import { audit } from '../lib/audit.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { toMarkdown } from '../lib/markdown.js';
@@ -55,9 +55,10 @@ export default async function pageRoutes(app: FastifyInstance) {
   app.post('/pages', { preHandler: guard('write'), schema: { tags, summary: 'Créer une page', body: createBody } }, async (req, reply) => {
     const body = req.body as z.output<typeof createBody>;
     requireSpaceRole(db, req, body.spaceId, 'edit'); // 404 si l'espace n'est pas visible, 403 en lecture seule
-    if (body.parentId && !canWritePage(db, req.auth, body.parentId)) throw new HttpError(403, 'Accès en lecture seule sur la page parente');
+    if (body.parentId) assertWritableParent(db, req, body.parentId);
     // Contenu venu d'un modèle ou d'une autre page : les pièces jointes citées (et lisibles) sont copiées dans la nouvelle page.
     const row = withCloner(req, (cloner) => createPage(db, body, userId(req), cloner));
+    audit(db, req, 'page.create', row.id, { spaceId: row.space_id, parentId: row.parent_id });
     bus.publish({ type: 'page.created', spaceId: row.space_id, pageId: row.id, version: row.version, by: by(req) });
     return reply.status(201).send(toPage(row));
   });
@@ -67,6 +68,8 @@ export default async function pageRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const row = loadReadablePage(db, req, (req.params as { id: string }).id);
     const { format } = req.query as { format: 'markdown' | 'json' };
+    // Sortie de données : journalisée (format seulement) pour une personne connectée ou un jeton, pas pour un visiteur anonyme.
+    if (req.auth) audit(db, req, 'page.export', row.id, { format });
     if (format === 'json') return toPage(row);
     const visible = new Set(readableSpaceIds(db, req));
     const titleOf = (id: string) => {
@@ -95,9 +98,10 @@ export default async function pageRoutes(app: FastifyInstance) {
         throw new HttpError(409, 'Copiez la page vers un espace personnel au lieu de la déplacer');
       }
     }
-    if (body.parentId && !canWritePage(db, req.auth, body.parentId)) throw new HttpError(403, 'Accès en lecture seule sur la page parente');
+    if (body.parentId) assertWritableParent(db, req, body.parentId);
     assertMoveKeepsRestriction(db, req.auth, id, body.parentId);
     const { row, fromSpaceId } = movePage(db, id, body);
+    audit(db, req, 'page.move', id, { spaceId: row.space_id, fromSpaceId, parentId: row.parent_id });
     bus.publish({ type: 'page.moved', spaceId: row.space_id, pageId: id, version: row.version, by: by(req) });
     if (fromSpaceId !== row.space_id) bus.publish({ type: 'page.moved', spaceId: fromSpaceId, pageId: id, by: by(req) });
     return toMeta(row);
@@ -112,6 +116,7 @@ export default async function pageRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     writable(req, id);
     const row = withCloner(req, (cloner) => duplicatePage(db, id, userId(req), cloner));
+    audit(db, req, 'page.duplicate', row.id, { sourceId: id, spaceId: row.space_id });
     bus.publish({ type: 'page.created', spaceId: row.space_id, pageId: row.id, by: by(req) });
     return reply.status(201).send(toMeta(row));
   });
@@ -126,7 +131,7 @@ export default async function pageRoutes(app: FastifyInstance) {
     const src = loadReadablePage(db, req, (req.params as { id: string }).id);
     const body = req.body as z.output<typeof copyBody>;
     requireSpaceRole(db, req, body.spaceId, 'edit');
-    if (body.parentId && !canWritePage(db, req.auth, body.parentId)) throw new HttpError(403, 'Accès en lecture seule sur la page parente');
+    if (body.parentId) assertWritableParent(db, req, body.parentId);
     let files = 0;
     const result = withCloner(req, (cloner) => {
       const r = copyTree(db, src.id, { spaceId: body.spaceId, parentId: body.parentId ?? null }, userId(req), (pid) => canReadPage(db, req.auth, pid), cloner);
@@ -142,6 +147,7 @@ export default async function pageRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const row = writable(req, id);
     trashPage(db, id);
+    audit(db, req, 'page.trash', id, { spaceId: row.space_id });
     bus.publish({ type: 'page.trashed', spaceId: row.space_id, pageId: id, by: by(req) });
     return reply.status(204).send();
   });
@@ -158,6 +164,7 @@ export default async function pageRoutes(app: FastifyInstance) {
       throw new HttpError(409, 'Restaurez d’abord la page parente (zone restreinte) ou demandez à un administrateur');
     }
     const row = restorePage(db, id);
+    audit(db, req, 'page.restore', id, { spaceId: row.space_id });
     bus.publish({ type: 'page.restored', spaceId: row.space_id, pageId: id, by: by(req) });
     return toMeta(row);
   });
@@ -193,7 +200,9 @@ export default async function pageRoutes(app: FastifyInstance) {
 
   app.delete('/pages/:id/favorite', { schema: { tags, summary: 'Retirer des favoris', params: idParams } }, async (req, reply) => {
     const auth = requireAuth(req);
-    db.prepare('DELETE FROM favorites WHERE user_id = ? AND page_id = ?').run(auth.user.id, (req.params as { id: string }).id);
+    // Jeton limité : il ne touche pas aux favoris d'un autre espace (sans erreur : rien ne dit si la page existe).
+    const scope = tokenPageClause(req, 'page_id');
+    db.prepare(`DELETE FROM favorites WHERE user_id = ? AND page_id = ? AND ${scope.sql}`).run(auth.user.id, (req.params as { id: string }).id, ...scope.params);
     return reply.status(204).send();
   });
 
@@ -218,6 +227,7 @@ export default async function pageRoutes(app: FastifyInstance) {
     writable(req, id);
     const v = getVersion(db, id, versionId);
     const row: PageRow = withCloner(req, (cloner) => updatePage(db, id, { title: v.title, content: v.content }, userId(req), cloner));
+    audit(db, req, 'page.version.restore', id, { version: versionId });
     bus.publish({ type: 'page.updated', spaceId: row.space_id, pageId: id, version: row.version, by: by(req) });
     return toMeta(row);
   });

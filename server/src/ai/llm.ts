@@ -16,6 +16,20 @@ export class LlmError extends Error {
   }
 }
 
+// Délais du chemin compatible OpenAI (le SDK Anthropic a son propre délai global de 120 s) : avant le premier octet de la réponse,
+// puis entre deux morceaux du flux. Surchargeables par AI_FIRST_BYTE_TIMEOUT_MS et AI_IDLE_TIMEOUT_MS (config.ts, au démarrage).
+export const DEFAULT_FIRST_BYTE_TIMEOUT_MS = 60_000;
+export const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
+export const TIMEOUT_MESSAGE = 'Le fournisseur n’a pas répondu à temps : réessayez plus tard, ou vérifiez qu’il est disponible.';
+const timeouts = { firstByteMs: DEFAULT_FIRST_BYTE_TIMEOUT_MS, idleMs: DEFAULT_IDLE_TIMEOUT_MS };
+
+/** Règle les délais (appelé au démarrage avec les valeurs validées de la configuration). */
+export function configureLlmTimeouts(value: { firstByteMs: number; idleMs: number }) {
+  timeouts.firstByteMs = value.firstByteMs;
+  timeouts.idleMs = value.idleMs;
+}
+export const llmTimeouts = () => ({ ...timeouts });
+
 export interface ChatTurn {
   role: 'user' | 'assistant';
   content: string;
@@ -99,11 +113,37 @@ function genericProviderMessage(status: number | undefined): string {
 
 async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: AbortSignal): AsyncGenerator<string> {
   const base = trimTrailingSlashes(s.baseUrl || 'https://api.openai.com/v1');
+  // Signal interne : coupé par l'appelant (départ du client) ou par un délai dépassé. Un délai ferme la connexion (abort) et
+  // devient une LlmError claire ; un départ du client reste silencieux.
+  const local = new AbortController();
+  let timedOut = false;
+  let timer: NodeJS.Timeout | undefined;
+  const arm = (ms: number) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { timedOut = true; local.abort(); }, ms);
+  };
+  const onAbort = () => local.abort();
+  if (signal.aborted) return;
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    yield* readOpenAiStream(s, base, prompt, signal, local.signal, arm, () => timedOut);
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', onAbort);
+    // Générateur abandonné ou délai : la connexion au fournisseur ne reste jamais ouverte.
+    local.abort();
+  }
+}
+
+async function* readOpenAiStream(
+  s: AiSettings, base: string, prompt: Prompt, signal: AbortSignal, local: AbortSignal, arm: (ms: number) => void, timedOut: () => boolean,
+): AsyncGenerator<string> {
   let res: Response;
+  arm(timeouts.firstByteMs);
   try {
     res = await safeFetch(new URL(`${base}/chat/completions`), {
       method: 'POST',
-      signal,
+      signal: local,
       redirect: 'error',
       headers: { 'Content-Type': 'application/json', ...(s.apiKey ? { Authorization: `Bearer ${s.apiKey}` } : {}) },
       body: JSON.stringify({
@@ -114,9 +154,11 @@ async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: Ab
       }),
     }, s.allowPrivate) as unknown as Response;
   } catch {
+    if (timedOut()) throw new LlmError(TIMEOUT_MESSAGE, 504);
     if (signal.aborted) return;
     throw new LlmError('Fournisseur injoignable', 504);
   }
+  arm(timeouts.idleMs);
   if (res.status === 401 || res.status === 403) throw new LlmError('Clé d’API refusée par le fournisseur', 502);
   if (res.status === 404) throw new LlmError(`Modèle ou endpoint introuvable : ${s.model}`, 502);
   if (res.status === 429) throw new LlmError('Limite de débit du fournisseur atteinte, réessayez plus tard', 503);
@@ -133,7 +175,17 @@ async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: Ab
     if (finish === 'length') throw new LlmError(EMPTY_TRUNCATED_MESSAGE, 502);
     throw new LlmError('Le modèle n’a renvoyé aucun texte. Réessayez ou choisissez un autre modèle.', 502);
   };
-  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+  const chunks = async function* () {
+    try {
+      for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) { arm(timeouts.idleMs); yield chunk; }
+    } catch (err) {
+      if (timedOut()) throw new LlmError(TIMEOUT_MESSAGE, 504);
+      if (signal.aborted) return;
+      throw err;
+    }
+  };
+  for await (const chunk of chunks()) {
+    if (signal.aborted) return;
     buffer += decoder.decode(chunk, { stream: true });
     let nl: number;
     while ((nl = buffer.indexOf('\n')) >= 0) {
@@ -154,7 +206,8 @@ async function* streamOpenAiCompatible(s: AiSettings, prompt: Prompt, signal: Ab
       } catch { /* ligne keep-alive ou partielle */ }
     }
   }
-  // Flux fermé sans « [DONE] » (certains serveurs locaux) : même conclusion.
+  // Départ du client : rien à conclure. Flux fermé sans « [DONE] » (certains serveurs locaux) : même conclusion.
+  if (signal.aborted) return;
   const notice = conclude();
   if (notice) yield notice;
 }

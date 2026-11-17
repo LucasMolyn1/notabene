@@ -155,7 +155,7 @@ export default async function localAuthRoutes(app: FastifyInstance) {
     }
     db.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL, last_login_at = ? WHERE id = ?').run(now, user.id);
     startSession(req, reply, user.id);
-    audit(db, req, 'auth.login', user.id, { role: user.role, method: 'local', mfa: !!user.totp_enabled });
+    audit(db, req, 'auth.login', user.id, { role: user.role, method: 'local', mfa: !!user.totp_enabled }, { actorId: user.id });
     return { redirect: '/' };
   });
 

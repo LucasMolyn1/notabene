@@ -77,6 +77,7 @@ Si Ollama tourne dans le même `docker compose`, l'URL est `http://ollama:11434/
 | `404` | Nom de modèle inexistant | Recharger les modèles, ou saisir le nom exact |
 | `429` | Limite d'usage ou de requêtes simultanées atteinte | Attendre, ou changer de fournisseur |
 | Délai dépassé / connexion impossible | Adresse en http ou interne sans `AI_ALLOW_PRIVATE=true`, ou pare-feu | Vérifier l'URL et la variable |
+| « Le fournisseur n’a pas répondu à temps » | Fournisseur compatible OpenAI muet plus de 60 s avant le premier octet (`AI_FIRST_BYTE_TIMEOUT_MS`) ou entre deux morceaux du flux (`AI_IDLE_TIMEOUT_MS`) ; modèle local trop lent | Réessayer, choisir un modèle plus léger, ou augmenter ces délais (en millisecondes, de 100 à 600 000) |
 
 ## Sécurité
 
