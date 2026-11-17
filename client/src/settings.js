@@ -19,50 +19,61 @@ import { store } from './store.js';
 
 // ---- Page -----------------------------------------------------------------------------
 
+// Chaque onglet regroupe une ou plusieurs parties ; chaque partie garde son propre contrôle d'accès.
+/** @param {string} id @param {string} label @param {(el: HTMLElement) => any} render @param {{ admin?: boolean, manager?: boolean, write?: boolean, sensitive?: boolean }} [opts] */
+const P = (id, label, render, opts = {}) => ({ id, label, render, ...opts });
 const SECTIONS = [
-  { group: 'Compte', id: 'profile', label: 'Profil et sessions', ico: 'users', render: renderProfile },
-  { group: 'Compte', id: 'appearance', label: 'Apparence', ico: 'sun', render: renderAppearance },
-  { group: 'Compte', id: 'tokens', label: 'Jetons d’API', ico: 'key', render: renderTokens },
-  { group: 'Compte', id: 'about', label: 'À propos', ico: 'sparkle', render: renderAbout },
-  { group: 'Fonctionnalités', id: 'shares', label: 'Pages partagées', ico: 'globe', write: true, render: renderShares },
-  { group: 'Fonctionnalités', id: 'ai', label: 'Recherche IA', ico: 'sparkle', sensitive: true, render: renderAi },
-  { group: 'Fonctionnalités', id: 'diagrams', label: 'Diagrammes', ico: 'diamond', render: renderDiagrams },
-  { group: 'Fonctionnalités', id: 'tools', label: 'Outils', ico: 'qrcode', render: renderTools },
-  { group: 'Fonctionnalités', id: 'api', label: 'API REST', ico: 'code', render: renderApi },
-  { group: 'Fonctionnalités', id: 'embed', label: 'Intégration portfolio', ico: 'globe', sensitive: true, render: renderEmbed },
-  { group: 'Administration', id: 'spaces', label: 'Espaces', ico: 'folder', manager: true, render: renderSpaces },
-  { group: 'Administration', id: 'groups', label: 'Groupes', ico: 'users', admin: true, render: renderGroups },
-  { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', admin: true, sensitive: true, render: renderAuth },
-  { group: 'Administration', id: 'mail', label: 'E-mail', ico: 'mail', admin: true, sensitive: true, render: renderMail },
-  { group: 'Administration', id: 'embeds', label: 'Contenus intégrés', ico: 'globe', admin: true, sensitive: true, render: renderEmbeds },
-  { group: 'Administration', id: 'scim', label: 'Provisionnement SCIM', ico: 'key', admin: true, sensitive: true, render: renderScim },
-  { group: 'Administration', id: 'webhooks', label: 'Webhooks', ico: 'webhook', admin: true, render: renderWebhooks },
-  { group: 'Administration', id: 'forms', label: 'Formulaires', ico: 'file', admin: true, render: renderForms },
-  { group: 'Administration', id: 'import', label: 'Import', ico: 'upload', admin: true, render: renderImport },
-  { group: 'Administration', id: 'users', label: 'Utilisateurs', ico: 'users', admin: true, render: renderUsers },
-  { group: 'Administration', id: 'audit', label: 'Journal d’audit', ico: 'file', admin: true, render: renderAudit },
-  { group: 'Administration', id: 'siem', label: 'Envoi au SIEM', ico: 'webhook', admin: true, sensitive: true, render: renderSiem },
-  { group: 'Administration', id: 'retention', label: 'Conservation', ico: 'history', admin: true, render: renderRetention },
-  { group: 'Administration', id: 'instance', label: 'Instance', ico: 'settings', admin: true, render: renderInstance },
-  { group: 'Administration', id: 'images', label: 'Images des pages', ico: 'wand', admin: true, render: renderImages },
+  { group: 'Compte', id: 'account', label: 'Compte', ico: 'users', parts: [
+    P('profile', 'Profil et sessions', renderProfile), P('appearance', 'Apparence', renderAppearance),
+    P('tokens', 'Jetons d’API', renderTokens), P('about', 'À propos', renderAbout)] },
+  { group: 'Fonctionnalités', id: 'sharing', label: 'Partage', ico: 'globe', parts: [
+    P('shares', 'Pages partagées', renderShares, { write: true }), P('embed', 'Intégration portfolio', renderEmbed, { sensitive: true })] },
+  { group: 'Fonctionnalités', id: 'ai', label: 'Recherche IA', ico: 'sparkle', parts: [P('ai', 'Recherche IA', renderAi, { sensitive: true })] },
+  { group: 'Fonctionnalités', id: 'tools', label: 'Outils', ico: 'qrcode', parts: [
+    P('diagrams', 'Diagrammes', renderDiagrams), P('tools', 'Outils', renderTools), P('api', 'API REST', renderApi)] },
+  { group: 'Administration', id: 'spaces', label: 'Espaces', ico: 'folder', parts: [P('spaces', 'Espaces', renderSpaces, { manager: true })] },
+  { group: 'Administration', id: 'people', label: 'Utilisateurs et groupes', ico: 'users', parts: [
+    P('users', 'Utilisateurs', renderUsers, { admin: true }), P('groups', 'Groupes', renderGroups, { admin: true })] },
+  { group: 'Administration', id: 'auth', label: 'Authentification', ico: 'shield', parts: [
+    P('auth', 'Authentification', renderAuth, { admin: true, sensitive: true }), P('scim', 'Provisionnement SCIM', renderScim, { admin: true, sensitive: true }),
+    P('mail', 'E-mail', renderMail, { admin: true, sensitive: true })] },
+  { group: 'Administration', id: 'integrations', label: 'Intégrations', ico: 'webhook', parts: [
+    P('webhooks', 'Webhooks', renderWebhooks, { admin: true }), P('embeds', 'Contenus intégrés', renderEmbeds, { admin: true, sensitive: true })] },
+  { group: 'Administration', id: 'journal', label: 'Journal et conservation', ico: 'file', parts: [
+    P('audit', 'Journal d’audit', renderAudit, { admin: true }), P('retention', 'Conservation', renderRetention, { admin: true }),
+    P('siem', 'Envoi au SIEM', renderSiem, { admin: true, sensitive: true })] },
+  { group: 'Administration', id: 'content', label: 'Contenu', ico: 'upload', parts: [
+    P('import', 'Import', renderImport, { admin: true }), P('images', 'Images des pages', renderImages, { admin: true }),
+    P('forms', 'Formulaires', renderForms, { admin: true })] },
+  { group: 'Administration', id: 'instance', label: 'Instance', ico: 'settings', parts: [P('instance', 'Instance', renderInstance, { admin: true })] },
 ];
+// Anciens identifiants d'onglet (liens, favoris) : redirigés vers l'onglet qui les contient, au niveau de la partie.
+const PART_TO_SECTION = new Map(SECTIONS.flatMap((s) => s.parts.map((p) => [p.id, s.id])));
 
 export function showSettings(sectionId) {
   beginView();
   // Un gestionnaire d'espace (rôle « full ») accède aux espaces qu'il gère, sans le reste de l'administration.
   const manager = store.spaces.some((s) => s.role === 'full');
-  const sections = SECTIONS.filter((s) => !s.admin || session.can('admin')).filter((s) => !s.manager || session.can('admin') || manager).filter((s) => !s.write || session.can('write'));
-  const section = sections.find((s) => s.id === sectionId) || sections[0];
+  const allowed = (p) => (!p.admin || session.can('admin')) && (!p.manager || session.can('admin') || manager) && (!p.write || session.can('write'));
+  const sections = SECTIONS.map((s) => ({ ...s, parts: s.parts.filter(allowed) })).filter((s) => s.parts.length);
+  const wanted = sections.find((s) => s.id === sectionId) || sections.find((s) => s.id === PART_TO_SECTION.get(sectionId));
+  const section = wanted || sections[0];
+  const anchor = section.parts.find((p) => p.id === sectionId)?.id;
   document.title = `${section.label} · Paramètres · BeNote`;
 
   let group = null;
   const nav = h('nav', { class: 'set-nav', 'aria-label': 'Sections des paramètres' });
   for (const s of sections) {
     if (s.group !== group) { group = s.group; nav.append(h('div', { class: 'set-nav-group' }, group)); }
-    nav.append(h('a', { class: `set-nav-item${s.id === section.id ? ' active' : ''}`, href: `/settings/${s.id}` }, h('span', null, icon(s.ico, 16)), s.label, s.id === 'about' && newsPending(session.version) ? h('span', { class: 'news-dot', role: 'img', 'aria-label': 'Nouveautés' }) : null));
+    nav.append(h('a', { class: `set-nav-item${s.id === section.id ? ' active' : ''}`, href: `/settings/${s.id}` }, h('span', null, icon(s.ico, 16)), s.label, s.id === 'account' && newsPending(session.version) ? h('span', { class: 'news-dot', role: 'img', 'aria-label': 'Nouveautés' }) : null));
   }
   requestAnimationFrame(() => nav.querySelector('.active')?.scrollIntoView({ inline: 'center', block: 'nearest' })); // téléphone : la section courante reste visible dans la bande
-  const content = h('div', { class: 'set-content' });
+  const multi = section.parts.length > 1;
+  const slots = section.parts.map((p) => ({ part: p, box: h('div', { class: 'set-content' }) }));
+  const body = slots.map(({ part, box }) => h('section', { class: 'set-part', id: `set-${part.id}`, 'aria-label': multi ? part.label : null },
+    multi ? h('h2', { class: 'set-part-title' }, part.label) : null,
+    part.sensitive && session.can('admin') ? reauthNotice() : null,
+    box));
   document.getElementById('main').replaceChildren(
     topbar(h('nav', { class: 'crumbs' },
       h('a', { class: 'crumb', href: '/settings' }, h('span', { class: 'crumb-ico' }, icon('settings', 14)), 'Paramètres'),
@@ -70,8 +81,9 @@ export function showSettings(sectionId) {
       h('span', { class: 'crumb current' }, section.label))),
     h('div', { class: 'scroller' }, h('div', { class: 'settings' },
       nav,
-      h('div', { class: 'set-main' }, h('h1', null, icon(section.ico, 24), ` ${section.label}`), section.sensitive && session.can('admin') ? reauthNotice() : null, content))));
-  section.render(content);
-  // Les sections qui affichent des espaces se rafraîchissent quand ils changent.
-  setView({ kind: 'settings', id: section.id, onStore: (evt) => { if (['spaces', 'groups', 'embed'].includes(section.id) && evt.type !== 'page') section.render(content); } });
+      h('div', { class: 'set-main' }, h('h1', null, icon(section.ico, 24), ` ${section.label}`), ...body))));
+  for (const { part, box } of slots) part.render(box);
+  if (anchor && multi) requestAnimationFrame(() => document.getElementById(`set-${anchor}`)?.scrollIntoView({ block: 'start' }));
+  // Les parties qui affichent des espaces se rafraîchissent quand ils changent.
+  setView({ kind: 'settings', id: section.id, onStore: (evt) => { if (evt.type !== 'page') for (const { part, box } of slots) if (['spaces', 'groups', 'embed'].includes(part.id)) part.render(box); } });
 }

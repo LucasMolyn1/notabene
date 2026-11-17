@@ -133,12 +133,12 @@ test('journal : export CSV réel, export tronqué et limite atteinte', async ({ 
 
 test('conservation : durées réelles et absence de purge', async ({ browser }) => {
   const { ctx, page } = await openAdmin(browser, '/settings/retention');
-  const list = page.locator('.set-card').first().locator('dl');
+  const list = page.locator('#set-retention .set-card').first().locator('dl');
   await expect(list.getByRole('term').filter({ hasText: /^Journal d’audit$/ })).toBeVisible();
   await expect(list).toContainText('365 jours');
   await expect(list).toContainText('AUDIT_RETENTION_DAYS');
   await expect(page.getByText('Purge automatique toutes les 60 minutes', { exact: false })).toBeVisible();
-  await expect(page.locator('.set-card').nth(1)).toContainText('Sessions');
+  await expect(page.locator('#set-retention .set-card').nth(1)).toContainText('Sessions');
 
   await page.route(RETENTION, (route) => route.fulfill({ json: {
     purgeIntervalMinutes: 60,
