@@ -13,6 +13,34 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 - **Connexion SSO principale** : un `sub` préfixé `local:`, `ldap:`, `saml:`, `scim:`, `google:` ou `dev-` est refusé (identifiants réservés) ; un compte désactivé est refusé dès le retour du fournisseur.
 - **Base de données** : colonnes `login_states.provider` et `login_states.reauth`, ajoutées de façon idempotente (sans consommer de numéro de migration).
 
+## [3.18.3] - 2026-11-17
+
+### Ajouté
+- **API : jetons limités à certains espaces** : un jeton peut être restreint à un ou plusieurs espaces (champ `spaceIds` à la création ; migration 37). La limite s'applique à toutes les routes (pages, recherche, IA, exports, bases, notifications, MCP, flux d'évènements) ; un objet hors périmètre répond 404 comme un objet inexistant. Un jeton limité ne porte pas la portée `admin`, ne crée pas d'espace ni d'automatisation. Un jeton dont tous les espaces ont été supprimés n'ouvre plus rien. La liste des jetons indique les espaces, le nombre de requêtes et la dernière utilisation.
+- **Journal d'audit : actions faites par l'API** : création, modification, déplacement, corbeille, restauration, commentaires, exports et recherches faits par jeton sont journalisés (jamais de texte de page), avec un évènement agrégé `api.access` par jeton, famille de routes et fenêtre de 5 minutes, et les refus (`auth.denied`) bornés. Libellés français et champ `targetInfo` ajoutés ; export CSV : trois colonnes en fin de ligne (`label`, `target_type`, `target_title`).
+- **Interface : « Déplacer vers… »** (page et arbre) avec recherche et clavier, filtre de pages à partir de 30 pages, loupe sur les schémas (Mermaid, PlantUML, Excalidraw, Draw.io), page « Sécurité » des paramètres.
+
+### Corrigé
+- **Recherche** : un titre égal à la requête passe en premier (sans casse ni accents), puis les titres qui la contiennent.
+- **IA : fournisseur silencieux** : délais de premier octet et d'inactivité (60 s par défaut, `AI_FIRST_BYTE_TIMEOUT_MS`, `AI_IDLE_TIMEOUT_MS`) avec message clair.
+- **Interface mobile** : zones tactiles de 44 px (cases, onglets de vue, boutons d'en-tête) ; la barre latérale suit l'espace d'une page ouverte directement.
+- **IA : assistant de rédaction avec un modèle à raisonnement** : quand un fournisseur compatible OpenAI renvoie `finish_reason: length` sans aucun texte (le modèle a dépensé tout son budget de jetons en réflexion cachée), l'assistant affichait « Aucune proposition. » sans explication. Il affiche maintenant une erreur claire (« Le modèle n'a rien répondu : la limite de longueur a été atteinte… essayez un modèle sans raisonnement »). Une réponse tronquée après un début de texte est signalée comme chez Anthropic, et un flux sans aucun texte est une erreur. Le plancher de jetons de l'assistant passe de 500 à 2000. Même traitement pour « Demander à l'IA » et le chat.
+- **Interface : lecture seule** : un lecteur qui ouvre une page ne déclenche plus d'enregistrement refusé (403), donc plus de « Échec de l'enregistrement » affiché sans rien avoir touché.
+- **Co-édition : plus de version fantôme à l'ouverture** : ouvrir une page dont le contenu a été posé par l'API, un import ou un modèle ne crée plus de version et n'écrase plus « modifiée par ». L'éditeur complète les valeurs par défaut de son schéma et ajoute un paragraphe vide final ; le serveur compare désormais l'ancien et le nouveau contenu après une mise en forme commune (`server/src/lib/editor-defaults.ts`) et n'enregistre que les vrais changements. Un test vérifie que la liste des valeurs par défaut du serveur suit le schéma de l'éditeur.
+
+### Modifié
+- **Interface : paramètres regroupés** : les sections passent à 12 onglets (Compte, Partage, Recherche IA, Outils, Sécurité, Espaces, Utilisateurs et groupes, Authentification, Intégrations, Journal et conservation, Contenu, Instance) ; chaque partie garde son contrôle d'accès, les anciens liens (`/settings/scim`…) mènent à la bonne partie, et le contenu ne déborde plus en largeur.
+- **Interface : lecture seule expliquée** : une page ou une base en lecture seule affiche un bandeau d'une phrase (ce que la personne peut faire, à qui demander) avec un badge contrasté (clair et sombre). Rien ne change pour un éditeur ni en mode Lecture choisi.
+- **Interface : bases** : la base utilise toute la largeur disponible, un indice (ombre et barre de défilement) signale un tableau qui déborde, « Nouvelle ligne » est aussi en haut, et sur téléphone les actions secondaires passent dans un menu « Plus ».
+- **Interface : « Mes tâches »** : tâches regroupées par échéance (en retard, aujourd'hui, cette semaine, plus tard, sans échéance, terminées), retards signalés en texte et en couleur, état vide expliqué en mots simples.
+
+## [3.18.2] - 2026-11-13
+
+### Corrigé
+- **Interface : connexion** : le bouton « Se connecter » ouvre l'écran de connexion quand plusieurs méthodes sont actives (SSO et compte local), au lieu d'aller directement chez le fournisseur d'identité ; l'adresse de retour est conservée.
+- **Interface : permissions** : le cadenas de la page est mis en évidence quand la page est restreinte (restriction propre ou héritée).
+- **Interface : visiteur sans compte** : un lien vers une page qui n'est pas publique (base, page restreinte) affiche « Page non publique » au lieu de « Page supprimée ».
+
 ## [3.18.1] - 2026-11-12
 
 ### Ajouté

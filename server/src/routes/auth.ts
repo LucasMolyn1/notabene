@@ -98,7 +98,7 @@ export default async function authRoutes(app: FastifyInstance) {
       // Google ne propose pas de déconnexion côté fournisseur : son id_token n'est pas conservé.
       startSession(reply, userId, client.name === 'principal' ? idToken : null);
       req.auth = { user: { id: userId, name: displayName(profile), email: null, role: id.role }, via: 'session', scopes: new Set() };
-      audit(db, req, 'auth.login', userId, { role: id.role, ...method });
+      audit(db, req, 'auth.login', userId, { role: id.role, ...method }, { actorId: userId });
       return reply.redirect(returnTo);
     } catch (err) {
       if (err instanceof ReauthRejected) {

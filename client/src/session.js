@@ -64,10 +64,12 @@ export const session = {
     return !!(oidc || devLogin || local || ldap || saml || this.extraProviders().length);
   },
 
-  // Lien « Se connecter » : directement vers le fournisseur principal s'il est seul à proposer un clic, sinon vers l'écran de connexion.
+  // Lien « Se connecter » : un seul fournisseur (le principal) et aucune autre méthode : on y va directement ; sinon l'écran de
+  // connexion propose les méthodes (SSO, Google, compte local…).
   loginEntry(returnTo = location.pathname) {
-    if (this.config.auth.oidc && !this.extraProviders().length) return this.loginUrl(returnTo);
-    return returnTo === location.pathname ? '/?login' : `/?login&returnTo=${encodeURIComponent(returnTo)}`;
+    const { oidc, devLogin, local, ldap, saml } = this.config.auth;
+    const several = [oidc, devLogin, local, ldap, saml].filter(Boolean).length + this.extraProviders().length > 1;
+    return oidc && !several ? this.loginUrl(returnTo) : `/?login&returnTo=${encodeURIComponent(returnTo)}`;
   },
 
   // Adresse de reconnexion (action sensible) pour un compte fédéré OIDC ; null pour les autres comptes.

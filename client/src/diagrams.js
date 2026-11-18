@@ -8,15 +8,9 @@ import { currentTheme } from './prefs.js';
 import { session } from './session.js';
 import { toast } from './ui.js';
 import { makeResizable } from './resize.js';
+import { svgToDataUrl, zoomButton } from './diagram-zoom.js';
 
 export const DEFAULT_MERMAID = 'flowchart LR\n  A[Idée] --> B{Validée ?}\n  B -->|oui| C[Documenter]\n  B -->|non| D[Archiver]';
-
-function svgToDataUrl(svg) {
-  const bytes = new TextEncoder().encode(svg);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return `data:image/svg+xml;base64,${btoa(binary)}`;
-}
 
 const updateAttrs = (editor, getPos, attrs) => {
   const pos = typeof getPos === 'function' ? getPos() : null;
@@ -88,13 +82,20 @@ function textDiagramNode({ name, label, defaultCode, renderer: renderDiagram }) 
         const preview = h('div', { class: `diagram-preview ${name}-preview` });
         const textarea = h('textarea', { class: 'mermaid-code', spellcheck: 'false', 'aria-label': `Code ${label}` });
         textarea.value = node.attrs.code;
-        const editBtn = h('button', { class: 'btn btn-ghost btn-sm', type: 'button' });
+        const editBtn = h('button', { class: 'btn btn-ghost btn-sm diagram-edit', type: 'button' });
+        // Loupe : pour les schémas seulement (une formule n'en a pas besoin) ; masquée tant que rien n'est affiché.
+        const zoomBtn = name === 'math' ? null : zoomButton(preview, label);
         const body = h('div', { class: 'mermaid-split' }, textarea, preview);
-        const dom = frame(label, body, editBtn);
+        const dom = frame(label, body, [zoomBtn, editBtn]);
         const resizer = makeResizable(dom, { editor, label, commit: (width) => updateAttrs(editor, getPos, { width }) });
         resizer.apply(node.attrs.width);
 
-        const render = debounce(() => renderDiagram(textarea.value, preview), 250);
+        const draw = async (code) => {
+          await renderDiagram(code, preview);
+          if (zoomBtn) zoomBtn.hidden = preview.classList.contains('error') || !preview.firstElementChild;
+        };
+        if (zoomBtn) zoomBtn.hidden = true;
+        const render = debounce(() => draw(textarea.value), 250);
         const setEditing = (on) => {
           dom.classList.toggle('editing', on);
           editBtn.replaceChildren(icon(on ? 'check' : 'edit', 14), on ? 'Terminer' : 'Modifier');
@@ -117,7 +118,7 @@ function textDiagramNode({ name, label, defaultCode, renderer: renderDiagram }) 
         editor.on('update', paintEditable);
         setEditing(false);
         paintEditable();
-        renderDiagram(node.attrs.code, preview);
+        draw(node.attrs.code);
 
         return {
           dom,
@@ -128,7 +129,7 @@ function textDiagramNode({ name, label, defaultCode, renderer: renderDiagram }) 
             resizer.apply(updated.attrs.width);
             if (changed && document.activeElement !== textarea) {
               textarea.value = updated.attrs.code;
-              renderDiagram(updated.attrs.code, preview);
+              draw(updated.attrs.code);
             }
             return true;
           },
@@ -216,9 +217,10 @@ function imageDiagramView({ label, emptyText, open }) {
     let current = node;
     const img = h('img', { class: 'diagram-img', alt: label, draggable: 'false' });
     const empty = h('div', { class: 'diagram-empty' }, emptyText);
-    const editBtn = h('button', { class: 'btn btn-ghost btn-sm', type: 'button' }, icon('edit', 14), 'Modifier');
+    const editBtn = h('button', { class: 'btn btn-ghost btn-sm diagram-edit', type: 'button' }, icon('edit', 14), 'Modifier');
     const preview = h('div', { class: 'diagram-preview' }, img, empty);
-    const dom = frame(label, preview, editBtn);
+    const zoomBtn = zoomButton(preview, label);
+    const dom = frame(label, preview, [zoomBtn, editBtn]);
     const resizer = makeResizable(dom, { editor, label, commit: (width) => updateAttrs(editor, getPos, { width }) });
 
     const paint = () => {
@@ -227,6 +229,7 @@ function imageDiagramView({ label, emptyText, open }) {
       img.hidden = !svg;
       empty.hidden = !!svg;
       if (svg && img.getAttribute('src') !== svg) img.src = svg;
+      zoomBtn.hidden = !svg;
       editBtn.hidden = !editor.isEditable;
     };
     const edit = () => {

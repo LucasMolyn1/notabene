@@ -204,7 +204,8 @@ describe('API v3 : permissions par page', () => {
     expect(titles(await call(admin, 'GET', '/api/v3/search?q=onboarding'))).toContain('Onboarding');
     // Pas d'écriture ni de création sous une page cachée.
     expect((await call(ed2, 'PATCH', `/api/v3/pages/${secret()}`, { title: 'x' })).statusCode).toBe(404);
-    expect((await call(ed2, 'POST', '/api/v3/pages', { spaceId: teamSpace(), parentId: secret() })).statusCode).toBe(403);
+    // Parente cachée : introuvable (404), comme la page elle-même.
+    expect((await call(ed2, 'POST', '/api/v3/pages', { spaceId: teamSpace(), parentId: secret() })).statusCode).toBe(404);
     expect((await call(ed2, 'POST', `/api/v3/pages/${secret()}/comments`, { body: 'x' })).statusCode).toBe(404);
     // Anonyme : jamais, même dans un espace public.
     expect((await call(null, 'GET', `/api/v3/pages/${secret()}`)).statusCode).toBe(404);

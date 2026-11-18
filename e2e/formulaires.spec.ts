@@ -251,9 +251,10 @@ test('formulaires sur téléphone (375 px) : panneau et page publique sans défi
   const page = await ctx.newPage();
   await loginUi(page, ADMIN.email, ADMIN.password);
   await page.goto(`/p/${b.id}`);
-  const open = page.getByRole('button', { name: 'Formulaires', exact: true });
-  await open.scrollIntoViewIfNeeded();
-  await openPanel(page);
+  // Sur téléphone, les actions secondaires de la base sont dans le menu « Plus ».
+  await page.getByRole('button', { name: 'Plus d’actions' }).click();
+  await page.getByRole('menuitem', { name: 'Formulaires' }).click();
+  await expect(panel(page).getByRole('button', { name: 'Nouveau formulaire' })).toBeVisible();
   const dlg = panel(page);
   const box = (await dlg.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);

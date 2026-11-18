@@ -11,6 +11,7 @@ import type { WebSocket } from 'ws';
 import type { DB } from '../db.js';
 import type { AttachmentCloner } from './attachments.js';
 import { sanitizeDoc } from './content.js';
+import { sameEditorContent } from './editor-defaults.js';
 import type { EventBus } from './events.js';
 import { randomToken } from './crypto.js';
 import { jsonToYFragment, jsonToYNodes, yChildrenToJson, yFragmentToJson } from './yjs-json.js';
@@ -284,7 +285,9 @@ export class CollabHub {
       const clean = sanitizeDoc(plan.doc, { lenientSynced: true });
       let cloner: AttachmentCloner | undefined;
       let row: PageRow | undefined;
-      if (JSON.stringify(clean) !== page.content) {
+      // Remise en forme de l'éditeur seulement (valeurs par défaut, paragraphe vide final) : la page n'est pas modifiée, ni
+      // version ni « modifiée par ». L'état Yjs est stocké quand même, sous l'empreinte du contenu inchangé de la page.
+      if (JSON.stringify(clean) !== page.content && !sameEditorContent(clean, JSON.parse(page.content))) {
         cloner = this.clonerFor?.([...room.editors], room.lastUser);
         try { row = updatePage(this.db, room.pageId, { content: clean }, room.lastUser, cloner); } catch (err) { cloner?.rollback(); throw err; }
         room.contentHash = sha(row.content);

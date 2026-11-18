@@ -6,7 +6,7 @@ import { type Auth, can, requireAuth } from '../auth/context.js';
 import { GOOGLE_SUB_PREFIX } from '../auth/oidc.js';
 import { aiProviderLabel, isAiReady } from '../ai/settings.js';
 import { canReadPage, filterReadable, hasAnyAcl } from '../lib/page-acl.js';
-import { spaceRoles } from '../lib/space-access.js';
+import { routeSpaceRoles } from '../lib/space-access.js';
 import { personalSpacesEnabled } from '../lib/personal-spaces.js';
 import { sharingEnabled } from '../lib/shares.js';
 import type { AppEvent } from '../lib/events.js';
@@ -74,7 +74,7 @@ export default async function coreRoutes(app: FastifyInstance) {
     // Identité du flux : rôle et état du compte sont relus à chaque changement de droits (un administrateur rétrogradé, un
     // compte désactivé ou un groupe retiré ne gardent pas les droits de l'ouverture du flux).
     let auth = req.auth;
-    const spaceIds = (a: Auth | null) => new Set(can(a, 'read') ? [...spaceRoles(db, a).keys()] : [...spaceRoles(db, null).keys()]);
+    const spaceIds = (a: Auth | null) => new Set(routeSpaceRoles(db, a).keys());
     let spaces = spaceIds(auth);
     const authed = can(req.auth, 'read');
     reply.hijack();

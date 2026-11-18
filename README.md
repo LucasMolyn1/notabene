@@ -18,7 +18,7 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | **Diagrammes** | **Mermaid** (texte, rendu en direct), **Excalidraw** (dessin), **Draw.io** (instance auto-hébergée) |
 | **Recherche** | Plein texte SQLite FTS5 insensible aux accents (`⌘K`) |
 | **IA** | Onglet « Demander à l’IA » dans `⌘K` : réponses sourcées à partir des pages lisibles par l’utilisateur ; **assistant de rédaction** dans l’éditeur (améliorer, raccourcir, corriger, traduire, consigne libre sur le texte sélectionné, aperçu avant d’écrire) ; **Claude** ou tout endpoint **compatible OpenAI** (OpenAI, Mistral, Ollama, LM Studio…) |
-| **API REST** | `/api/v3`, jetons personnels à portées (`read`, `write`, `ai`, `admin`) et expiration, documentation OpenAPI sur `/api/docs` |
+| **API REST** | `/api/v3`, jetons personnels à portées (`read`, `write`, `ai`, `admin`), expiration et limitation facultative à certains espaces, documentation OpenAPI sur `/api/docs` |
 | **Collaboration** | Mise à jour en temps réel (SSE), présence des lecteurs, détection des modifications concurrentes, historique des versions |
 | **Commentaires et notifications** | Commentaires par page (fils, réponses, résolution, texte commenté surligné), mentions `@personne`, suivi de pages, cloche en temps réel, e-mails facultatifs sans contenu de page |
 | **Groupes et espaces** | Groupes locaux ou liés à un groupe OIDC, LDAP ou SAML (adhésion recopiée à chaque connexion) ; chaque espace a ses membres (personnes ou groupes) en lecture, édition ou gestion ; le rôle global reste un plafond et le droit le plus élevé l’emporte ; un nouvel espace n’est ouvert qu’aux administrateurs ; **espaces personnels** facultatifs, lisibles de leur seul propriétaire |
@@ -176,7 +176,7 @@ Les fournisseurs d’identité (OIDC/Authentik, LDAP, SAML), le serveur d’e-ma
 
 ## Utiliser l’API
 
-1. Menu utilisateur → **Jetons d’API** → choisissez les portées et la durée (le jeton n’est affiché qu’une fois).
+1. Menu utilisateur → **Jetons d’API** → choisissez les portées, la durée et, si besoin, les espaces autorisés (le jeton n’est affiché qu’une fois ; voir `docs/API-VERSIONING.md`).
 2. Appelez l’API :
 
 ```bash

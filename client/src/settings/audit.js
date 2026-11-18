@@ -46,6 +46,22 @@ function filterField(id, label, control) {
 
 // ---- Journal ----------------------------------------------------------------------------------
 
+const TARGET_TYPES = { page: 'Page', space: 'Espace', user: 'Compte', token: 'Jeton', share: 'Partage', group: 'Groupe', base: 'Base', webhook: 'Webhook', comment: 'Commentaire', template: 'Modèle', form: 'Formulaire' };
+const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Cible d'un évènement : objet { type, id, title } (serveur récent) ou identifiant brut (ancien format). */
+function targetEl(target) {
+  if (!target) return null;
+  if (typeof target !== 'object') return `cible ${target}`;
+  const kind = TARGET_TYPES[target.type] || target.type || 'Cible';
+  const title = typeof target.title === 'string' && target.title.trim() ? target.title : null;
+  // Une page qui existe encore (titre connu) : lien direct. Sinon, le titre ou l'identifiant en texte.
+  if (target.type === 'page' && title && SAFE_ID.test(String(target.id))) {
+    return h('span', null, `${kind} `, h('a', { href: `/p/${target.id}`, class: 'audit-target' }, title));
+  }
+  return title ? `${kind} « ${title} »` : `${kind} ${target.id ?? ''}`.trim();
+}
+
 export function renderAudit(el) {
   const action = h('select', { class: 'input' },
     h('option', { value: '' }, 'Toutes les actions'),
@@ -85,13 +101,21 @@ export function renderAudit(el) {
 
   const row = (e) => {
     const at = Date.parse(e.timestamp);
-    const meta = e.meta && Object.keys(e.meta).length ? JSON.stringify(e.meta) : '';
     const who = e.actor ? `${e.actor.name || e.actor.id}${e.actor.via ? ` (jeton « ${e.actor.via.name || 'sans nom'} »)` : ''}` : 'Système';
+    // Libellé fourni par le serveur (versions récentes), sinon table locale, sinon le code brut.
+    const label = typeof e.label === 'string' && e.label.trim() ? e.label : AUDIT_LABELS[e.action] || e.action;
+    // Cible décrite (targetInfo, serveur récent) ; sinon l'identifiant brut (target), comme avant.
+    const details = [who, targetEl(e.targetInfo && typeof e.targetInfo === 'object' ? e.targetInfo : e.target), e.ip].filter(Boolean);
+    const meta = e.meta && typeof e.meta === 'object' && Object.keys(e.meta).length ? e.meta : null;
     return h('li', { class: 'table-row wrap' },
       h('span', { class: 'audit-time', title: fullDate(at) }, h('time', { datetime: e.timestamp }, timeAgo(at))),
-      h('span', { class: 'grow' },
-        h('strong', null, AUDIT_LABELS[e.action] || e.action),
-        h('small', null, [who, e.target && `cible ${e.target}`, e.ip, meta && meta.slice(0, 160)].filter(Boolean).join(' · '))),
+      h('span', { class: 'grow audit-main' },
+        h('strong', { title: e.action }, label),
+        h('small', null, details.flatMap((d, i) => (i ? [' · ', d] : [d])),
+          // Le code technique reste lisible, discret, pour filtrer ou chercher dans un SIEM.
+          label !== e.action ? [' · ', h('code', { class: 'audit-code' }, e.action)] : null),
+        meta && h('details', { class: 'audit-meta' }, h('summary', null, 'Détails techniques'),
+          h('pre', { class: 'code-sample', tabindex: '0' }, JSON.stringify(meta, null, 2)))),
       e.outcome === 'failure' && pill('Échec', 'warn'));
   };
 

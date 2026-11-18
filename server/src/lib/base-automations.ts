@@ -27,7 +27,7 @@
 //  - Lecture : historique avec des codes fermés et des nombres, jamais de contenu ; une action vers une base que le lecteur ne
 //    peut pas lire est masquée ; les personnes citées ne sont nommées que si elles lisent la base.
 import { z } from 'zod';
-import { type Auth, can, type Scope } from '../auth/context.js';
+import { type Auth, type Scope } from '../auth/context.js';
 import type { DB } from '../db.js';
 import { audit } from './audit.js';
 import { matchesFilter } from './base-chart.js';
@@ -44,7 +44,7 @@ import { readersAmong } from './mentions.js';
 import type { Notifier } from './notifications.js';
 import { canReadPage, filterReadable } from './page-acl.js';
 import { inPersonalSpace } from './personal-spaces.js';
-import { spaceRoles } from './space-access.js';
+import { routeSpaceRoles } from './space-access.js';
 import { postSigned } from './webhooks.js';
 
 export const MAX_AUTOMATIONS = 20;
@@ -182,7 +182,7 @@ export function authOf(db: DB, userId: string | null): Auth | null {
   return { user: { id: u.id, name: u.name, email: u.email, role: u.role }, via: 'session', scopes: new Set<Scope>(['read', 'write']) };
 }
 
-const ctxFor = (db: DB, auth: Auth | null, baseId: string): Ctx => ({ db, auth, spaces: new Set(spaceRoles(db, can(auth, 'read') ? auth : null).keys()), baseId, touched: new Set() });
+const ctxFor = (db: DB, auth: Auth | null, baseId: string): Ctx => ({ db, auth, spaces: new Set(routeSpaceRoles(db, auth).keys()), baseId, touched: new Set() });
 
 // ---------- Validation ----------
 

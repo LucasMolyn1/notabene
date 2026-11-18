@@ -5,7 +5,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { can, guard } from '../auth/context.js';
-import { loadWritablePage, readableSpaceIds } from '../lib/access.js';
+import { loadWritablePage, readableSpaceIds, refuseSpaceLimitedToken } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
 import {
   actionsInput, automationById, automationsOf, MAX_ACTIONS, MAX_AUTOMATIONS, MAX_BASE_RUNS_PER_MINUTE, MAX_FAILURES, MAX_FILTERS,
@@ -70,6 +70,8 @@ export default async function baseAutomationRoutes(app: FastifyInstance) {
     ...write,
     schema: { tags, summary: `Créer une automatisation ou un bouton de ligne (${MAX_AUTOMATIONS} par base ; secret du webhook montré une seule fois)`, params: idParams, body: createBody },
   }, async (req, reply) => {
+    // Une automatisation s'exécute avec les droits de son auteur : un jeton limité à certains espaces n'en crée pas.
+    refuseSpaceLimitedToken(req, 'Un jeton limité à certains espaces ne gère pas les automatisations');
     const page = openBase(req, (req.params as { id: string }).id);
     const b = req.body as z.output<typeof createBody>;
     await checkUrls(page, b.actions);
@@ -83,6 +85,7 @@ export default async function baseAutomationRoutes(app: FastifyInstance) {
     ...write,
     schema: { tags, summary: 'Modifier une automatisation (déclencheur, actions ou réactivation : vous en devenez l’auteur)', params: autoParams, body: patchBody },
   }, async (req) => {
+    refuseSpaceLimitedToken(req, 'Un jeton limité à certains espaces ne gère pas les automatisations');
     const p = req.params as z.output<typeof autoParams>;
     const page = openBase(req, p.id);
     const cur = automationById(db, page.id, p.aid);

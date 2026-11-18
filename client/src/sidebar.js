@@ -1,6 +1,6 @@
 // Barre latérale : sélecteur d'espace, favoris, arborescence (glisser-déposer), compte.
 import { newsPending, onNewsChange } from './news.js';
-import { h, modKey } from './util.js';
+import { debounce, h, modKey, norm } from './util.js';
 import { pagePath, spacePath } from './urls.js';
 import { icon } from './icons.js';
 import { store } from './store.js';
@@ -12,8 +12,28 @@ import * as A from './actions.js';
 import { openDocumentImport, openNotionImport } from './notion-import.js';
 import { openReviewList } from './verification.js';
 import { lateTasks, onTasksChange } from './tasks.js';
+import { openMoveDialog } from './move-dialog.js';
 
 let dragId = null;
+
+// Filtre de l'arbre : proposé à partir de FILTER_MIN pages dans l'espace ; la saisie survit aux rendus de la barre.
+const FILTER_MIN = 30;
+let treeFilter = '';
+let treeFilterSpace = null;
+
+/** Pages dont le titre contient la saisie (sans accents ni casse), avec leurs parents pour garder le chemin visible. */
+function filterTree(spaceId, query) {
+  const q = norm(query);
+  const keep = new Set();
+  let count = 0;
+  for (const p of store.pagesIn(spaceId)) {
+    if (!norm(p.title || 'Sans titre').includes(q)) continue;
+    count++;
+    keep.add(p.id);
+    for (const a of store.ancestors(p.id)) keep.add(a.id);
+  }
+  return { keep, count };
+}
 
 /** @param {string} ico @param {string} label @param {() => void} onClick @param {{ hint?: string, active?: boolean, badge?: boolean | string, badgeText?: string }} [options] */
 const navBtn = (ico, label, onClick, { hint, active, badge, badgeText } = {}) => h('button', {
@@ -54,13 +74,13 @@ function pageMenu(anchor, page) {
     { label: 'Ajouter une base', icon: 'table', onClick: () => A.newBase(page.spaceId, page.id) },
     { label: page.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris', icon: 'star', onClick: () => A.attempt(() => store.toggleFavorite(page.id)) },
     { label: 'Renommer', icon: 'edit', onClick: () => startRename(page.id) },
+    { label: 'Déplacer vers…', icon: 'move', onClick: () => openMoveDialog(page.id) },
     { label: 'Dupliquer', icon: 'copy', onClick: () => A.duplicate(page.id) },
     { label: 'Copier le lien', icon: 'link', onClick: () => A.copyLink(page.id) },
     { label: 'Exporter en Markdown', icon: 'download', onClick: () => A.exportMarkdown(page.id) },
     { label: 'Exporter en PDF', icon: 'pdf', onClick: () => A.exportPDF(page.id) },
     session.user && { label: 'Exporter en ZIP', icon: 'download', onClick: () => A.openZipExport({ pageId: page.id }) },
     others.length && { sep: true },
-    ...others.map((s) => ({ label: `Déplacer vers ${s.name}`, icon: 'folder', onClick: () => A.moveToSpace(page.id, s.id) })),
     ...others.map((s) => ({ label: `Copier vers ${s.name}`, icon: 'copy', onClick: () => A.copyToSpace(page.id, s.id) })),
     { sep: true },
     { label: 'Mettre à la corbeille', icon: 'trash', danger: true, onClick: () => A.trash(page.id) },
@@ -169,9 +189,10 @@ function clearDrop() {
   document.querySelectorAll('.drop-before,.drop-after,.drop-inside').forEach((el) => el.classList.remove('drop-before', 'drop-after', 'drop-inside'));
 }
 
-function treeNode(page, depth, activeId, canWrite) {
-  const kids = store.children(page.spaceId, page.id);
-  const open = !!prefs.expanded[page.id];
+/** @param {any} page @param {number} depth @param {string | null} activeId @param {boolean} canWrite @param {Set<string> | null} [filter] pages gardées par le filtre (dépliées d'office) */
+function treeNode(page, depth, activeId, canWrite, filter = null) {
+  const kids = filter ? store.children(page.spaceId, page.id).filter((k) => filter.has(k.id)) : store.children(page.spaceId, page.id);
+  const open = filter ? kids.length > 0 : !!prefs.expanded[page.id];
   const row = h('div', {
     class: `tree-row${page.id === activeId ? ' active' : ''}`,
     style: { paddingLeft: `${6 + depth * 14}px` },
@@ -241,7 +262,7 @@ function treeNode(page, depth, activeId, canWrite) {
     });
   }
 
-  return h('li', { role: 'none' }, row, open && kids.length ? h('ul', { class: 'tree', role: 'group' }, kids.map((k) => treeNode(k, depth + 1, activeId, canWrite))) : null);
+  return h('li', { role: 'none' }, row, open && kids.length ? h('ul', { class: 'tree', role: 'group' }, kids.map((k) => treeNode(k, depth + 1, activeId, canWrite, filter))) : null);
 }
 
 function accountBox() {
@@ -261,6 +282,7 @@ export function renderSidebar() {
   const scrollTop = el.querySelector('.sb-scroll')?.scrollTop || 0;
   // La barre est reconstruite à chaque changement (y compris ceux venus d'un autre onglet) : le focus clavier doit survivre.
   const focusedRow = el.contains(document.activeElement) ? /** @type {HTMLElement | null | undefined} */ (document.activeElement.closest?.('.tree-row[data-id]'))?.dataset.id : null;
+  const filterFocus = document.activeElement?.id === 'tree-filter' ? /** @type {HTMLInputElement} */ (document.activeElement).selectionStart : null;
   const space = store.space(prefs.space) || store.spaces[0];
   const dark = currentTheme() === 'dark';
   const brand = h('div', { class: 'sb-brand' },
@@ -288,6 +310,59 @@ export function renderSidebar() {
       rootDrop.classList.remove('over');
       if (dragId) A.attempt(() => store.movePage(dragId, null, roots.length, space.id));
     });
+  }
+
+  // Arbre complet, puis filtre éventuel : la saisie ne reconstruit que l'arbre filtré (petit), jamais la barre entière ;
+  // filtre vidé, l'arbre complet déjà construit est remis en place tel quel.
+  if (treeFilterSpace !== space.id) { treeFilter = ''; treeFilterSpace = space.id; }
+  const fullTree = roots.length
+    ? h('ul', { class: 'tree', role: 'tree', 'aria-label': 'Pages', onKeydown: onTreeKey }, roots.map((p) => treeNode(p, 0, activeId, canWrite)))
+    : canWrite
+      ? h('button', { class: 'sb-empty', onClick: () => A.newPage(space.id) }, 'Aucune page. Créer la première →')
+      : h('p', { class: 'sb-empty' }, 'Aucune page.');
+  const treeHost = h('div', { class: 'tree-host' }, fullTree);
+  const withFilter = roots.length > 0 && store.pagesIn(space.id).length >= FILTER_MIN;
+  // Région annoncée (aria-live) sans rôle « status » : elle reste présente dans la barre, sans se confondre avec celles des vues.
+  const filterStatus = h('p', { id: 'tree-filter-status', class: 'sr-only', 'aria-live': 'polite' });
+  const tabStop = () => {
+    const tree = treeHost.querySelector('[role=tree]');
+    if (tree && !tree.querySelector('.tree-row[tabindex="0"]')) tree.querySelector('.tree-row[role=treeitem]')?.setAttribute('tabindex', '0');
+  };
+  const applyFilter = () => {
+    const q = treeFilter.trim();
+    if (!q) { treeHost.replaceChildren(fullTree); filterStatus.textContent = ''; return; }
+    const { keep, count } = filterTree(space.id, q);
+    treeHost.replaceChildren(count
+      ? h('ul', { class: 'tree', role: 'tree', 'aria-label': 'Pages filtrées', onKeydown: onTreeKey }, roots.filter((r) => keep.has(r.id)).map((p) => treeNode(p, 0, activeId, canWrite, keep)))
+      : h('p', { class: 'sb-empty' }, 'Aucune page ne correspond.'));
+    filterStatus.textContent = count ? `${count} page${count > 1 ? 's' : ''} trouvée${count > 1 ? 's' : ''}.` : 'Aucune page ne correspond.';
+    tabStop();
+  };
+  let filterInput = null;
+  if (withFilter) {
+    filterInput = h('input', {
+      id: 'tree-filter', class: 'input tree-filter', type: 'search', placeholder: 'Filtrer les pages', autocomplete: 'off', spellcheck: 'false',
+      maxlength: '200', 'aria-describedby': 'tree-filter-status',
+    });
+    filterInput.value = treeFilter;
+    const later = debounce(applyFilter, 120);
+    filterInput.addEventListener('input', () => { treeFilter = filterInput.value; later(); });
+    filterInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && filterInput.value) {
+        e.preventDefault();
+        e.stopPropagation();
+        filterInput.value = '';
+        treeFilter = '';
+        later.cancel();
+        applyFilter();
+      } else if (e.key === 'ArrowDown') {
+        const first = /** @type {HTMLElement | null} */ (treeHost.querySelector('.tree-row[tabindex="0"]') || treeHost.querySelector('.tree-row[role=treeitem]'));
+        if (first) { e.preventDefault(); first.focus(); }
+      }
+    });
+    if (treeFilter.trim()) applyFilter();
+  } else if (treeFilter) {
+    treeFilter = '';
   }
 
   el.replaceChildren(
@@ -321,11 +396,9 @@ export function renderSidebar() {
         h('div', { class: 'sb-section-head' },
           h('span', null, 'Pages'),
           canWrite && h('button', { class: 'mini-btn', title: 'Nouvelle page', onClick: () => A.newPage(space.id) }, icon('plus', 15))),
-        roots.length
-          ? h('ul', { class: 'tree', role: 'tree', 'aria-label': 'Pages', onKeydown: onTreeKey }, roots.map((p) => treeNode(p, 0, activeId, canWrite)))
-          : canWrite
-            ? h('button', { class: 'sb-empty', onClick: () => A.newPage(space.id) }, 'Aucune page. Créer la première →')
-            : h('p', { class: 'sb-empty' }, 'Aucune page.'),
+        filterInput && h('div', { class: 'tree-filter-wrap' },
+          h('label', { for: 'tree-filter', class: 'sr-only' }, 'Filtrer les pages'), icon('search', 14), filterInput, filterStatus),
+        treeHost,
         rootDrop)),
     h('div', { class: 'sb-foot' },
       // Administrateur : une nouvelle version existe. Le lien mène aux nouveautés (et aux consignes de mise à jour).
@@ -340,6 +413,7 @@ export function renderSidebar() {
   // L'arbre doit rester atteignable au clavier même si aucune page n'est ouverte : première ligne = point d'entrée.
   const tree = el.querySelector('[role=tree]');
   if (tree && !tree.querySelector('.tree-row[tabindex="0"]')) tree.querySelector('.tree-row[role=treeitem]')?.setAttribute('tabindex', '0');
+  if (filterFocus != null && filterInput) { filterInput.focus(); filterInput.setSelectionRange(filterFocus, filterFocus); }
   const wanted = pendingFocus || focusedRow;
   if (wanted) {
     const target = /** @type {HTMLElement | null | undefined} */ (tree?.querySelector(`.tree-row[data-id="${wanted}"]`));
