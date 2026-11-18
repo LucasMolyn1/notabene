@@ -1150,6 +1150,8 @@ select.input { height: 36px; }
 .table { display: grid; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .table-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; min-height: 48px; }
 .table-row + .table-row { border-top: 1px solid var(--border); }
+ul.table { list-style: none; margin: 0; padding: 0; }
+.space-share-form .field.grow { flex: 1 1 220px; }
 .table-row .grow { display: grid; min-width: 0; }
 .table-row small { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
 .table-row.inactive { opacity: .55; }
@@ -1345,7 +1347,9 @@ ul.table { list-style: none; margin: 0; padding: 0; }
 .share-link:hover { background: var(--hover); color: var(--text); }
 .share-link.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
 .share-title { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; }
-@media (max-width: 760px) { .share-layout { grid-template-columns: minmax(0, 1fr); } }
+.share-space { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.share-tree { position: sticky; top: 12px; align-self: start; max-height: calc(100vh - 24px); overflow-y: auto; }
+@media (max-width: 760px) { .share-layout { grid-template-columns: minmax(0, 1fr); } .share-tree { position: static; max-height: none; } }
 
 /* ---- Bases (tableaux) ---- */
 .bt-wrap { max-width: none; }

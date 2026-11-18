@@ -26,8 +26,8 @@ export function shareShellHeaders(db: DB, url: string): Record<string, string> {
 }
 
 /**
- * Active ou coupe le partage public de l'instance. Couper retire tous les partages de pages (renvoie leur nombre) et tous les flux
- * iCalendar des bases : les réactiver ne fait rien réapparaître.
+ * Active ou coupe le partage public de l'instance. Couper retire tous les partages de pages (renvoie leur nombre), tous les flux
+ * iCalendar des bases et tous les liens de partage d'espace : les réactiver ne fait rien réapparaître.
  */
 export function setSharingEnabled(db: DB, enabled: boolean, userId: string): number {
   return db.transaction(() => {
@@ -37,6 +37,7 @@ export function setSharingEnabled(db: DB, enabled: boolean, userId: string): num
     ).run(KEY, JSON.stringify({ enabled }), Date.now(), userId);
     if (enabled) return 0;
     db.prepare('DELETE FROM base_ical_feeds').run();
+    db.prepare('DELETE FROM space_shares').run();
     return db.prepare('DELETE FROM page_shares').run().changes;
   })();
 }
