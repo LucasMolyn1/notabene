@@ -113,7 +113,10 @@ export default async function authRoutes(app: FastifyInstance) {
   // Fournisseur principal : routes historiques, inchangées (URI de redirection déjà déclarée chez le fournisseur).
   app.get('/auth/login', { config: authRateLimit, schema: { hide: true, querystring: loginQuery } }, async (req, reply) => {
     if (!oidc.enabled) {
-      if (config.DEV_LOGIN) return reply.redirect(`/?dev_login=1&returnTo=${encodeURIComponent(safeReturnTo((req.query as z.output<typeof loginQuery>).returnTo))}`);
+      if (config.DEV_LOGIN) {
+        const q = new URLSearchParams({ dev_login: '1', returnTo: safeReturnTo((req.query as z.output<typeof loginQuery>).returnTo) });
+        return reply.redirect(`/?${q.toString()}`);
+      }
       throw new HttpError(503, 'Fournisseur d’identité non configuré');
     }
     return startLogin(oidc, req, reply);
