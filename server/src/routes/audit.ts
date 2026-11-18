@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { guard } from '../auth/context.js';
 import { audit } from '../lib/audit.js';
 import {
-  type AuditFilters, auditFilters, auditMaxId, auditPage, auditWhere, CSV_COLUMNS, csvLine, FilterError, toAuditEvent,
+  type AuditFilters, auditFilters, auditMaxId, auditPage, auditWhere, CSV_COLUMNS, csvLine, FilterError, presentAuditEvents,
 } from '../lib/audit-events.js';
 import { decodeCursor, encodeCursor } from '../lib/cursor.js';
 import { HttpError } from '../lib/http.js';
@@ -57,7 +57,7 @@ export default async function auditRoutes(app: FastifyInstance) {
     const before = decodeCursor(q.cursor, cursorSchema)?.i ?? null;
     const rows = auditPage(db, f, before, q.limit + 1);
     const items = rows.slice(0, q.limit);
-    return { items: items.map(toAuditEvent), nextCursor: rows.length > q.limit ? encodeCursor({ i: items.at(-1)!.id }) : null };
+    return { items: presentAuditEvents(db, items), nextCursor: rows.length > q.limit ? encodeCursor({ i: items.at(-1)!.id }) : null };
   });
 
   // Export en flux, par lots, du plus récent au plus ancien. L'export est lui-même journalisé (format, nombre de lignes,
@@ -86,8 +86,7 @@ export default async function auditRoutes(app: FastifyInstance) {
         const batch = auditPage(db, f, before, Math.min(EXPORT_BATCH, rows - sent));
         if (!batch.length) break;
         let chunk = '';
-        for (const r of batch) {
-          const e = toAuditEvent(r);
+        for (const e of presentAuditEvents(db, batch)) {
           chunk += json ? `${sent ? ',' : ''}\n${JSON.stringify(e)}` : `${csvLine(e)}\r\n`;
           sent++;
         }

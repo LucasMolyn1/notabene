@@ -3,7 +3,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { guard, requireAuth, requireScope } from '../auth/context.js';
-import { readableSpaces, requireSpaceRole, type SpaceRow, spaceRoleOf, toSpace } from '../lib/access.js';
+import { readableSpaces, refuseSpaceLimitedToken, requireSpaceRole, type SpaceRow, spaceRoleOf, toSpace } from '../lib/access.js';
 import { audit } from '../lib/audit.js';
 import { EVERYONE } from '../lib/space-access.js';
 import { reauthInput, requireReauth } from '../lib/reauth.js';
@@ -50,6 +50,7 @@ export default async function spaceRoutes(app: FastifyInstance) {
     readableSpaces(db, req).map((s) => ({ ...toSpace(s), role: spaceRoleOf(db, req, s.id) })));
 
   app.post('/spaces', { preHandler: guard('admin'), schema: { tags, summary: 'Créer un espace (admin)', body: createBody } }, async (req, reply) => {
+    refuseSpaceLimitedToken(req, 'Un jeton limité à certains espaces ne crée pas d’espace');
     const body = req.body as z.output<typeof createBody>;
     const now = Date.now();
     const id = newId();
@@ -104,6 +105,9 @@ export default async function spaceRoutes(app: FastifyInstance) {
       }
     })();
     if (next.visibility !== current.visibility) audit(db, req, 'space.visibility', id, { visibility: next.visibility });
+    // Nom, icône, description : champs modifiés seulement, jamais leur valeur.
+    const changedFields = (['name', 'icon', 'description'] as const).filter((k) => next[k] !== current[k]);
+    if (changedFields.length) audit(db, req, 'space.update', id, { fields: changedFields });
     app.bus.publish({ type: 'space.changed' });
     return { ...toSpace(next as SpaceRow), role: spaceRoleOf(db, req, id) };
   });
@@ -115,6 +119,7 @@ export default async function spaceRoutes(app: FastifyInstance) {
     schema: { tags, summary: 'Créer mon espace personnel (si l’instance l’autorise) ; renvoie l’existant sinon' },
   }, async (req, reply) => {
     const auth = requireAuth(req);
+    refuseSpaceLimitedToken(req, 'Un jeton limité à certains espaces ne crée pas d’espace');
     const mine = personalSpaceOf(db, auth.user.id);
     if (mine) return { ...toSpace(mine), role: spaceRoleOf(db, req, mine.id) };
     if (!personalSpacesEnabled(db)) throw new HttpError(403, 'Les espaces personnels ne sont pas activés sur cette instance');

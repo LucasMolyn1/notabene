@@ -42,6 +42,9 @@ import scimRoutes from './routes/scim.js';
 import scimAdminRoutes from './routes/scim-admin.js';
 import { sessionAuth as sessionAuthWithIdle, sessionCookieName } from './auth/session.js';
 import { verifyApiToken } from './auth/tokens.js';
+import { configureLlmTimeouts } from './ai/llm.js';
+import { deniedReason } from './auth/denials.js';
+import { TokenActivity } from './lib/token-activity.js';
 import { SecretBox, safeEqual } from './lib/crypto.js';
 import { EventBus, Presence } from './lib/events.js';
 import { HttpError } from './lib/http.js';
@@ -84,6 +87,7 @@ declare module 'fastify' {
     mail: Mailer;
     updates: UpdateChecker;
     auditForwarder: AuditForwarder;
+    tokenActivity: TokenActivity;
     automations: AutomationEngine;
     notifier: Notifier;
   }
@@ -108,6 +112,7 @@ export interface AppOptions {
 }
 
 export async function buildApp({ config, db, logger = false, clientDir, ldap, ldapFactory, mailer, updateChecker, auditStdout }: AppOptions): Promise<FastifyInstance> {
+  configureLlmTimeouts({ firstByteMs: config.AI_FIRST_BYTE_TIMEOUT_MS, idleMs: config.AI_IDLE_TIMEOUT_MS });
   const app = Fastify({
     logger: logger === false ? false : {
       ...(typeof logger === 'object' ? logger : {}),
@@ -162,6 +167,10 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   app.decorate('auditForwarder', forwarder);
   forwarder.start();
   app.addHook('onClose', async () => { forwarder.stop(); });
+  // Activité des jetons d'API : agrégat `api.access`, refus `auth.denied`, compteur de requêtes (lib/token-activity.ts).
+  const tokenActivity = new TokenActivity(db);
+  app.decorate('tokenActivity', tokenActivity);
+  tokenActivity.start(app);
   app.decorate('oidc', new OidcClient(() => rt.get(), db));
   app.decorateRequest('auth', null);
 
@@ -281,6 +290,14 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   // sont inscrits par un déclencheur dans attachment_gc et effacés ici, après la réponse.
   const filesDir = attachmentsDir(config.DATA_DIR);
   // Seulement après une suppression réussie et authentifiée : un visiteur ne déclenche aucun travail disque.
+  // Jeton d'API : chaque requête compte (agrégat par fenêtre de 5 minutes) ; un refus est noté `auth.denied` (raison connue
+  // de la route, ou 403 générique), sans rien changer à la réponse.
+  app.addHook('onResponse', async (req, reply) => {
+    if (req.auth?.via !== 'token') return;
+    tokenActivity.record(req, reply.statusCode);
+    const reason = deniedReason(req) ?? (reply.statusCode === 403 ? 'forbidden' : null);
+    if (reason && (reply.statusCode === 403 || reply.statusCode === 404)) tokenActivity.deny(req, reason, reply.statusCode);
+  });
   app.addHook('onResponse', async (req, reply) => {
     if (req.method === 'DELETE' && req.auth && reply.statusCode >= 200 && reply.statusCode < 300) await drainAttachmentGc(db, filesDir).catch((err: unknown) => req.log.warn({ err }, 'nettoyage des pièces jointes'));
   });

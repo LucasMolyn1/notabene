@@ -1070,7 +1070,25 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE notifications_v36 RENAME TO notifications;
   CREATE INDEX notifications_user ON notifications(user_id, created_at DESC);
   `,
-  // v37 : partage d'un espace entier par lien non répertorié, en lecture seule (lib/space-shares.ts). Seule l'empreinte SHA-256 du
+  // v37 : jetons d'API limités à certains espaces (auth/tokens.ts, lib/space-access.ts).
+  // - api_tokens.space_limited : 1 = le jeton n'ouvre que les espaces listés dans api_token_spaces. Le drapeau est distinct de la
+  //   liste : un jeton dont tous les espaces ont été supprimés n'ouvre plus rien, il ne redevient jamais « tous les espaces ».
+  // - api_token_spaces : espaces autorisés, supprimés en cascade avec le jeton ou avec l'espace.
+  // Additive ; sans liste (space_limited = 0, valeur des jetons existants), le comportement ne change pas. Retour arrière : révoquer
+  // d'abord les jetons limités (UPDATE api_tokens SET revoked_at = ... WHERE space_limited = 1), sinon une version antérieure les
+  // traiterait comme des jetons sans limite d'espace.
+  // - api_tokens.request_count : nombre de requêtes du jeton, cumulé en mémoire et écrit au plus une fois par minute.
+  `
+  ALTER TABLE api_tokens ADD COLUMN space_limited INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE api_tokens ADD COLUMN request_count INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE api_token_spaces (
+    token_id TEXT NOT NULL REFERENCES api_tokens(id) ON DELETE CASCADE,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    PRIMARY KEY (token_id, space_id)
+  ) WITHOUT ROWID;
+  CREATE INDEX api_token_spaces_space ON api_token_spaces(space_id);
+  `,
+  // v38 : partage d'un espace entier par lien non répertorié, en lecture seule (lib/space-shares.ts). Seule l'empreinte SHA-256 du
   // jeton est gardée (montré une fois). Tout se revérifie à chaque lecture (réglages d'instance et d'espace, expiration) ; le lien
   // suit l'espace (ON DELETE CASCADE) et disparaît avec le compte qui l'a créé (désactivé ou supprimé).
   // Additive. Retour arrière : DROP TABLE space_shares (ses déclencheurs suivent ; aucune autre donnée touchée).
@@ -1093,6 +1111,9 @@ export const MIGRATIONS: string[] = [
   `,
 ];
 
+/** Texte replié pour comparer sans tenir compte de la casse, des accents ni des espaces multiples. */
+export const foldText = (v: string): string => v.normalize('NFD').replace(/\p{M}+/gu, '').toLocaleLowerCase('fr').replace(/\s+/g, ' ').trim();
+
 export function openDb(file: string): DB {
   const db = new Database(file);
   db.pragma('journal_mode = WAL');
@@ -1101,6 +1122,8 @@ export function openDb(file: string): DB {
   db.pragma('secure_delete = ON');
   // lower() de SQLite ne replie que l'ASCII : « Équipe » ne serait pas trouvé en tapant « équipe ». Pour les recherches de noms.
   db.function('lower_fr', { deterministic: true }, (v) => (typeof v === 'string' ? v.toLocaleLowerCase('fr') : v));
+  // Forme repliée (casse, accents, espaces) : classement de la recherche (titre exactement égal à la requête en tête).
+  db.function('fold_fr', { deterministic: true }, (v) => (typeof v === 'string' ? foldText(v) : v));
   migrate(db);
   return db;
 }

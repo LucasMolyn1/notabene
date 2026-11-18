@@ -183,7 +183,7 @@ export function openComments(pageId, { getEditor = () => null, anchor = null, fo
     size: 'wide',
     body: h('div', { class: 'stack' }, list, canWrite
       ? h('div', { class: 'stack' }, quoteBox, newBox, h('div', null, h('button', { class: 'btn btn-primary btn-sm', onClick: async () => { if (await send(newBox.value, newMentions.ids())) newBox.value = ''; } }, 'Commenter')))
-      : h('p', { class: 'hint' }, 'Votre rôle ne permet pas de commenter.')),
+      : h('p', { class: 'hint' }, 'Votre accès est en lecture seule : vous pouvez lire les commentaires, pas en écrire. Pour commenter, demandez un accès en modification à un administrateur.')),
     actions: [{ label: 'Fermer' }],
   });
   open = { pageId, refresh: () => refresh().catch(() => undefined) };

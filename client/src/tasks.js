@@ -1,13 +1,15 @@
 // « Mes tâches » : lignes de bases où une colonne Personne contient la personne connectée, dans toutes les bases qu'elle peut
-// lire. Le serveur choisit, filtre et trie (en retard, puis par échéance) ; ici on regroupe par base et on affiche.
+// lire. Le serveur choisit, filtre et trie (en retard, puis par échéance) ; ici on regroupe par échéance (en retard, aujourd'hui,
+// cette semaine, plus tard, sans échéance, puis terminées) et chaque tâche renvoie à sa base.
 // Le nombre de tâches en retard alimente la pastille de la barre latérale. Aucune valeur n'est insérée comme HTML.
 import { api } from './api.js';
 import { h, debounce } from './util.js';
 import { icon } from './icons.js';
 import { session } from './session.js';
-import { pagePath } from './urls.js';
+import { pagePath, spacePath } from './urls.js';
+import { store } from './store.js';
 import { beginView, setView, topbar } from './views.js';
-import { fmtDate, isoDay, todayNum } from './base-model.js';
+import { dayNum, fmtDate, isoDay, todayNum } from './base-model.js';
 
 const main = () => document.getElementById('main');
 const listeners = new Set();
@@ -16,6 +18,33 @@ let filter = 'todo'; // « À faire » (par défaut) ou « Toutes »
 
 /** Tâches en retard : échéance passée, non terminée. */
 const isLate = (t, today) => !t.done && typeof t.due === 'string' && t.due < today;
+
+/** Groupes d'échéance, dans l'ordre d'affichage. */
+const BUCKETS = [
+  { id: 'late', label: 'En retard' },
+  { id: 'today', label: 'Aujourd’hui' },
+  { id: 'week', label: 'Cette semaine' },
+  { id: 'later', label: 'Plus tard' },
+  { id: 'none', label: 'Sans échéance' },
+  { id: 'done', label: 'Terminées' },
+];
+/**
+ * Groupe d'une tâche. « Cette semaine » : après aujourd'hui, jusqu'au dimanche de la semaine en cours.
+ * @param {any} t @param {string} today @param {string} weekEnd
+ */
+function bucketOf(t, today, weekEnd) {
+  if (t.done) return 'done';
+  if (typeof t.due !== 'string' || !t.due) return 'none';
+  if (t.due < today) return 'late';
+  if (t.due === today) return 'today';
+  return t.due <= weekEnd ? 'week' : 'later';
+}
+/** Dimanche de la semaine en cours (AAAA-MM-JJ). Le numéro de jour 0 (1er janvier 1970) est un jeudi. */
+function weekEndOf(today) {
+  const n = dayNum(today) ?? todayNum();
+  const weekday = ((n + 3) % 7) + 1; // 1 = lundi … 7 = dimanche
+  return isoDay(n + 7 - weekday);
+}
 
 /** Nombre de tâches en retard (pastille de la barre latérale). */
 export const lateTasks = () => lateCount;
@@ -88,15 +117,13 @@ export async function showTasks() {
 
   function render(tasks, truncated) {
     const today = isoDay(todayNum());
+    const weekEnd = weekEndOf(today);
     const late = tasks.filter((t) => isLate(t, today)).length;
     remember(late);
     setLate(late);
-    // Regroupement par base, dans l'ordre du serveur (la première tâche de chaque base fixe sa place).
-    const groups = new Map();
-    for (const t of tasks) {
-      if (!groups.has(t.baseId)) groups.set(t.baseId, { id: t.baseId, title: t.baseTitle, tasks: [] });
-      groups.get(t.baseId).tasks.push(t);
-    }
+    // Regroupement par échéance ; dans chaque groupe, l'ordre du serveur (échéance croissante).
+    const groups = new Map(BUCKETS.map((b) => [b.id, []]));
+    for (const t of tasks) groups.get(bucketOf(t, today, weekEnd)).push(t);
     const pick = (value, label) => h('button', {
       class: `btn btn-ghost btn-sm${filter === value ? ' active' : ''}`, 'aria-pressed': String(filter === value),
       onClick: () => { if (filter === value) return; filter = value; load(true); },
@@ -111,20 +138,35 @@ export async function showTasks() {
             lateNow && h('strong', { class: 'task-late' }, 'En retard'),
             h('span', null, t.due ? `Échéance : ${fmtDate(t.due)}` : 'Sans échéance'),
             t.status && h('span', { class: `bt-badge c-${t.status.color}` }, t.status.name),
-            !t.status && t.done && h('span', null, 'Terminée'))));
+            !t.status && t.done && h('span', null, 'Terminée'),
+            h('a', { class: 'task-base', href: pagePath({ id: t.baseId, title: t.baseTitle }), 'aria-label': `Ouvrir le tableau ${t.baseTitle || 'Sans titre'}` },
+              icon('table', 13), h('span', null, t.baseTitle || 'Sans titre')))));
     };
+    // Liste vide : une phrase qui dit pourquoi, et où aller.
+    const spaces = store.spaces.slice(0, 6);
+    const emptyEl = () => h('div', { class: 'empty tasks-empty' },
+      h('p', { class: 'tasks-empty-title' }, filter === 'todo' ? 'Aucune tâche à faire pour le moment.' : 'Aucune tâche ne vous est attribuée.'),
+      h('p', { class: 'muted' }, filter === 'todo'
+        ? 'Une tâche apparaît ici quand quelqu’un vous désigne dans la colonne « Responsable » d’un tableau, et disparaît quand elle est terminée.'
+        : 'Une tâche apparaît ici quand quelqu’un vous désigne dans la colonne « Responsable » d’un tableau.'),
+      spaces.length > 0 && h('nav', { class: 'tasks-spaces', 'aria-label': 'Espaces' },
+        h('span', { class: 'muted' }, 'Voir les tableaux de vos espaces :'),
+        spaces.map((sp) => h('a', { href: spacePath(sp) }, sp.name || 'Sans nom'))));
     body.replaceChildren(...[
       h('div', { class: 'tasks-head' },
         h('div', { class: 'tl-modes tasks-filter', role: 'group', 'aria-label': 'Tâches affichées' }, pick('todo', 'À faire'), pick('all', 'Toutes')),
         h('p', { class: 'muted tasks-count' }, `${tasks.length} tâche${tasks.length > 1 ? 's' : ''}${late ? `, dont ${late} en retard` : ''}`)),
       truncated && h('p', { class: 'notice info' }, 'Seules les premières tâches sont affichées : la liste a été tronquée.'),
-      tasks.length === 0 && h('div', { class: 'empty tasks-empty' },
-        h('p', null, filter === 'todo' ? 'Aucune tâche à faire : rien ne vous est attribué, ou tout est terminé.' : 'Aucune tâche ne vous est attribuée.'),
-        h('p', { class: 'muted' }, 'Une tâche est une ligne de base dont une colonne Personne vous désigne.')),
-      ...[...groups.values()].map((g) => h('section', { class: 'tasks-group', 'aria-labelledby': `tg-${g.id}` },
-        h('h2', { id: `tg-${g.id}`, class: 'tasks-base' }, h('a', { href: pagePath({ id: g.id, title: g.title }) }, icon('table', 15), h('span', null, g.title || 'Sans titre')),
-          h('span', { class: 'muted' }, String(g.tasks.length))),
-        h('ul', { class: 'tasks-list' }, g.tasks.map(taskEl)))),
+      tasks.length === 0 && emptyEl(),
+      ...BUCKETS.filter((b) => groups.get(b.id).length).map((b) => {
+        const list = groups.get(b.id);
+        return h('section', { class: `tasks-group tasks-${b.id}`, 'aria-labelledby': `tg-${b.id}` },
+          h('h2', { id: `tg-${b.id}`, class: 'tasks-bucket' },
+            b.id === 'late' && h('span', { class: 'task-state', 'aria-hidden': 'true' }, icon('alert', 15)),
+            h('span', null, b.label),
+            h('span', { class: 'tasks-n' }, h('span', { class: 'sr-only' }, ' : '), `${list.length}`, h('span', { class: 'sr-only' }, list.length > 1 ? ' tâches' : ' tâche'))),
+          h('ul', { class: 'tasks-list' }, list.map(taskEl)));
+      }),
     ].filter(Boolean));
   }
 
