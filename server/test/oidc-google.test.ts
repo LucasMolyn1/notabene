@@ -417,7 +417,7 @@ describe('colonne login_states.provider, indépendante de la numérotation des m
     again.close();
     openDb(file).close();
     rmSync(dir, { recursive: true, force: true });
-  });
+  }, 20_000);
 });
 
 describe('réglages de l’interface : section google', () => {

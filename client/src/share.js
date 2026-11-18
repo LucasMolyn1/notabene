@@ -1,4 +1,4 @@
-// Page partagée publiquement (/share/<jeton>), lisible sans compte. Le serveur ne renvoie que du contenu assaini : pas de nom de
+// Page ou espace partagé publiquement (/share/<jeton>), lisible sans compte. Le serveur ne renvoie que du contenu assaini : pas de nom de
 // personne, pas de titre d'une page non partagée. Ici on ne fait que l'afficher en lecture seule.
 import { h } from './util.js';
 import { icon } from './icons.js';
@@ -35,23 +35,45 @@ export async function showShare(token, pageId) {
   }
   if (!data.indexing) metas.push(h('meta', { name: 'robots', content: 'noindex, nofollow' }));
   document.head.append(...metas);
-  document.title = `${data.page.title || 'Sans titre'} · BeNote`;
+  const isSpace = data.kind === 'space';
+  const page = data.page;
+  const spaceName = isSpace ? (data.space?.name || 'Espace') : '';
+  document.title = `${page ? `${page.title || 'Sans titre'} · ` : ''}${isSpace ? `${spaceName} · ` : ''}BeNote`;
 
   const host = h('div', { class: 'prose-host' });
-  const editor = createEditor({ element: host, content: withShareLinks(data.page.content, token, data.titles), editable: false, context: { shareToken: token } });
-  const children = (parent) => data.tree.filter((t) => t.parentId === parent);
+  const editor = page ? createEditor({ element: host, content: withShareLinks(page.content, token, data.titles || {}), editable: false, context: { shareToken: token } }) : null;
+  const tree = Array.isArray(data.tree) ? data.tree : [];
+  const known = new Set(tree.map((t) => t.id));
+  // Racines : pages sans parent, ou dont le parent n'est pas servi (partage d'espace, pages restreintes exclues).
+  const children = (parent) => tree.filter((t) => (parent === null ? t.parentId === null || !known.has(t.parentId) : t.parentId === parent));
+  const link = (id, ico, title, href) => {
+    const active = !!page && id === page.id;
+    return h('a', { class: `share-link${active ? ' active' : ''}`, href, 'aria-current': active ? 'page' : null }, pageIcon(ico, 14), ` ${title || 'Sans titre'}`);
+  };
   const node = (t) => h('li', null,
-    h('a', { class: `share-link${t.id === data.page.id ? ' active' : ''}`, href: `/share/${token}/p/${t.id}` }, pageIcon(t.icon, 14), ` ${t.title || 'Sans titre'}`),
+    link(t.id, t.icon, t.title, `/share/${token}/p/${t.id}`),
     children(t.id).length ? h('ul', null, children(t.id).map(node)) : null);
-  const nav = data.tree.length
-    ? h('nav', { class: 'share-tree', 'aria-label': 'Pages du partage' },
-      h('a', { class: `share-link${data.page.id === data.root.id ? ' active' : ''}`, href: `/share/${token}` }, pageIcon(data.root.icon, 14), ` ${data.root.title || 'Sans titre'}`),
-      h('ul', null, children(null).map(node)))
-    : null;
+  let nav = null;
+  if (isSpace) {
+    nav = tree.length ? h('nav', { class: 'share-tree', 'aria-label': `Pages de l’espace ${spaceName}` }, h('ul', null, children(null).map(node))) : null;
+  } else if (tree.length) {
+    nav = h('nav', { class: 'share-tree', 'aria-label': 'Pages du partage' },
+      link(data.root.id, data.root.icon, data.root.title, `/share/${token}`),
+      h('ul', null, children(null).map(node)));
+  }
 
-  main.replaceChildren(h('div', { class: 'share-page' },
-    h('header', { class: 'share-head' }, h('span', { class: 'muted' }, 'Page partagée avec vous'), h('span', { class: 'muted' }, 'BeNote')),
-    h('div', { class: 'share-layout' }, nav, h('article', { class: 'share-body' },
-      h('h1', { class: 'share-title' }, pageIcon(data.page.icon, 28), ` ${data.page.title || 'Sans titre'}`), host))));
-  setView({ kind: 'share', destroy: () => { editor.destroy(); for (const m of metas) m.remove(); document.body.classList.remove('share'); } });
+  const article = page
+    ? h('article', { class: 'share-body' }, h('h1', { class: 'share-title' }, pageIcon(page.icon, 28), ` ${page.title || 'Sans titre'}`), host)
+    : h('article', { class: 'share-body' }, h('div', { class: 'empty big' },
+      h('h2', null, 'Aucune page à afficher'),
+      h('p', { class: 'muted' }, 'Cet espace partagé ne contient pour l’instant aucune page lisible par ce lien.')));
+  const head = isSpace
+    ? h('header', { class: 'share-head' },
+      h('span', { class: 'share-space' }, pageIcon(data.space?.icon || 'folder', 18), h('strong', null, spaceName), h('span', { class: 'muted' }, 'Espace partagé avec vous, en lecture seule')),
+      h('span', { class: 'muted' }, 'BeNote'))
+    : h('header', { class: 'share-head' }, h('span', { class: 'muted' }, 'Page partagée avec vous'), h('span', { class: 'muted' }, 'BeNote'));
+
+  // Le corps de la page ne défile pas (overflow: hidden) : comme les autres vues, la page défile dans un conteneur dédié.
+  main.replaceChildren(h('div', { class: 'scroller share-scroller' }, h('div', { class: 'share-page' }, head, h('div', { class: 'share-layout' }, nav, article))));
+  setView({ kind: 'share', destroy: () => { editor?.destroy(); for (const m of metas) m.remove(); document.body.classList.remove('share'); } });
 }

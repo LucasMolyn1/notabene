@@ -23,6 +23,7 @@ import { audit } from '../lib/audit.js';
 import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
 import { HttpError, idParams } from '../lib/http.js';
 import { activeShare, sharedDescendants } from '../lib/shares.js';
+import { activeSpaceShare, spaceSharePages } from '../lib/space-shares.js';
 
 interface AttachmentRow {
   id: string; page_id: string | null; template_id: string | null; uploader_id: string | null; uploader_name: string | null; name: string; mime: AttachmentMime;
@@ -239,7 +240,8 @@ export default async function attachmentRoutes(app: FastifyInstance) {
     return serve(req, reply, row);
   });
 
-  // Lecture sans compte : seulement si le lien couvre la page (racine du partage, ou sous-page incluse et non restreinte).
+  // Lecture sans compte : seulement si le lien couvre la page (racine du partage, sous-page incluse et non restreinte, ou page servie
+  // d'un espace partagé).
   app.get('/public/shares/:token/attachments/:id', {
     config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
     schema: { tags, summary: 'Pièce jointe d’une page partagée publiquement (sans compte)', params: z.object({ token: z.string().max(100), id: z.string().regex(ATTACHMENT_ID, 'identifiant invalide') }) },
@@ -247,10 +249,13 @@ export default async function attachmentRoutes(app: FastifyInstance) {
     const { token, id } = req.params as { token: string; id: string };
     reply.header('referrer-policy', 'no-referrer').header('x-robots-tag', 'noindex, nofollow');
     const found = activeShare(db, token);
-    const row = found ? byId(id) : undefined;
-    const covered = !!found && !!row && (row.page_id === found.page.id
-      || (!!found.share.include_children && sharedDescendants(db, found.page.id).some((p) => p.id === row.page_id)));
-    if (!found || !row || !covered) throw new HttpError(404, 'Pièce jointe introuvable');
+    // Sinon, un partage d'espace entier : la page doit être dans l'arborescence servie (ni restreinte, ni à la corbeille, ni une base).
+    const spaceShare = found ? null : activeSpaceShare(db, token);
+    const row = found || spaceShare ? byId(id) : undefined;
+    const covered = !!row && !!row.page_id && (found
+      ? row.page_id === found.page.id || (!!found.share.include_children && sharedDescendants(db, found.page.id).some((p) => p.id === row.page_id))
+      : !!spaceShare && spaceSharePages(db, spaceShare.space.id).some((p) => p.id === row.page_id));
+    if (!row || !covered) throw new HttpError(404, 'Pièce jointe introuvable');
     return serve(req, reply, row);
   });
 
