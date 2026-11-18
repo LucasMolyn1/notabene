@@ -2,14 +2,14 @@
 // Modèle hybride : l'environnement donne les valeurs de départ, un réglage enregistré en base les remplace
 // section par section. CONFIG_LOCKED=true ignore la base. Les secrets sont chiffrés (AES-256-GCM) et jamais renvoyés.
 import { z } from 'zod';
-import type { Config } from '../config.js';
+import { type Config, googlePolicyIssues } from '../config.js';
 import type { DB } from '../db.js';
 import { auditFamily } from './audit-events.js';
 import type { SecretBox } from './crypto.js';
 import { normalizeEmbedHost, sameSiteAsSelf, selfHost } from './embed.js';
 
-export type SectionName = 'embed' | 'embeds' | 'oidc' | 'ldap' | 'saml' | 'smtp' | 'siem';
-export const SECTION_NAMES: SectionName[] = ['embed', 'embeds', 'oidc', 'ldap', 'saml', 'smtp', 'siem'];
+export type SectionName = 'embed' | 'embeds' | 'oidc' | 'google' | 'ldap' | 'saml' | 'smtp' | 'siem';
+export const SECTION_NAMES: SectionName[] = ['embed', 'embeds', 'oidc', 'google', 'ldap', 'saml', 'smtp', 'siem'];
 
 
 const list = z.array(z.string().trim().min(1).max(200)).max(50).default([]);
@@ -90,6 +90,26 @@ const SPECS: Record<SectionName, SectionSpec> = {
     fromEnv: (c) => ({
       enabled: !!(c.OIDC_ISSUER && c.OIDC_CLIENT_ID && c.OIDC_CLIENT_SECRET),
       values: { issuer: c.OIDC_ISSUER ?? '', clientId: c.OIDC_CLIENT_ID ?? '', scopes: c.OIDC_SCOPES, adminGroups: c.OIDC_ADMIN_GROUPS, editorGroups: c.OIDC_EDITOR_GROUPS, readerGroups: c.OIDC_READER_GROUPS, defaultRole: c.OIDC_DEFAULT_ROLE, requireMfa: c.OIDC_REQUIRE_MFA },
+    }),
+  },
+
+  // Connexion avec Google : émetteur fixe (https://accounts.google.com), seuls le client et la politique d'accès se règlent.
+  google: {
+    secrets: ['clientSecret'],
+    schema: () => z.object({
+      clientId: text(300).min(1),
+      allowedDomains: z.array(z.string().trim().toLowerCase().max(253)).max(50).transform((all) => [...new Set(all.filter(Boolean))]).default([]),
+      defaultRole: z.enum(['none', 'reader', 'editor']).default('none'),
+    }).superRefine((v, ctx) => {
+      for (const issue of googlePolicyIssues(v.allowedDomains, v.defaultRole)) ctx.addIssue({ code: 'custom', path: [issue.path === 'domains' ? 'allowedDomains' : 'defaultRole'], message: issue.message });
+    }),
+    toEnv: (v, s) => ({
+      GOOGLE_CLIENT_ID: String(v.clientId), GOOGLE_CLIENT_SECRET: s.clientSecret,
+      GOOGLE_ALLOWED_DOMAINS: arr(v.allowedDomains), GOOGLE_DEFAULT_ROLE: v.defaultRole as 'none' | 'reader' | 'editor',
+    }),
+    fromEnv: (c) => ({
+      enabled: !!(c.GOOGLE_CLIENT_ID && c.GOOGLE_CLIENT_SECRET),
+      values: { clientId: c.GOOGLE_CLIENT_ID ?? '', allowedDomains: c.GOOGLE_ALLOWED_DOMAINS, defaultRole: c.GOOGLE_DEFAULT_ROLE },
     }),
   },
 
@@ -181,6 +201,7 @@ const DISABLE: Record<SectionName, Partial<Config>> = {
   embed: { EMBED_ALLOWED_ORIGINS: [] },
   embeds: { CONTENT_EMBED_HOSTS: [] },
   oidc: { OIDC_ISSUER: undefined, OIDC_CLIENT_ID: undefined, OIDC_CLIENT_SECRET: undefined },
+  google: { GOOGLE_CLIENT_ID: undefined, GOOGLE_CLIENT_SECRET: undefined },
   ldap: { LDAP_URL: undefined },
   saml: { SAML_ENTRY_POINT: undefined },
   smtp: { SMTP_HOST: undefined },
@@ -263,7 +284,7 @@ export class RuntimeSettings {
   }
 
   #envSecret(section: SectionName, field: string): string | undefined {
-    const map: Record<string, keyof Config> = { 'oidc.clientSecret': 'OIDC_CLIENT_SECRET', 'ldap.bindPassword': 'LDAP_BIND_PASSWORD', 'smtp.password': 'SMTP_PASSWORD', 'siem.secret': 'SIEM_SECRET' };
+    const map: Record<string, keyof Config> = { 'oidc.clientSecret': 'OIDC_CLIENT_SECRET', 'google.clientSecret': 'GOOGLE_CLIENT_SECRET','ldap.bindPassword': 'LDAP_BIND_PASSWORD', 'smtp.password': 'SMTP_PASSWORD', 'siem.secret': 'SIEM_SECRET' };
     const key = map[`${section}.${field}`];
     return key ? (this.env[key] as string | undefined) : undefined;
   }

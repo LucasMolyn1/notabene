@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { guard } from '../auth/context.js';
 import type { Config } from '../config.js';
 import { type ClientFactory, LdapDirectory } from '../auth/ldap.js';
+import type { CustomFetch } from 'openid-client';
 import { probeOidc } from '../auth/oidc.js';
 import { samlFor } from '../auth/saml.js';
 import { randomToken } from '../lib/crypto.js';
@@ -29,7 +30,7 @@ const writeBody = z.object({
 
 const canonical = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x as object).sort(([a], [b]) => a.localeCompare(b))) : x));
 
-export default async function settingsRoutes(app: FastifyInstance, opts: { ldapFactory?: ClientFactory } = {}) {
+export default async function settingsRoutes(app: FastifyInstance, opts: { ldapFactory?: ClientFactory; oidcFetch?: CustomFetch } = {}) {
   const { db, rt } = app;
   // Tests réussis : identifiant aléatoire -> contenu exact testé (en mémoire seulement) + expiration. Valable une fois.
   const passed = new Map<string, { content: string; exp: number }>();
@@ -43,6 +44,10 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
     oidc: async (cfg) => {
       const r = await probeOidc(cfg);
       return `Fournisseur joint (${r.issuer}). Points d’accès : ${r.endpoints.join(', ')}. La connexion complète sera vérifiée à la première authentification.`;
+    },
+    google: async (cfg) => {
+      const r = await probeOidc(cfg, 'google', opts.oidcFetch);
+      return `Google joint (${r.issuer}). L’identifiant et le secret du client seront vérifiés à la première connexion.`;
     },
     ldap: async (cfg) => {
       await new LdapDirectory(cfg, opts.ldapFactory).test();
@@ -88,7 +93,7 @@ export default async function settingsRoutes(app: FastifyInstance, opts: { ldapF
     return {
       locked: rt.locked,
       mailEnabled: app.mail.enabled,
-      redirectUris: { oidc: `${app.config.PUBLIC_URL}/auth/callback`, samlAcs: `${app.config.PUBLIC_URL}/auth/saml/callback`, samlMetadata: `${app.config.PUBLIC_URL}/auth/saml/metadata` },
+      redirectUris: { oidc: `${app.config.PUBLIC_URL}/auth/callback`, google: `${app.config.PUBLIC_URL}/auth/oidc/google/callback`,samlAcs: `${app.config.PUBLIC_URL}/auth/saml/callback`, samlMetadata: `${app.config.PUBLIC_URL}/auth/saml/metadata` },
       sections: Object.fromEntries(SECTION_NAMES.map((s) => [s, rt.view(s)])),
     };
   });

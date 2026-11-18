@@ -8,7 +8,7 @@ export const session = {
   provider: null,
   permissions: { read: false, write: false, ai: false, admin: false },
   aiProvider: null,
-  config: { auth: { oidc: false, devLogin: false, local: false, setupRequired: false, ldap: false, saml: false }, drawioUrl: null, embedHosts: [], ai: false },
+  config: { auth: { oidc: false, devLogin: false, local: false, setupRequired: false, ldap: false, saml: false, providers: [] }, drawioUrl: null, embedHosts: [], ai: false },
 
   async load() {
     const [config, me] = await Promise.all([api.get('/config'), api.get('/me')]);
@@ -48,11 +48,36 @@ export const session = {
     return `/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
   },
 
-  // Un seul fournisseur : on y va directement ; sinon l'écran de connexion propose les méthodes (SSO et compte local).
-  loginHref(returnTo = location.pathname) {
+  // Fournisseurs OIDC secondaires (Google…) annoncés par le serveur. Seules les adresses relatives sous /auth/ sont retenues.
+  extraProviders() {
+    const list = Array.isArray(this.config.auth?.providers) ? this.config.auth.providers : [];
+    return list.filter((p) => p && p.id !== 'principal' && typeof p.label === 'string' && typeof p.loginUrl === 'string' && /^\/auth\/[a-z0-9/_-]+$/i.test(p.loginUrl));
+  },
+
+  providerLoginUrl(p, returnTo = location.pathname) {
+    return `${p.loginUrl}?returnTo=${encodeURIComponent(returnTo)}`;
+  },
+
+  // Vrai si au moins une méthode de connexion est proposée.
+  hasLogin() {
     const { oidc, devLogin, local, ldap, saml } = this.config.auth;
-    const several = [oidc, devLogin, local, ldap, saml].filter(Boolean).length > 1;
+    return !!(oidc || devLogin || local || ldap || saml || this.extraProviders().length);
+  },
+
+  // Lien « Se connecter » : un seul fournisseur (le principal) et aucune autre méthode : on y va directement ; sinon l'écran de
+  // connexion propose les méthodes (SSO, Google, compte local…).
+  loginEntry(returnTo = location.pathname) {
+    const { oidc, devLogin, local, ldap, saml } = this.config.auth;
+    const several = [oidc, devLogin, local, ldap, saml].filter(Boolean).length + this.extraProviders().length > 1;
     return oidc && !several ? this.loginUrl(returnTo) : `/?login&returnTo=${encodeURIComponent(returnTo)}`;
+  },
+
+  // Adresse de reconnexion (action sensible) pour un compte fédéré OIDC ; null pour les autres comptes.
+  reauthUrl(returnTo = location.pathname) {
+    const q = `reauth=1&returnTo=${encodeURIComponent(returnTo)}`;
+    if (this.provider === 'oidc') return `/auth/login?${q}`;
+    if (this.provider === 'google') return `/auth/oidc/google/login?${q}`;
+    return null;
   },
 
   async devLogin(role) {

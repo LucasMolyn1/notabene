@@ -7,11 +7,16 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 ## Non publié
 
 ### Ajouté
+- **Connexion avec Google** : en plus du fournisseur OIDC principal, un second fournisseur Google (Authorization Code + PKCE, state et nonce à usage unique). Désactivé par défaut ; actif avec `GOOGLE_CLIENT_ID` et `GOOGLE_CLIENT_SECRET` (ou carte « Google » de Paramètres, Accès). Compte identifié par `google:<sub>`, jamais rattaché à un compte existant par adresse e-mail ; e-mail vérifié exigé ; liste de domaines autorisés (`GOOGLE_ALLOWED_DOMAINS`) obligatoire dès que le rôle par défaut n'est pas `none` (`reader` ou `editor`, jamais administrateur). Boutons de connexion selon `auth.providers` de `GET /api/v3/config`. Voir `docs/GOOGLE.md`.
 - **Partage d'un espace par lien non répertorié** : un gestionnaire de l'espace ou un administrateur crée un lien en lecture seule, sans compte, qui donne accès à l'arborescence de l'espace, même privé (usage : envoyer un espace à un client). Jeton aléatoire de 256 bits dont seule l'empreinte est stockée (affiché une seule fois), expiration facultative, 20 liens actifs au plus par espace, révocation immédiate. Pages restreintes (et leur sous-arbre), bases, corbeille et espaces personnels exclus ; pas d'indexage. Désactivé par défaut : il faut le partage public de l'instance, le nouveau réglage « Autoriser le partage d'espaces entiers par lien » (Paramètres, Partages) et l'autorisation dans l'espace. Le lien cesse de fonctionner si son créateur est désactivé ou ne gère plus l'espace. API : `GET/POST /api/v3/spaces/:id/shares`, `DELETE /api/v3/spaces/:id/shares/:shareId`, `PUT /api/v3/admin/sharing/spaces`.
 
 ### Corrigé
 - **Interface : Mes tâches** : la liste des tâches (dont celles en retard) n'est plus rejetée dans la colonne de droite ; la page s'affiche sur une seule colonne, sous le titre.
 - **Interface : pages partagées** : une page ouverte par lien de partage défile de nouveau (le contenu au-delà de l'écran était inaccessible).
+
+### Modifié
+- **Connexion SSO principale** : un `sub` préfixé `local:`, `ldap:`, `saml:`, `scim:`, `google:` ou `dev-` est refusé (identifiants réservés) ; un compte désactivé est refusé dès le retour du fournisseur.
+- **Base de données** : colonnes `login_states.provider` et `login_states.reauth`, ajoutées de façon idempotente (sans consommer de numéro de migration).
 
 ## [3.18.3] - 2026-11-17
 

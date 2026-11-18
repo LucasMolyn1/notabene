@@ -7,6 +7,14 @@ import { toast, openModal } from './ui.js';
 import { icon } from './icons.js';
 
 const ROLE_OPTIONS = [['none', 'Refuser l’accès'], ['reader', 'Lecteur']];
+const GOOGLE_ROLE_OPTIONS = [['none', 'Refuser toute connexion'], ['reader', 'Lecteur'], ['editor', 'Éditeur']];
+
+// Domaine Google Workspace : nom en minuscules, sans schéma, chemin ni joker (même règle que le serveur).
+const isDomain = (d) => {
+  const labels = d.split('.');
+  return d.length <= 253 && labels.length >= 2 && /^[a-z]{2,63}$/.test(labels.at(-1))
+    && labels.every((l) => l.length >= 1 && l.length <= 63 && /^[a-z0-9-]+$/.test(l) && !l.startsWith('-') && !l.endsWith('-'));
+};
 
 // Description des champs de chaque section. type : text | url | list | pem | bool | select | number | secret
 const FORMS = {
@@ -24,6 +32,29 @@ const FORMS = {
       { k: 'defaultRole', label: 'Hors groupes', type: 'select', options: ROLE_OPTIONS },
       { k: 'requireMfa', label: 'Exiger une double authentification (claim amr)', type: 'bool' },
     ],
+  },
+  google: {
+    title: 'Google',
+    desc: 'Connexion avec un compte Google (émetteur https://accounts.google.com). Seules les adresses e-mail vérifiées sont acceptées.',
+    fields: [
+      { k: 'clientId', label: 'Client ID', type: 'text', ph: '1234567890-abc.apps.googleusercontent.com', hint: 'Identifiant client OAuth (application web) de la console Google Cloud.' },
+      { k: 'clientSecret', label: 'Secret client', type: 'secret', hint: 'Chiffré, jamais réaffiché.' },
+      { k: 'allowedDomains', label: 'Domaines autorisés', type: 'list', ph: 'exemple.fr', hint: 'Un domaine par ligne (claim hd de Google Workspace, ou gmail.com), sans https:// ni joker. Obligatoire pour les rôles Lecteur et Éditeur.' },
+      { k: 'defaultRole', label: 'Rôle par défaut', type: 'select', options: GOOGLE_ROLE_OPTIONS, hint: 'Recalculé à chaque connexion, jamais administrateur. Google ne transmet pas de groupes.' },
+    ],
+    // Contrôles de saisie avant tout appel réseau ; le serveur revérifie tout.
+    validate: ({ config, secrets }, view) => {
+      const errors = {};
+      if (!config.enabled) return errors;
+      if (!config.clientId) errors.clientId = 'Client ID obligatoire.';
+      if (!secrets.clientSecret && !view.secrets.clientSecret?.set) errors.clientSecret = 'Secret client obligatoire.';
+      const domains = config.allowedDomains.map((d) => d.toLowerCase());
+      const bad = domains.find((d) => !isDomain(d));
+      if (bad) errors.allowedDomains = `Domaine invalide : « ${bad.slice(0, 80)} » (ex. exemple.fr, sans https:// ni joker).`;
+      else if (domains.length > 50) errors.allowedDomains = '50 domaines au plus.';
+      if (config.defaultRole !== 'none' && !domains.length) errors.defaultRole = 'Les rôles Lecteur et Éditeur exigent au moins un domaine autorisé : sans restriction, n’importe quel compte Google entrerait.';
+      return errors;
+    },
   },
   ldap: {
     title: 'LDAP / Active Directory',
@@ -104,19 +135,21 @@ const field = (label, control, hint) => h('label', { class: 'field' }, h('span',
 
 // Compte fédéré : l'identité se confirme auprès du fournisseur (nouvelle connexion, sans connexion silencieuse) ou par une reconnexion.
 function confirmWithProvider(what) {
-  const oidc = session.provider === 'oidc';
+  // Comptes OIDC (principal ou Google) : nouvelle authentification auprès du fournisseur ; les autres se reconnectent.
+  const url = session.reauthUrl();
+  const label = session.provider === 'google' ? 'Confirmer auprès de Google' : 'Confirmer auprès de mon fournisseur';
   return new Promise((resolve) => {
     const m = openModal({
       title: 'Confirmez votre identité',
       body: h('div', { class: 'stack' },
         h('p', null, `Action sensible : ${what}.`),
         h('p', { class: 'muted' }, 'Pour protéger la configuration, votre session doit avoir été ouverte il y a moins de 15 minutes. La vôtre est plus ancienne.'),
-        h('p', { class: 'muted' }, oidc
+        h('p', { class: 'muted' }, url
           ? 'Vous allez être renvoyé vers votre fournisseur d’identité pour vous réauthentifier, puis ramené ici.'
           : 'Déconnectez-vous puis reconnectez-vous pour continuer.')),
       actions: [{ label: 'Annuler' }, {
-        label: oidc ? 'Confirmer auprès de mon fournisseur' : 'Se déconnecter', primary: true,
-        onClick: () => { if (oidc) location.href = `/auth/login?reauth=1&returnTo=${encodeURIComponent(location.pathname)}`; else session.logout(); return undefined; },
+        label: url ? label : 'Se déconnecter', primary: true,
+        onClick: () => { if (url) location.href = url; else session.logout(); return undefined; },
       }],
     });
     m.el.addEventListener('close', () => resolve(null));
@@ -130,9 +163,10 @@ export function reauthNotice() {
   if (until > Date.now()) {
     return h('p', { class: 'hint' }, `Session confirmée : ces réglages sont modifiables jusqu’à ${new Date(until).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}.`);
   }
+  const url = session.reauthUrl();
   return h('div', { class: 'notice info stack' },
     h('p', null, 'Ces réglages exigent une session ouverte il y a moins de 15 minutes. La vôtre est plus ancienne : confirmez votre identité avant de saisir quoi que ce soit.'),
-    session.provider === 'oidc' && h('div', null, h('a', { class: 'btn btn-primary btn-sm', href: `/auth/login?reauth=1&returnTo=${encodeURIComponent(location.pathname)}` }, icon('shield', 14), 'Confirmer auprès de mon fournisseur')));
+    url && h('div', null, h('a', { class: 'btn btn-primary btn-sm', href: url }, icon('shield', 14), session.provider === 'google' ? 'Confirmer auprès de Google' : 'Confirmer auprès de mon fournisseur')));
 }
 
 // Demande la preuve d'identité. Renvoie l'objet `reauth` à joindre à la requête, ou null si annulé.

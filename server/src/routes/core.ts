@@ -3,6 +3,7 @@ import { effectiveEmbedHosts } from '../lib/embed.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { type Auth, can, requireAuth } from '../auth/context.js';
+import { GOOGLE_SUB_PREFIX } from '../auth/oidc.js';
 import { aiProviderLabel, isAiReady } from '../ai/settings.js';
 import { canReadPage, filterReadable, hasAnyAcl } from '../lib/page-acl.js';
 import { routeSpaceRoles } from '../lib/space-access.js';
@@ -14,13 +15,15 @@ import { reauthUntil } from '../lib/reauth.js';
 import { VERSION } from '../version.js';
 
 // Origine du compte d'après le préfixe de son identifiant (sub).
-const providerOf = (sub: string) => (sub.startsWith('local:') ? 'local' : sub.startsWith('ldap:') ? 'ldap' : sub.startsWith('saml:') ? 'saml' : sub.startsWith('dev-') ? 'dev' : 'oidc');
+const providerOf = (sub: string) => (sub.startsWith('local:') ? 'local' : sub.startsWith('ldap:') ? 'ldap' : sub.startsWith('saml:') ? 'saml' : sub.startsWith('dev-') ? 'dev' : sub.startsWith(GOOGLE_SUB_PREFIX) ? 'google' : 'oidc');
 
 export default async function coreRoutes(app: FastifyInstance) {
   const { db, config } = app;
 
   app.get('/config', { schema: { tags: ['session'], summary: 'Configuration publique de l’instance', security: [] } }, async () => ({
-    auth: { oidc: app.oidc.enabled, devLogin: config.DEV_LOGIN, local: config.AUTH_LOCAL, ldap: !!app.rt.get().LDAP_URL, saml: !!app.rt.get().SAML_ENTRY_POINT, mail: !!app.rt.get().SMTP_HOST, setupRequired: config.AUTH_LOCAL && !(app.db.prepare("SELECT 1 FROM users WHERE role = 'admin' AND password_hash IS NOT NULL LIMIT 1").get()) },
+    // `oidc` : fournisseur principal (inchangé). `providers` : fournisseurs OIDC actifs, à proposer sur l'écran de connexion
+    // (identifiant, libellé, URL de départ relative ; jamais d'identifiant client ni de secret).
+    auth: { oidc: app.oidc.enabled, providers: app.oidcProviders.active(), devLogin: config.DEV_LOGIN, local: config.AUTH_LOCAL, ldap: !!app.rt.get().LDAP_URL, saml: !!app.rt.get().SAML_ENTRY_POINT, mail: !!app.rt.get().SMTP_HOST, setupRequired: config.AUTH_LOCAL && !(app.db.prepare("SELECT 1 FROM users WHERE role = 'admin' AND password_hash IS NOT NULL LIMIT 1").get()) },
     drawioUrl: config.DRAWIO_URL ?? null,
     // Hôtes dont le contenu peut être intégré dans une page (liste vide : fonction inactive).
     embedHosts: effectiveEmbedHosts(app.rt.get().CONTENT_EMBED_HOSTS, config.PUBLIC_URL),

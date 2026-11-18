@@ -269,9 +269,8 @@ function treeNode(page, depth, activeId, canWrite, filter = null) {
 
 function accountBox() {
   if (!session.user) {
-    const { oidc, devLogin, local, ldap, saml } = session.config.auth;
-    if (!oidc && !devLogin && !local && !ldap && !saml) return null;
-    return h('a', { class: 'btn btn-primary btn-block', href: session.loginHref() }, icon('users', 15), 'Se connecter');
+    if (!session.hasLogin()) return null;
+    return h('a', { class: 'btn btn-primary btn-block', href: session.loginEntry() }, icon('users', 15), 'Se connecter');
   }
   const u = session.user;
   return h('button', { class: 'account', onClick: (e) => accountMenu(e.currentTarget) },

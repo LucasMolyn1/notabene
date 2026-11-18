@@ -24,7 +24,7 @@ function stateScreen(main, ico, title, text, ...extra) {
 
 /** Adresse de connexion qui ramène à ce formulaire après coup. */
 function loginHref(path) {
-  if (session.config?.auth?.oidc) return session.loginUrl(path);
+  if (session.config?.auth?.oidc && !session.extraProviders().length) return session.loginUrl(path);
   return `/?login&returnTo=${encodeURIComponent(path)}`;
 }
 

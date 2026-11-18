@@ -12,7 +12,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import { z, ZodError, type ZodType } from 'zod';
 import type { Config } from './config.js';
 import type { DB } from './db.js';
-import { OidcClient } from './auth/oidc.js';
+import { type OidcClient, type OidcClientOptions, OidcProviders } from './auth/oidc.js';
 import { Mailer } from './lib/mail.js';
 import { createNotifier, type Notifier, startNotifications } from './lib/notifications.js';
 import { REMINDER_INTERVAL, remindVerifications } from './lib/verifications.js';
@@ -82,7 +82,9 @@ declare module 'fastify' {
     box: SecretBox;
     bus: EventBus;
     presence: Presence;
+    // Fournisseur OIDC principal (variables OIDC_*) ; tous les fournisseurs nommés : `oidcProviders`.
     oidc: OidcClient;
+    oidcProviders: OidcProviders;
     rt: RuntimeSettings;
     mail: Mailer;
     updates: UpdateChecker;
@@ -109,9 +111,11 @@ export interface AppOptions {
   updateChecker?: UpdateChecker;
   // Sortie standard du journal d'audit (tests) ; par défaut process.stdout quand AUDIT_STDOUT=true.
   auditStdout?: (line: string) => void;
+  // Options des clients OIDC (tests : fetch simulé du fournisseur).
+  oidcOptions?: OidcClientOptions;
 }
 
-export async function buildApp({ config, db, logger = false, clientDir, ldap, ldapFactory, mailer, updateChecker, auditStdout }: AppOptions): Promise<FastifyInstance> {
+export async function buildApp({ config, db, logger = false, clientDir, ldap, ldapFactory, mailer, updateChecker, auditStdout, oidcOptions }: AppOptions): Promise<FastifyInstance> {
   configureLlmTimeouts({ firstByteMs: config.AI_FIRST_BYTE_TIMEOUT_MS, idleMs: config.AI_IDLE_TIMEOUT_MS });
   const app = Fastify({
     logger: logger === false ? false : {
@@ -171,7 +175,9 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   const tokenActivity = new TokenActivity(db);
   app.decorate('tokenActivity', tokenActivity);
   tokenActivity.start(app);
-  app.decorate('oidc', new OidcClient(() => rt.get(), db));
+  const oidcProviders = new OidcProviders(() => rt.get(), db, oidcOptions);
+  app.decorate('oidcProviders', oidcProviders);
+  app.decorate('oidc', oidcProviders.get('principal'));
   app.decorateRequest('auth', null);
 
   // Validation des entrées par schémas Zod.
@@ -361,7 +367,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(aiChatRoutes);
     await scope.register(adminRoutes);
     await scope.register(auditRoutes);
-    await scope.register(settingsRoutes, { ldapFactory });
+    await scope.register(settingsRoutes, { ldapFactory, oidcFetch: oidcOptions?.fetch });
     await scope.register(webhookRoutes);
     await scope.register(importRoutes);
     await scope.register(v3Routes);
