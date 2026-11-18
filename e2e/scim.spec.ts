@@ -48,15 +48,15 @@ test('activer SCIM, créer un jeton affiché une seule fois, gérer un groupe SC
   expect(await scim(browser, null, 'GET', '/Users')).toBe(404);
 
   await page.goto('/settings/scim');
-  const state = page.locator('.set-card').first();
+  const state = page.locator('#set-scim .set-card').first();
   await expect(state.getByText('Inactif', { exact: true })).toBeVisible();
   await expect(state.getByText(`${BASE}/scim/v2`)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Enregistrer' })).toBeDisabled();
+  await expect(page.locator('#set-scim').getByRole('button', { name: 'Enregistrer' })).toBeDisabled();
 
   // Activation : mot de passe obligatoire.
   await page.getByRole('checkbox', { name: 'Activer le provisionnement SCIM' }).check();
   await page.getByLabel('Rôle des comptes créés').selectOption('editor');
-  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  await page.locator('#set-scim').getByRole('button', { name: 'Enregistrer' }).click();
   const dialog = page.getByRole('dialog', { name: 'Confirmez votre identité' });
   await expect(dialog).toBeVisible();
   const put = page.waitForRequest((r) => r.method() === 'PUT' && r.url().endsWith('/api/v3/admin/scim/settings'));
@@ -127,8 +127,8 @@ test('activer SCIM, créer un jeton affiché une seule fois, gérer un groupe SC
   // Retour à l'état initial.
   await page.getByRole('checkbox', { name: 'Activer le provisionnement SCIM' }).uncheck();
   await page.getByLabel('Rôle des comptes créés').selectOption('reader');
-  await page.getByRole('button', { name: 'Enregistrer' }).click();
-  await confirmIfAsked(page, page.locator('.set-card').first().getByText('Inactif', { exact: true }));
+  await page.locator('#set-scim').getByRole('button', { name: 'Enregistrer' }).click();
+  await confirmIfAsked(page, page.locator('#set-scim .set-card').first().getByText('Inactif', { exact: true }));
   expect(await scim(browser, null, 'GET', '/Users')).toBe(404);
   await ctx.close();
 });
@@ -143,8 +143,8 @@ test('configuration verrouillée : activation et rôle en lecture seule', async 
   await expect(page.getByText('Configuration verrouillée (CONFIG_LOCKED)')).toBeVisible();
   await expect(page.getByRole('checkbox', { name: 'Activer le provisionnement SCIM' })).toBeDisabled();
   await expect(page.getByLabel('Rôle des comptes créés')).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Enregistrer' })).toBeDisabled();
-  await expect(page.getByText('Défini dans l’environnement')).toBeVisible();
+  await expect(page.locator('#set-scim').getByRole('button', { name: 'Enregistrer' })).toBeDisabled();
+  await expect(page.locator('#set-scim').getByText('Défini dans l’environnement')).toBeVisible();
   await expect(page.getByText('3 comptes')).toBeVisible();
   // Les jetons restent gérables.
   await expect(page.getByRole('button', { name: 'Créer le jeton' })).toBeEnabled();
@@ -195,7 +195,7 @@ test('SCIM : rien ne déborde en largeur 375 px', async ({ browser }) => {
   const { ctx, page } = await mockedPage(browser, 'light');
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto('/settings/scim');
-  await page.locator('.set-card').first().waitFor();
+  await page.locator('#set-scim .set-card').first().waitFor();
   await page.getByLabel('Nom du jeton').fill('Nouveau');
   await page.getByRole('button', { name: 'Créer le jeton' }).click();
   await confirmIfAsked(page, page.locator('.token-value'));

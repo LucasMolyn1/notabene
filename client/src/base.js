@@ -17,6 +17,7 @@ import { CHART_GROUP_TYPES, chartConfig, chartEl, openChartWizard } from './char
 import { crumbsFor, setView, topbar } from './views.js';
 import { openAutomations, runMessage } from './automations.js';
 import { openForms } from './forms.js';
+import { readOnlyNotice } from './read-only.js';
 import * as A from './actions.js';
 
 const main = () => document.getElementById('main');
@@ -488,7 +489,8 @@ export async function showBase(initial) {
       const cb = h('input', { type: 'checkbox', 'aria-label': p.name, disabled: !canWrite() });
       cb.checked = v === true;
       cb.addEventListener('change', () => commit(row, p, cb.checked ? true : null));
-      return wrap(h('td', { class: 'bt-cell bt-check' }), cb);
+      // Le libellé autour de la case agrandit sa zone de clic sur écran tactile (voir mobile.css).
+      return wrap(h('td', { class: 'bt-cell bt-check' }), h('label', { class: 'bt-check-hit' }, cb));
     }
     const content = display(p, v);
     const td = h('td', { class: `bt-cell bt-t-${p.type}` });
@@ -1131,6 +1133,30 @@ export async function showBase(initial) {
       h('span', { class: 'bt-progress-text', 'aria-hidden': 'true' }, `${label} (${pct} %)`));
   }
 
+  // ---- Débordement horizontal (tableau, Kanban) : classes sur le cadre, qui dessine une ombre sur le bord où il reste à voir ----
+  let watched = null;
+  const overflowObs = typeof ResizeObserver === 'function' ? new ResizeObserver(() => { if (watched) paintOverflow(watched); }) : null;
+  function paintOverflow(el) {
+    const frame = el.parentElement;
+    if (!frame) return;
+    const max = el.scrollWidth - el.clientWidth;
+    const over = max > 1;
+    frame.classList.toggle('overflowing', over);
+    frame.classList.toggle('more-left', over && el.scrollLeft > 1);
+    frame.classList.toggle('more-right', over && el.scrollLeft < max - 1);
+  }
+  function watchOverflow(el) {
+    overflowObs?.disconnect();
+    watched = el;
+    if (!el) return;
+    el.addEventListener('scroll', () => paintOverflow(el), { passive: true });
+    overflowObs?.observe(el);
+    if (el.firstElementChild) overflowObs?.observe(el.firstElementChild);
+    paintOverflow(el);
+  }
+  /** Téléchargement depuis le menu « Plus » (même lien que le bouton CSV). */
+  const download = (href) => { const a = h('a', { href, download: '', hidden: true }); document.body.append(a); a.click(); a.remove(); };
+
   // ---- Rendu ----
   function render() {
     if (destroyed || !data) return;
@@ -1140,10 +1166,13 @@ export async function showBase(initial) {
     const page = data.page;
     crumbsEl.replaceChildren(...crumbsFor({ ...page, ...(store.page(id) ?? {}) }));
 
-    const titleEl = h('input', { class: 'bt-title', 'aria-label': 'Titre de la base', placeholder: 'Sans titre', maxlength: '300', disabled: !canWrite() });
+    // Lecteur : titre en lecture seule (lisible, non grisé, annoncé comme tel) et icône simple, cohérents avec le bandeau.
+    const titleEl = h('input', { class: 'bt-title', 'aria-label': 'Titre de la base', placeholder: 'Sans titre', maxlength: '300', readonly: !canWrite() });
     titleEl.value = store.page(id)?.title ?? page.title;
-    titleEl.addEventListener('change', () => A.attempt(() => store.updatePage(id, { title: titleEl.value })).then(() => { document.title = `${titleEl.value || 'Base'} · BeNote`; }));
-    const iconBtn = h('button', { class: 'page-icon', title: 'Changer l’icône', disabled: !canWrite(), onClick: (e) => A.pickIcon(e.currentTarget, id) }, pageIcon(store.page(id)?.icon || 'table', 26));
+    if (canWrite()) titleEl.addEventListener('change', () => A.attempt(() => store.updatePage(id, { title: titleEl.value })).then(() => { document.title = `${titleEl.value || 'Base'} · BeNote`; }));
+    const iconBtn = canWrite()
+      ? h('button', { class: 'page-icon', title: 'Changer l’icône', onClick: (e) => A.pickIcon(e.currentTarget, id) }, pageIcon(store.page(id)?.icon || 'table', 26))
+      : h('span', { class: 'page-icon' }, pageIcon(store.page(id)?.icon || 'table', 26));
 
     const filtersOn = c.filters.length;
     const subitems = !!data.settings?.subitems;
@@ -1192,6 +1221,39 @@ export async function showBase(initial) {
         : c.type === 'calendar' ? calendarEl({ baseId: id, data, rows, config: c, canWrite: canWrite(), titleOf, state: tree, patchRow, addRow, removeRow, setConfig, announce, rowButtons: (row) => buttonsEl(row, 'cal-buttons', closePopover) })
         : c.type === 'chart' ? chartEl({ baseId: id, viewId: view().id, data, config: c, canWrite: canWrite(), state: tree, stamp: loadSeq, setConfig, whenSaved, announce })
         : h('div', { class: 'bt-scroll' }, h('table', { class: 'bt-table', 'aria-label': 'Lignes de la base', 'aria-rowcount': String(lines.length + 1) }, head, tbody));
+    // Tableau et Kanban : cadre qui signale un débordement horizontal (ombre sur le bord concerné, voir watchOverflow).
+    const scrollEl = c.type === 'kanban' || c.type === 'table' ? mainEl : null;
+    // Lecteur : aucune cellule focalisable, la zone elle-même l'est pour défiler au clavier (flèches).
+    if (scrollEl && !canWrite()) {
+      scrollEl.tabIndex = 0;
+      if (c.type === 'table') { scrollEl.setAttribute('role', 'region'); scrollEl.setAttribute('aria-label', 'Lignes de la base, défilement possible'); }
+    }
+    const shownEl = scrollEl ? h('div', { class: 'bt-frame' }, scrollEl) : mainEl;
+
+    // Actions secondaires : boutons sur grand écran, menu « Plus » sur téléphone (mêmes actions, voir le CSS).
+    const tplCount = templates().length;
+    const secondary = [
+      (c.type !== 'chart' || canWrite()) && { label: `Filtrer${filtersOn ? ` (${filtersOn})` : ''}`, active: !!filtersOn, run: (a) => filterPopover(a) },
+      c.type !== 'chart' && { label: `Trier${c.sort.length ? ` (${c.sort.length})` : ''}`, active: !!c.sort.length, run: (a) => sortPopover(a) },
+      c.type !== 'timeline' && c.type !== 'calendar' && c.type !== 'chart' && { label: `Colonnes${c.hidden.length ? ` (${props().length - c.hidden.length}/${props().length})` : ''}`, active: !!c.hidden.length, run: (a) => columnsPopover(a) },
+      { label: 'CSV', menuLabel: 'Exporter en CSV', icon: 'download', href: `/api/v3/bases/${id}/export` },
+      canWrite() && { label: 'Automatisations', icon: 'wand', title: 'Automatisations et boutons de ligne', run: () => openAutomations({ baseId: id, title: store.page(id)?.title ?? data.page.title, properties: props(), onChange: () => load(true) }) },
+      canWrite() && { label: 'Formulaires', icon: 'file', title: 'Formulaires publics qui ajoutent des lignes', run: () => openForms({ baseId: id, title: store.page(id)?.title ?? data.page.title, properties: props() }) },
+      canWrite() && { label: 'Réglages', menuLabel: 'Réglages de la base', ariaLabel: 'Réglages de la base', icon: 'settings', title: 'Sous-éléments, dépendances, chronologie', run: () => openSettings() },
+    ].filter(Boolean);
+    const secondaryEl = (d) => (d.href
+      ? h('a', { class: 'btn btn-ghost btn-sm bt-sec', href: d.href, download: '' }, d.icon && icon(d.icon, 14), d.label)
+      : h('button', { class: `btn btn-ghost btn-sm bt-sec${d.active ? ' active' : ''}`, 'aria-label': d.ariaLabel ?? null, title: d.title ?? null, onClick: (e) => d.run(e.currentTarget) }, d.icon && icon(d.icon, 14), d.label));
+    const moreBtn = h('button', {
+      class: 'btn btn-ghost btn-sm bt-more', 'aria-label': 'Plus d’actions', 'aria-haspopup': 'menu',
+      onClick: () => openMenu(moreBtn, secondary.map((d) => ({
+        label: d.menuLabel ?? d.label, icon: d.icon ?? null, checked: d.active ? true : null,
+        onClick: () => { if (d.href) download(d.href); else d.run(moreBtn); },
+      }))),
+    }, icon('more', 14), 'Plus');
+    // « Nouvelle ligne » en haut aussi : avec beaucoup de lignes, celui du bas est loin. Mêmes conditions que celui du bas.
+    const canAddRow = canWrite() && c.type !== 'kanban' && c.type !== 'chart';
+    const topAdd = canAddRow && h('button', { class: 'btn btn-primary btn-sm bt-top-add', disabled: data.rows.length >= data.limits.rows, onClick: () => addRow() }, icon('plus', 14), 'Nouvelle ligne');
     // Le focus survit au rendu : élément repéré par une clé, ou barre de la chronologie.
     const active = document.activeElement;
     const inside = active && body.contains(active);
@@ -1200,34 +1262,25 @@ export async function showBase(initial) {
     body.replaceChildren(...[
       h('div', { class: 'bt-head' }, iconBtn, titleEl),
       progressEl(),
+      !canWrite() && readOnlyNotice({ kind: 'base', lastEditor: store.page(id)?.updatedBy ?? page.updatedBy }),
       h('div', { class: 'bt-toolbar' },
         viewTabs(),
         h('div', { class: 'bt-tools' },
           c.type === 'kanban' && groupSelect(c),
-          // Graphique : calculé par le serveur sur la vue enregistrée ; un lecteur ne peut pas en changer les filtres.
-          (c.type !== 'chart' || canWrite()) && h('button', { class: `btn btn-ghost btn-sm${filtersOn ? ' active' : ''}`, onClick: (e) => filterPopover(e.currentTarget) }, `Filtrer${filtersOn ? ` (${filtersOn})` : ''}`),
-          c.type !== 'chart' && h('button', { class: `btn btn-ghost btn-sm${c.sort.length ? ' active' : ''}`, onClick: (e) => sortPopover(e.currentTarget) }, `Trier${c.sort.length ? ` (${c.sort.length})` : ''}`),
-          c.type !== 'timeline' && c.type !== 'calendar' && c.type !== 'chart' && h('button', { class: `btn btn-ghost btn-sm${c.hidden.length ? ' active' : ''}`, onClick: (e) => columnsPopover(e.currentTarget) }, `Colonnes${c.hidden.length ? ` (${props().length - c.hidden.length}/${props().length})` : ''}`),
-          h('a', { class: 'btn btn-ghost btn-sm', href: `/api/v3/bases/${id}/export`, download: '' }, icon('download', 14), 'CSV'),
-          canWrite() && h('button', {
-            class: 'btn btn-ghost btn-sm', title: 'Automatisations et boutons de ligne',
-            onClick: () => openAutomations({ baseId: id, title: store.page(id)?.title ?? data.page.title, properties: props(), onChange: () => load(true) }),
-          }, icon('wand', 14), 'Automatisations'),
-          canWrite() && h('button', {
-            class: 'btn btn-ghost btn-sm', title: 'Formulaires publics qui ajoutent des lignes',
-            onClick: () => openForms({ baseId: id, title: store.page(id)?.title ?? data.page.title, properties: props() }),
-          }, icon('file', 14), 'Formulaires'),
-          canWrite() && h('button', { class: 'btn btn-ghost btn-sm', 'aria-label': 'Réglages de la base', title: 'Sous-éléments, dépendances, chronologie', onClick: () => openSettings() }, icon('settings', 14), 'Réglages'))),
-      mainEl,
+          secondary.map(secondaryEl),
+          secondary.length > 0 && moreBtn,
+          topAdd)),
+      shownEl,
       rows.length === 0 && c.type !== 'chart' && h('p', { class: 'muted bt-empty' }, data.rows.length ? 'Aucune ligne ne correspond aux filtres.' : 'Aucune ligne pour le moment.'),
       c.type === 'table' && lines.length > shown && h('button', { class: 'btn btn-ghost btn-sm', onClick: () => { shown += PAGE_SIZE; render(); } }, `Afficher ${Math.min(PAGE_SIZE, lines.length - shown)} lignes de plus (${shown} sur ${lines.length})`),
       h('div', { class: 'bt-foot' },
         canWrite() && c.type !== 'kanban' && c.type !== 'chart' && h('div', { class: 'bt-newrow', role: 'group', 'aria-label': 'Ajout de ligne' },
           h('button', { class: 'btn btn-ghost btn-sm', disabled: data.rows.length >= data.limits.rows, onClick: () => addRow() }, icon('plus', 14), 'Nouvelle ligne'),
           h('button', { class: 'btn btn-ghost btn-sm', 'aria-haspopup': 'menu', title: 'Nouvelle ligne depuis un modèle, gérer les modèles', onClick: (e) => templatesMenu(e.currentTarget) },
-            `Modèles de ligne${templates().length ? ` (${templates().length})` : ''}`, icon('chevron', 12))),
+            `Modèles de ligne${tplCount ? ` (${tplCount})` : ''}`, icon('chevron', 12))),
         h('span', { class: 'muted' }, `${data.rows.length} ${data.rows.length > 1 ? 'lignes' : 'ligne'}${rows.length !== data.rows.length ? `, ${rows.length} affichées` : ''}`)),
     ].filter(Boolean));
+    watchOverflow(scrollEl);
     if (pendingFocus?.card && !editing) {
       const card = body.querySelector(`li[data-row="${pendingFocus.rowId}"]`);
       pendingFocus = null;
@@ -1255,7 +1308,7 @@ export async function showBase(initial) {
   setView({
     kind: 'base',
     id,
-    destroy() { destroyed = true; for (const t of saveTimers.values()) clearTimeout(t); window.removeEventListener('notabene:base', onRemote); closePopover(); },
+    destroy() { destroyed = true; overflowObs?.disconnect(); watched = null; for (const t of saveTimers.values()) clearTimeout(t); window.removeEventListener('notabene:base', onRemote); closePopover(); },
     onStore() { if (!destroyed && data && !editing) render(); },
   });
   await load();

@@ -102,6 +102,10 @@ const schema = z
     AUDIT_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(365),
     // Conversations du chat IA sans activité depuis ce nombre de jours : supprimées (pas de désactivation possible).
     AI_CHAT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
+    // Fournisseur d'IA compatible OpenAI : délai maximal avant le premier octet de la réponse, puis entre deux morceaux du flux
+    // (millisecondes, 60 s par défaut). À l'expiration, la connexion est fermée et la personne reçoit un message clair.
+    AI_FIRST_BYTE_TIMEOUT_MS: z.coerce.number().int().min(100).max(600_000).default(60_000),
+    AI_IDLE_TIMEOUT_MS: z.coerce.number().int().min(100).max(600_000).default(60_000),
     SESSION_IDLE_MINUTES: z.coerce.number().min(5).max(24 * 60).default(120),
     // Journal d'audit : une ligne JSON par évènement sur la sortie standard (collecteurs de journaux), voir docs/AUDIT.md.
     AUDIT_STDOUT: bool('false'),

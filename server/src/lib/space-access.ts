@@ -7,7 +7,7 @@
 //  - un administrateur a `full` partout, sauf dans l'espace personnel d'un autre compte (réservé à son propriétaire) ; un espace public se lit sans adhésion (visiteurs anonymes compris) ;
 //  - sans adhésion, sur un espace privé : aucun accès.
 // La permission de page (page-acl.ts) ne fait que restreindre ce niveau, jamais l'élargir.
-import type { Auth } from '../auth/context.js';
+import { type Auth, can } from '../auth/context.js';
 import type { DB } from '../db.js';
 
 export type SpaceRole = 'none' | 'view' | 'edit' | 'full';
@@ -31,8 +31,29 @@ const MEMBERSHIPS = `
 /**
  * Rôle de `auth` sur chaque espace. `auth` nul = visiteur anonyme (espaces publics en lecture seule). Les portées du jeton ne
  * sont pas regardées ici : c'est le rôle de la route (guard) ; seul le rôle global plafonne.
+ * Jeton limité à certains espaces (`auth.spaceIds`) : tout autre espace est absent de la carte, donc introuvable partout (pages,
+ * recherche, flux, exports, IA...), espaces publics et rôle d'administrateur compris. C'est le point unique d'application.
  */
 export function spaceRoles(db: DB, auth: Auth | null): Map<string, SpaceRole> {
+  return restrictToToken(computeRoles(db, auth), auth);
+}
+
+/** Ne garde que les espaces autorisés d'un jeton limité ; inchangé sinon. */
+export function restrictToToken(roles: Map<string, SpaceRole>, auth: Auth | null | undefined): Map<string, SpaceRole> {
+  const allowed = auth?.spaceIds;
+  if (!allowed) return roles;
+  for (const id of [...roles.keys()]) if (!allowed.has(id)) roles.delete(id);
+  return roles;
+}
+
+/**
+ * Rôles pour une route : un jeton sans la portée « read » n'a que les droits d'un visiteur anonyme, mais toujours restreints à ses
+ * espaces s'il est limité (il ne lit pas un espace public hors de sa liste).
+ */
+export const routeSpaceRoles = (db: DB, auth: Auth | null): Map<string, SpaceRole> =>
+  restrictToToken(computeRoles(db, can(auth, 'read') ? auth : null), auth);
+
+function computeRoles(db: DB, auth: Auth | null): Map<string, SpaceRole> {
   const all = db.prepare('SELECT id, visibility, kind, owner_id FROM spaces').all() as { id: string; visibility: 'private' | 'public'; kind: 'shared' | 'personal'; owner_id: string | null }[];
   const roles = new Map<string, SpaceRole>();
   // Un espace personnel n'appartient qu'à son propriétaire : aucune adhésion, aucun rôle global (administrateur compris) ne l'ouvre.

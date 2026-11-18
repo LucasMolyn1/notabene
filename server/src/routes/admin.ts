@@ -10,7 +10,8 @@ import { guard, requireAuth } from '../auth/context.js';
 import { assertBackupAllowed, backupName, backupTo, encryptFile } from '../backup.js';
 import { attachmentsDir } from '../lib/attachments.js';
 import { audit } from '../lib/audit.js';
-import { auditFilters, auditWhere, FilterError } from '../lib/audit-events.js';
+import { ACTOR_SQL, auditFilters, auditWhere, FilterError } from '../lib/audit-events.js';
+import { auditLabel, resolveTargets } from '../lib/audit-labels.js';
 import { HttpError, idParams } from '../lib/http.js';
 import { eraseUser, exportUserData, personalDataArchive, type PersonalData } from '../lib/personal-data.js';
 import { reauthInput, requireReauth } from '../lib/reauth.js';
@@ -79,10 +80,13 @@ export default async function adminRoutes(app: FastifyInstance) {
       if (err instanceof FilterError) throw new HttpError(400, err.message);
       throw err;
     }
-    return db.prepare(
+    const rows = db.prepare(
       `SELECT a.id, a.at, a.action, a.target, a.ip, a.meta, u.name AS user, a.token_name AS via_token FROM audit_log a
-       LEFT JOIN users u ON u.id = a.user_id WHERE ${w.sql} ORDER BY a.id DESC LIMIT ?`,
-    ).all(...w.args, limit);
+       LEFT JOIN users u ON u.id = ${ACTOR_SQL} WHERE ${w.sql} ORDER BY a.id DESC LIMIT ?`,
+    ).all(...w.args, limit) as { action: string; target: string | null }[];
+    // Ajouts compatibles : libellé et cible résolue (`targetInfo`) ; `target` reste l'identifiant.
+    const targets = resolveTargets(db, rows);
+    return rows.map((r, i) => ({ ...r, label: auditLabel(r.action), targetInfo: targets[i] ?? null }));
   });
 
   // Téléchargement d'une copie cohérente de la base (admin, session navigateur uniquement). Contient des secrets chiffrés et des hash de jetons.

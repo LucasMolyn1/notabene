@@ -15,6 +15,8 @@
   .swatch { width: 36px; height: 36px; }
   .details-toggle { width: 40px; height: 40px; }
   .synced-action { min-height: 40px; }
+  .bt-view { min-height: 40px; }
+  .bt-check input { width: 22px; height: 22px; }
   .label-input { width: 100%; font-size: 16px; }
   .verif-badge { min-height: 40px; }
   .verif-tab, .verif-results button { min-height: 44px; }
@@ -76,4 +78,28 @@
   .set-nav { scroll-snap-type: x proximity; margin: 0 -16px; padding: 0 16px 8px; scrollbar-width: none; }
   .set-nav::-webkit-scrollbar { display: none; }
   .set-nav-item { scroll-snap-align: center; }
+}
+
+/* Cibles tactiles de 44 px (téléphone, tablette, pointeur grossier). Les dessins ne changent pas : seule la zone de
+   clic grandit (taille du bouton, ou marge intérieure compensée par une marge négative pour les petits éléments en ligne). */
+@media (max-width: 767px), (pointer: coarse) {
+  .topbar .icon-btn, .topbar .btn, .sb-brand .icon-btn { min-width: 44px; min-height: 44px; }
+  .topbar .icon-btn:not(.sb-open), .sb-brand .icon-btn { width: 44px; height: 44px; }
+  .icon-btn.sb-open { height: 44px; }
+  .sb-btn, .tree-row { height: 44px; }
+  .caret, .tree-actions .mini-btn, .sb-section-head .mini-btn { width: 44px; height: 44px; }
+  .sb-section-head { height: 44px; }
+  .brand { min-height: 44px; }
+  .bt-view { min-height: 44px; }
+  .tree-filter { height: 44px; font-size: 16px; }
+  .zoom-tools .btn { min-width: 44px; min-height: 44px; }
+  /* Cases des listes de tâches : le libellé qui entoure la case fait 44 px, la case garde 17 px. */
+  .prose ul[data-type='taskList'] li > label {
+    display: flex; align-items: center; justify-content: center; width: 44px; height: 44px;
+    margin: calc(.3em - 13.5px) -13.5px -13.5px;
+  }
+  /* Cases des bases : zone de 44 px dans une cellule qui garde sa hauteur. */
+  .bt-check-hit { width: 44px; height: 44px; margin: -4px 0; }
+  /* Numéros de sources de l'IA : pastille de 18 px, zone de clic de 44 px. */
+  a.cite { min-width: 44px; height: 44px; padding: 13px; margin: -13px -12px; background-clip: content-box; border-radius: 22px; }
 }

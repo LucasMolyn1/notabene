@@ -81,7 +81,7 @@ test('automatisations : ligne ajoutée, bouton de ligne, notification, journal e
   await dlg.getByRole('button', { name: 'Fermer' }).last().click();
 
   // Déclenchement : une nouvelle ligne reçoit « Terminé » ; le bouton apparaît sur chaque ligne.
-  await page.getByRole('button', { name: 'Nouvelle ligne' }).click();
+  await page.locator('.bt-foot').getByRole('button', { name: 'Nouvelle ligne' }).click();
   await expect(page.locator('tbody tr')).toHaveCount(2);
   await expect(page.locator('tbody tr').nth(1)).toContainText(done!.name);
   await expect(page.getByRole('columnheader', { name: 'Boutons' })).toBeVisible();
@@ -142,7 +142,7 @@ test('webhooks d’automatisation : réglage d’administration, secret montré 
 
   // Réglage d'administration.
   await page.goto('/settings');
-  await page.locator('.set-nav-item').filter({ hasText: /^Webhooks$/ }).click();
+  await page.locator('.set-nav-item').filter({ hasText: /^Intégrations$/ }).click();
   const toggle = page.getByLabel('Autoriser les webhooks d’automatisation');
   await expect(toggle).not.toBeChecked();
   const put = page.waitForResponse((r) => r.url().endsWith('/admin/automations') && r.request().method() === 'PUT');
@@ -229,7 +229,10 @@ test('automatisations sur téléphone (375 px) : panneau et boutons sans défile
   await btn.scrollIntoViewIfNeeded();
   await btn.click();
   await expect(page.locator('tbody tr').first()).toContainText(b.statut.options[2]!.name);
-  await openPanel(page);
+  // Sur téléphone, les actions secondaires de la base sont dans le menu « Plus ».
+  await page.getByRole('button', { name: 'Plus d’actions' }).click();
+  await page.getByRole('menuitem', { name: 'Automatisations' }).click();
+  await expect(panel(page).getByRole('button', { name: 'Nouvelle automatisation' })).toBeVisible();
   const dlg = panel(page);
   const box = (await dlg.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);

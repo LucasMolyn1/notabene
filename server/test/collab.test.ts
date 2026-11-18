@@ -293,3 +293,115 @@ describe('co-édition en temps réel', () => {
     await expect(connect(editor.cookie, { id: 'inconnue' })).rejects.toThrow();
   });
 });
+
+// Ouverture d'une page au contenu posé par l'API : l'éditeur du navigateur ajoute les valeurs par défaut de son schéma et un
+// paragraphe vide final. Sans frappe, ni version, ni « modifiée par » ; une vraie modification reste enregistrée avec son auteur.
+describe('co-édition : remise en forme de l’éditeur à l’ouverture', () => {
+  const t = (s: string) => ({ type: 'text', text: s });
+  const p = (s: string) => ({ type: 'paragraph', content: [t(s)] });
+  const content = {
+    type: 'doc',
+    content: [
+      { type: 'heading', attrs: { level: 1 }, content: [t('Page posée par l’API')] },
+      { type: 'heading', attrs: { level: 2 }, content: [t('Sous-titre')] },
+      p('Un paragraphe.'),
+      { type: 'bulletList', content: [{ type: 'listItem', content: [p('Un point')] }] },
+      { type: 'orderedList', content: [{ type: 'listItem', content: [p('Premier')] }] },
+      { type: 'taskList', content: [{ type: 'taskItem', content: [p('Une tâche')] }, { type: 'taskItem', attrs: { checked: true }, content: [p('Faite')] }] },
+      { type: 'table', content: [
+        { type: 'tableRow', content: [{ type: 'tableHeader', content: [p('Col')] }, { type: 'tableHeader', content: [p('Val')] }] },
+        { type: 'tableRow', content: [{ type: 'tableCell', content: [p('a')] }, { type: 'tableCell', content: [p('1')] }] },
+      ] },
+      { type: 'codeBlock', content: [t('sans langage')] },
+      { type: 'codeBlock', attrs: { language: 'bash' }, content: [t('systemctl status service')] },
+    ],
+  };
+  // Ce que fait l'éditeur TipTap à l'ouverture (y-prosemirror) : défauts non nuls écrits, paragraphe final (TrailingNode).
+  const CLIENT_DEFAULTS: Record<string, Record<string, unknown>> = {
+    heading: { level: 1 }, orderedList: { start: 1 }, taskList: { checklist: false }, taskItem: { checked: false },
+    tableCell: { colspan: 1, rowspan: 1 }, tableHeader: { colspan: 1, rowspan: 1 },
+  };
+  const normalize = (doc: Y.Doc) => doc.transact(() => {
+    const walk = (parent: Y.XmlFragment | Y.XmlElement) => {
+      for (const child of parent.toArray()) {
+        if (!(child instanceof Y.XmlElement)) continue;
+        for (const [k, v] of Object.entries(CLIENT_DEFAULTS[child.nodeName] ?? {})) if (child.getAttribute(k) === undefined) child.setAttribute(k, v as string);
+        walk(child);
+      }
+    };
+    const root = doc.getXmlFragment('default');
+    walk(root);
+    root.push([new Y.XmlElement('paragraph')]);
+  });
+  const row = (id: string) => db.prepare('SELECT version, updated_at, updated_by FROM pages WHERE id = ?').get(id) as { version: number; updated_at: number; updated_by: string };
+  const versions = (id: string) => db.prepare('SELECT created_by FROM page_versions WHERE page_id = ? ORDER BY id').all(id) as { created_by: string }[];
+
+  async function apiPage() {
+    const admin = await login('admin');
+    const spaceId = (db.prepare('SELECT space_id AS s FROM pages WHERE id = ?').get(pageId) as { s: string }).s;
+    const res = await app.inject({ method: 'POST', url: '/api/v3/pages', cookies: { nb_session: admin.cookie }, headers: { 'x-csrf-token': admin.csrf }, payload: { spaceId, title: 'Posée par l’API', content } });
+    expect(res.statusCode).toBe(201);
+    return res.json().id as string;
+  }
+  async function openAndClose(cookie: string, id: string, edit?: (doc: Y.Doc) => void) {
+    const c = await connect(cookie, { id });
+    await until(() => textOf(c.json()).includes('systemctl'));
+    normalize(c.doc);
+    edit?.(c.doc);
+    await wait(50);
+    c.ws.close();
+    await until(() => c.state.closed !== null);
+  }
+  // Laisse passer l'enregistrement différé (2 s) de la salle.
+  const settle = () => wait(2500);
+
+  it('ouvrir sans rien taper ne crée ni version ni « modifiée par »', async () => {
+    const id = await apiPage();
+    const before = row(id);
+    const history = versions(id);
+    const editor = await login('editor');
+    await openAndClose(editor.cookie, id);
+    await settle();
+    expect(row(id)).toEqual(before);
+    expect(versions(id)).toEqual(history);
+    // Réouverture : l'état Yjs stocké est repris (même contenu), toujours rien d'enregistré.
+    const c = await connect(editor.cookie, { id });
+    await until(() => textOf(c.json()).includes('systemctl'));
+    expect(c.json().content!.at(-1)).toEqual({ type: 'paragraph' });
+    c.ws.close();
+    await until(() => c.state.closed !== null);
+    await settle();
+    expect(row(id)).toEqual(before);
+  });
+
+  it('une vraie modification juste après l’ouverture est enregistrée avec son auteur', async () => {
+    const id = await apiPage();
+    const before = row(id);
+    const history = versions(id);
+    const editor = await login('editor');
+    const editorId = (db.prepare("SELECT id FROM users WHERE role = 'editor'").get() as { id: string }).id;
+    await openAndClose(editor.cookie, id, (doc) => {
+      const para = doc.getXmlFragment('default').toArray().find((n) => n instanceof Y.XmlElement && n.nodeName === 'paragraph') as Y.XmlElement;
+      (para.get(0) as Y.XmlText).insert(0, 'MODIF ');
+    });
+    await until(() => row(id).version > before.version, 5000);
+    const after = row(id);
+    expect(after.version).toBe(before.version + 1);
+    expect(after.updated_by).toBe(editorId);
+    expect(versions(id)).toEqual([...history, { created_by: editorId }]);
+    expect((db.prepare('SELECT content FROM pages WHERE id = ?').get(id) as { content: string }).content).toContain('MODIF Un paragraphe.');
+  });
+
+  it('cocher une case (valeur non par défaut) est une vraie modification', async () => {
+    const id = await apiPage();
+    const before = row(id);
+    const editor = await login('editor');
+    await openAndClose(editor.cookie, id, (doc) => {
+      const list = doc.getXmlFragment('default').toArray().find((n) => n instanceof Y.XmlElement && n.nodeName === 'taskList') as Y.XmlElement;
+      (list.get(0) as Y.XmlElement).setAttribute('checked', true as unknown as string);
+    });
+    await until(() => row(id).version > before.version, 5000);
+    expect(row(id).version).toBe(before.version + 1);
+    expect((db.prepare('SELECT content FROM pages WHERE id = ?').get(id) as { content: string }).content).toContain('"checked":true},"content":[{"type":"paragraph","content":[{"type":"text","text":"Une tâche"');
+  });
+});

@@ -1,5 +1,5 @@
 // Paramètres du compte : profil, apparence, jetons, API et à propos.
-import { h, timeAgo, download } from '../util.js';
+import { h, timeAgo, download, fullDate } from '../util.js';
 import { icon } from '../icons.js';
 import { api } from '../api.js';
 import { session } from '../session.js';
@@ -12,6 +12,7 @@ import { preferencesCard } from '../notifications.js';
 import { markNewsSeen, notifyNewsChange } from '../news.js';
 import * as A from '../actions.js';
 import { ROLE_LABELS } from './access.js';
+import { store } from '../store.js';
 import { card, copyable, kv, loadingEl, pill, toggle } from './ui.js';
 
 export const REPO_URL = 'https://github.com/LucasMolyn1/notabene';
@@ -93,27 +94,82 @@ const SCOPE_LABELS = {
 
 const ROLE_SCOPES = { reader: ['read', 'ai'], editor: ['read', 'write', 'ai'], admin: ['read', 'write', 'ai', 'admin'] };
 
+/** Espaces autorisés d'un jeton : null ou absent (ancien serveur) = tous ; liste vide = plus aucun (espaces supprimés ou retirés). */
+const tokenSpaces = (t) => {
+  if (!Array.isArray(t.spaces)) return 'Tous les espaces';
+  return t.spaces.length ? t.spaces.map((s) => s.name || s.id).join(', ') : 'Aucun espace (le jeton n’ouvre plus rien)';
+};
+const usage = (t) => {
+  const n = Number.isInteger(t.requestCount) ? t.requestCount : null;
+  const count = n == null ? null : `${n.toLocaleString('fr-FR')} requête${n > 1 ? 's' : ''}`;
+  if (!t.lastUsedAt) return n ? count : 'jamais utilisé';
+  return [`utilisé ${timeAgo(t.lastUsedAt)}`, count].filter(Boolean).join(', ');
+};
+
 export async function renderTokens(el, created = null) {
   el.replaceChildren(loadingEl());
   const tokens = await A.attempt(() => api.get('/tokens'));
   if (!tokens) return;
   const allowed = ROLE_SCOPES[session.user.role] || ['read'];
-  const name = h('input', { class: 'input', placeholder: 'Ex. CI GitHub, script de sauvegarde…', maxlength: '80' });
+  const name = h('input', { id: 'token-name', class: 'input', placeholder: 'Ex. CI GitHub, script de sauvegarde…', maxlength: '80' });
+  const adminNote = h('small', { id: 'token-admin-note', class: 'hint', hidden: true }, 'Une clé limitée à des espaces ne peut pas administrer l’instance.');
   const checks = allowed.map((s) => {
-    const box = h('input', { type: 'checkbox', value: s });
+    const box = h('input', { type: 'checkbox', value: s, 'aria-describedby': s === 'admin' ? 'token-admin-note' : null });
     box.checked = s === 'read';
     return h('label', { class: 'check' }, box, h('span', null, h('strong', null, SCOPE_LABELS[s][0]), h('small', null, SCOPE_LABELS[s][1])));
   });
-  const expiry = h('select', { class: 'input' }, [['7', '7 jours'], ['30', '30 jours'], ['90', '90 jours'], ['365', '1 an']].map(([v, l]) => h('option', { value: v }, l)));
+  const expiry = h('select', { id: 'token-expiry', class: 'input' }, [['7', '7 jours'], ['30', '30 jours'], ['90', '90 jours'], ['365', '1 an']].map(([v, l]) => h('option', { value: v }, l)));
   expiry.value = '90';
 
-  const create = async () => {
-    const scopes = checks.map((c) => c.querySelector('input')).filter((i) => i.checked).map((i) => i.value);
-    if (!name.value.trim()) { toast('Donnez un nom au jeton', { kind: 'error' }); return; }
-    if (!scopes.length) { toast('Choisissez au moins une portée', { kind: 'error' }); return; }
-    const result = await A.attempt(() => api.post('/tokens', { name: name.value.trim(), scopes, expiresInDays: Number(expiry.value) }));
-    if (result) renderTokens(el, result);
+  // Espaces : tous (par défaut) ou une liste choisie. Une clé limitée ne peut pas porter la portée « admin ».
+  const radio = (value, label) => {
+    const input = h('input', { type: 'radio', name: 'token-spaces', value });
+    input.checked = value === 'all';
+    return { input, el: h('label', { class: 'check' }, input, h('span', null, h('strong', null, label))) };
   };
+  const allRadio = radio('all', 'Tous mes espaces');
+  const onlyRadio = radio('only', 'Seulement ces espaces');
+  const spaceBoxes = store.spaces.map((sp) => {
+    const box = h('input', { type: 'checkbox', value: sp.id, disabled: true });
+    return { box, el: h('label', { class: 'check' }, box, h('span', null, sp.name)) };
+  });
+  const spaceList = h('div', { class: 'checks token-spaces', role: 'group', 'aria-label': 'Espaces autorisés' }, spaceBoxes.map((b) => b.el));
+  const adminBox = checks.map((c) => c.querySelector('input')).find((i) => i.value === 'admin');
+  const syncSpaces = () => {
+    const only = onlyRadio.input.checked;
+    for (const b of spaceBoxes) b.box.disabled = !only;
+    spaceList.classList.toggle('off', !only);
+    if (adminBox) {
+      if (only) adminBox.checked = false;
+      adminBox.disabled = only;
+    }
+    adminNote.hidden = !only || !adminBox;
+  };
+  for (const r of [allRadio, onlyRadio]) r.input.addEventListener('change', syncSpaces);
+
+  const errorBox = h('div', { class: 'notice warning', role: 'alert', hidden: true });
+  const fail = (message, focus) => { errorBox.textContent = message; errorBox.hidden = false; focus?.focus(); };
+  const createBtn = h('button', { class: 'btn btn-primary', type: 'button' }, icon('plus', 15), 'Créer le jeton');
+  const create = async () => {
+    errorBox.hidden = true;
+    const scopes = checks.map((c) => c.querySelector('input')).filter((i) => i.checked).map((i) => i.value);
+    const only = onlyRadio.input.checked;
+    const spaceIds = spaceBoxes.filter((b) => b.box.checked).map((b) => b.box.value);
+    if (!name.value.trim()) { fail('Donnez un nom au jeton.', name); return; }
+    if (!scopes.length) { fail('Choisissez au moins une portée.', checks[0]?.querySelector('input')); return; }
+    if (only && !spaceIds.length) { fail('Choisissez au moins un espace, ou « Tous mes espaces ».', spaceBoxes[0]?.box); return; }
+    createBtn.disabled = true;
+    try {
+      const result = await api.post('/tokens', { name: name.value.trim(), scopes, expiresInDays: Number(expiry.value), ...(only ? { spaceIds } : {}) });
+      renderTokens(el, result);
+    } catch (err) {
+      // Message du serveur affiché tel quel (portée refusée, espace inaccessible…).
+      fail(err?.message || 'Création impossible.');
+    } finally {
+      createBtn.disabled = false;
+    }
+  };
+  createBtn.addEventListener('click', create);
 
   el.replaceChildren(...[
     created && h('div', { class: 'notice success stack' },
@@ -121,14 +177,19 @@ export async function renderTokens(el, created = null) {
       h('div', { class: 'row' },
         h('code', { class: 'token-value' }, created.token),
         h('button', { class: 'btn btn-ghost btn-sm', onClick: () => navigator.clipboard.writeText(created.token).then(() => toast('Jeton copié')) }, icon('copy', 14), 'Copier')),
+      h('p', { class: 'hint' }, `Espaces autorisés : ${tokenSpaces(created)}.`),
       h('pre', { class: 'code-sample', tabindex: '0' }, `curl -H "Authorization: Bearer $NOTABENE_TOKEN" \\\n  ${location.origin}/api/v3/spaces`)),
     card('Nouveau jeton', 'Les portées sont limitées par votre rôle. Un jeton ne peut jamais en créer un autre.',
       h('div', { class: 'stack' },
-        h('label', { class: 'field' }, h('span', null, 'Nom'), name),
-        h('div', { class: 'field' }, h('span', null, 'Portées'), h('div', { class: 'checks' }, checks)),
+        h('div', { class: 'field' }, h('label', { for: 'token-name' }, 'Nom'), name),
+        h('fieldset', { class: 'field plain-fieldset' }, h('legend', null, 'Portées'), h('div', { class: 'checks' }, checks), adminNote),
+        h('fieldset', { class: 'field plain-fieldset' }, h('legend', null, 'Espaces'),
+          h('div', { class: 'checks' }, allRadio.el, onlyRadio.el),
+          store.spaces.length ? spaceList : h('p', { class: 'hint' }, 'Aucun espace accessible.')),
+        errorBox,
         h('div', { class: 'row' },
-          h('label', { class: 'field grow' }, h('span', null, 'Expiration'), expiry),
-          h('button', { class: 'btn btn-primary', onClick: create }, icon('plus', 15), 'Créer le jeton')))),
+          h('div', { class: 'field grow' }, h('label', { for: 'token-expiry' }, 'Expiration'), expiry),
+          createBtn))),
     card('Mes jetons', null, tokens.length
       ? h('div', { class: 'table' }, tokens.map((t) => {
         const expired = t.expiresAt < Date.now();
@@ -136,7 +197,8 @@ export async function renderTokens(el, created = null) {
         return h('div', { class: `table-row${t.revokedAt || expired ? ' inactive' : ''}` },
           h('span', { class: 'grow' },
             h('strong', null, t.name),
-            h('small', null, `${t.prefix}… · ${t.scopes.join(', ')} · ${state} · ${t.lastUsedAt ? `utilisé ${timeAgo(t.lastUsedAt)}` : 'jamais utilisé'}`)),
+            h('small', null, `${t.prefix}… · ${t.scopes.join(', ')} · ${state} · ${usage(t)}${t.lastUsedAt ? ` (dernier usage le ${fullDate(t.lastUsedAt)})` : ''}`),
+            h('small', { class: 'token-spaces-line' }, `Espaces : ${tokenSpaces(t)}`)),
           !t.revokedAt && !expired && h('button', {
             class: 'btn btn-ghost btn-sm danger-text',
             onClick: async () => {
@@ -148,6 +210,7 @@ export async function renderTokens(el, created = null) {
       }))
       : h('p', { class: 'muted' }, 'Aucun jeton pour le moment.')),
   ].filter(Boolean));
+  syncSpaces();
 }
 
 export function renderApi(el) {

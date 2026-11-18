@@ -53,7 +53,8 @@ test('créer une base, ses colonnes et ses lignes, filtrer, trier, exporter', as
 
   // Deux lignes.
   for (const [nom, qte, etat] of [['Marteau <b>x</b>', '3', 'Neuf'], ['Tournevis', '12', 'Usé']] as const) {
-    await page.getByRole('button', { name: 'Nouvelle ligne' }).click();
+    // Bouton du bas (celui du haut est vérifié par lisibilite.spec.ts).
+    await page.locator('.bt-foot').getByRole('button', { name: 'Nouvelle ligne' }).click();
     const row = page.locator('tbody tr').last();
     await row.getByRole('button', { name: /modifier Nom\)?$/i }).click();
     await page.getByRole('textbox', { name: 'Nom' }).fill(nom);
@@ -288,7 +289,7 @@ test('un lecteur voit la base sans pouvoir la modifier', async ({ browser }) => 
   await expect(page.getByRole('button', { name: 'Nouvelle ligne' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Ajouter une colonne' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /modifier Nom\)?$/i })).toHaveCount(0);
-  await expect(page.getByRole('textbox', { name: 'Titre de la base' })).toBeDisabled();
+  await expect(page.getByRole('textbox', { name: 'Titre de la base' })).not.toBeEditable();
   // Tri et filtre restent possibles pour elle, sans rien enregistrer.
   await page.getByRole('button', { name: /Filtrer/ }).click();
   await expect(page.getByRole('button', { name: 'Ajouter un filtre' })).toBeVisible();

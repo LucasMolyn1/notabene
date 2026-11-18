@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Config } from '../config.js';
 import type { DB } from '../db.js';
 import { audit } from './audit.js';
+import { auditLabel } from './audit-labels.js';
 import { AUDIT_SCHEMA, auditAfter, auditCountAfter, auditMaxId, type AuditEvent, eventJson, toAuditEvent } from './audit-events.js';
 import { MAX_FAILURES, postSigned } from './webhooks.js';
 
@@ -50,7 +51,7 @@ export const siemBody = (events: AuditEvent[], type: Kind = 'audit.events') => e
 export const backoffMs = (failures: number) => Math.min(BACKOFF_BASE_MS * 2 ** Math.max(0, failures - 1), BACKOFF_MAX_MS);
 
 const hash = (v: unknown) => createHash('sha256').update(JSON.stringify(v)).digest('hex').slice(0, 32);
-const synthetic = (action: string): AuditEvent => ({ schema: AUDIT_SCHEMA, id: 0, timestamp: new Date().toISOString(), action, outcome: 'success', actor: null, target: null, ip: null, meta: null });
+const synthetic = (action: string): AuditEvent => ({ schema: AUDIT_SCHEMA, id: 0, timestamp: new Date().toISOString(), action, label: auditLabel(action), outcome: 'success', actor: null, target: null, ip: null, meta: null });
 const headers = () => ({ 'user-agent': 'Notabene-Audit/1', 'x-notabene-delivery': randomUUID() });
 
 export class AuditForwarder {
