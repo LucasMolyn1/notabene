@@ -8,6 +8,7 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ### Corrigé
 - **Interface : Mes tâches** : la liste des tâches (dont celles en retard) n'est plus rejetée dans la colonne de droite ; la page s'affiche sur une seule colonne, sous le titre.
+- **Interface : pages partagées** : une page ouverte par lien de partage défile de nouveau (le contenu au-delà de l'écran était inaccessible).
 
 ## [3.18.1] - 2026-11-12
 
