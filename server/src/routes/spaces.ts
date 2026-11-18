@@ -98,6 +98,8 @@ export default async function spaceRoutes(app: FastifyInstance) {
         const removed = next.sharing_enabled === 0 ? db.prepare('DELETE FROM page_shares WHERE page_id IN (SELECT id FROM pages WHERE space_id = ?)').run(id).changes : 0;
         // Et les flux iCalendar de ses bases : rouvrir le partage ne les fait pas réapparaître.
         if (next.sharing_enabled === 0) db.prepare('DELETE FROM base_ical_feeds WHERE base_id IN (SELECT id FROM pages WHERE space_id = ?)').run(id);
+        // Et les liens de partage de l'espace entier.
+        if (next.sharing_enabled === 0) db.prepare('DELETE FROM space_shares WHERE space_id = ?').run(id);
         audit(db, req, 'space.sharing', id, { enabled: next.sharing_enabled === 1, removed });
       }
     })();

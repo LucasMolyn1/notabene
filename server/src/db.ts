@@ -1070,6 +1070,27 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE notifications_v36 RENAME TO notifications;
   CREATE INDEX notifications_user ON notifications(user_id, created_at DESC);
   `,
+  // v37 : partage d'un espace entier par lien non répertorié, en lecture seule (lib/space-shares.ts). Seule l'empreinte SHA-256 du
+  // jeton est gardée (montré une fois). Tout se revérifie à chaque lecture (réglages d'instance et d'espace, expiration) ; le lien
+  // suit l'espace (ON DELETE CASCADE) et disparaît avec le compte qui l'a créé (désactivé ou supprimé).
+  // Additive. Retour arrière : DROP TABLE space_shares (ses déclencheurs suivent ; aucune autre donnée touchée).
+  `
+  CREATE TABLE space_shares (
+    id          TEXT PRIMARY KEY,
+    space_id    TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    token_hash  TEXT NOT NULL UNIQUE,
+    label       TEXT NOT NULL DEFAULT '',
+    expires_at  INTEGER,
+    created_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at  INTEGER NOT NULL
+  );
+  CREATE INDEX space_shares_space ON space_shares(space_id, created_at);
+  CREATE INDEX space_shares_created_by ON space_shares(created_by) WHERE created_by IS NOT NULL;
+  CREATE TRIGGER space_shares_user_disabled AFTER UPDATE OF disabled ON users WHEN NEW.disabled = 1 AND OLD.disabled = 0
+    BEGIN DELETE FROM space_shares WHERE created_by = NEW.id; END;
+  CREATE TRIGGER space_shares_user_deleted BEFORE DELETE ON users
+    BEGIN DELETE FROM space_shares WHERE created_by = OLD.id; END;
+  `,
 ];
 
 export function openDb(file: string): DB {
@@ -1108,6 +1129,8 @@ export function cleanup(db: DB, retention: Retention = DEFAULT_RETENTION) {
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
   db.prepare('DELETE FROM login_states WHERE expires_at < ?').run(now);
   db.prepare('DELETE FROM password_resets WHERE expires_at < ?').run(now);
+  // Liens de partage d'espace expirés (déjà muets à la lecture) : on n'en garde pas l'empreinte.
+  db.prepare('DELETE FROM space_shares WHERE expires_at IS NOT NULL AND expires_at < ?').run(now);
   if (retention.auditDays > 0) db.prepare('DELETE FROM audit_log WHERE at < ?').run(before(retention.auditDays));
   if (retention.auditIpDays > 0) db.prepare('UPDATE audit_log SET ip = NULL WHERE ip IS NOT NULL AND at < ?').run(before(retention.auditIpDays));
   if (retention.notificationDays > 0) db.prepare('DELETE FROM notifications WHERE read_at IS NOT NULL AND read_at < ?').run(before(retention.notificationDays));

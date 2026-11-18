@@ -4,6 +4,14 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## Non publié
+
+### Ajouté
+- **Partage d'un espace par lien non répertorié** : un gestionnaire de l'espace ou un administrateur crée un lien en lecture seule, sans compte, qui donne accès à l'arborescence de l'espace, même privé (usage : envoyer un espace à un client). Jeton aléatoire de 256 bits dont seule l'empreinte est stockée (affiché une seule fois), expiration facultative, 20 liens actifs au plus par espace, révocation immédiate. Pages restreintes (et leur sous-arbre), bases, corbeille et espaces personnels exclus ; pas d'indexage. Désactivé par défaut : il faut le partage public de l'instance, le nouveau réglage « Autoriser le partage d'espaces entiers par lien » (Paramètres, Partages) et l'autorisation dans l'espace. Le lien cesse de fonctionner si son créateur est désactivé ou ne gère plus l'espace. API : `GET/POST /api/v3/spaces/:id/shares`, `DELETE /api/v3/spaces/:id/shares/:shareId`, `PUT /api/v3/admin/sharing/spaces`.
+
+### Corrigé
+- **Interface : pages partagées** : une page ouverte par lien de partage défile de nouveau (le contenu au-delà de l'écran était inaccessible).
+
 ## [3.18.1] - 2026-11-12
 
 ### Ajouté
