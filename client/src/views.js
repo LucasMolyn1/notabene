@@ -11,7 +11,7 @@ import { presence, colorFor } from './presence.js';
 import { avatarEl } from './avatar.js';
 import { openMenu, openModal, toast, pageIcon } from './ui.js';
 import { openPalette } from './palette.js';
-import { forgotPasswordForm, ldapLoginForm, localLoginForm } from './local-auth.js';
+import { FORM_RETURN, forgotPasswordForm, ldapLoginForm, localLoginForm } from './local-auth.js';
 import { bellButton, watchButton } from './notifications.js';
 import { bindAnchors, commentsButton, openComments } from './comments.js';
 import { openAssistant } from './assistant.js';
@@ -559,6 +559,8 @@ const AUTH_ERRORS = {
   callback: 'La connexion a échoué. Réessayez.',
   access_denied: 'Connexion annulée.',
   mfa_required: 'Une double authentification est exigée : activez-la sur votre compte du fournisseur d’identité, puis reconnectez-vous.',
+  email_unverified: 'Votre adresse e-mail n’est pas vérifiée auprès du fournisseur d’identité. Vérifiez-la, puis reconnectez-vous.',
+  reauth_failed: 'La confirmation auprès du fournisseur d’identité a échoué ou n’est pas assez récente. Réessayez.',
 };
 
 export function showLogin() {
@@ -566,6 +568,12 @@ export function showLogin() {
   document.title = 'Connexion · BeNote';
   const error = new URLSearchParams(location.search).get('auth_error');
   const { oidc, devLogin, local, setupRequired, ldap, saml } = session.config.auth;
+  // Fournisseurs OIDC secondaires (Google…) : sans eux, l'écran reste celui du seul fournisseur principal.
+  const extra = session.extraProviders();
+  const sso = oidc || saml || extra.length > 0;
+  // Retour après connexion : le formulaire public d'origine s'il est valide, sinon la page courante.
+  const back = new URLSearchParams(location.search).get('returnTo');
+  const returnTo = back && FORM_RETURN.test(back) ? back : location.pathname;
   main().replaceChildren(h('div', { class: 'login' }, h('div', { class: 'login-card' },
     h('div', { class: 'boot-logo' }),
     h('h1', null, 'BeNote'),
@@ -573,8 +581,9 @@ export function showLogin() {
     error && h('div', { class: 'notice warning' }, AUTH_ERRORS[error] || 'Connexion impossible.'),
     // Le fournisseur d'identité d'abord (un clic), puis les formulaires à mot de passe ; l'installation initiale passe avant tout.
     !setupRequired && oidc && h('a', { class: 'btn btn-primary btn-lg', href: session.loginUrl() }, icon('users', 16), 'Se connecter avec Authentik'),
-    !setupRequired && saml && h('a', { class: oidc ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: `/auth/saml/login?returnTo=${encodeURIComponent(location.pathname)}` }, icon('key', 16), 'Se connecter avec le SSO (SAML)'),
-    !setupRequired && (oidc || saml) && (local || ldap) && h('p', { class: 'or' }, h('span', null, 'ou avec un mot de passe')),
+    !setupRequired && extra.map((p, i) => h('a', { class: oidc || i > 0 ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: session.providerLoginUrl(p, returnTo) }, icon('globe', 16), `Se connecter avec ${p.label}`)),
+    !setupRequired && saml && h('a', { class: oidc || extra.length ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: `/auth/saml/login?returnTo=${encodeURIComponent(location.pathname)}` }, icon('key', 16), 'Se connecter avec le SSO (SAML)'),
+    !setupRequired && sso && (local || ldap) && h('p', { class: 'or' }, h('span', null, 'ou avec un mot de passe')),
     local && localLoginForm(setupRequired),
     local && !setupRequired && session.config.auth.mail && forgotPasswordForm(),
     local && ldap && h('p', { class: 'or' }, h('span', null, 'ou')),
@@ -583,7 +592,7 @@ export function showLogin() {
       h('p', { class: 'hint' }, 'Mode développement : connexion sans fournisseur d’identité.'),
       h('div', { class: 'row center' }, ['admin', 'editor', 'reader'].map((role) =>
         h('button', { class: 'btn btn-ghost btn-sm', onClick: () => session.devLogin(role) }, { admin: 'Admin', editor: 'Éditeur', reader: 'Lecteur' }[role])))),
-    !oidc && !devLogin && !local && !ldap && !saml && h('p', { class: 'notice warning' }, 'Aucun fournisseur d’identité n’est configuré.'))));
+    !session.hasLogin() && h('p', { class: 'notice warning' }, 'Aucun fournisseur d’identité n’est configuré.'))));
 }
 
 // ---- Introuvable ----------------------------------------------------------
@@ -601,7 +610,7 @@ export function showMissing(id, status = 404) {
         ? 'Cette page n’existe pas ou nécessite d’être connecté.'
         : status === 404 ? 'Elle a peut-être été supprimée ou déplacée dans la corbeille.' : 'Impossible de charger la page.'),
       h('div', { class: 'row center' },
-        anonymous && (session.config.auth.oidc || session.config.auth.devLogin || session.config.auth.local || session.config.auth.ldap || session.config.auth.saml) && h('a', { class: 'btn btn-primary', href: session.config.auth.oidc ? session.loginUrl() : '/?login' }, 'Se connecter'),
+        anonymous && session.hasLogin() && h('a', { class: 'btn btn-primary', href: session.loginEntry() }, 'Se connecter'),
         h('a', { class: 'btn btn-ghost', href: '/' }, 'Retour à l’accueil')))));
   view = { kind: 'missing', id };
 }

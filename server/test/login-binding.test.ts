@@ -28,7 +28,7 @@ describe('liaison de la connexion SSO au navigateur', () => {
     const client = new OidcClient(() => cfg, db);
     const mine = newBinding();
     const insert = (state: string, hash: string | null) =>
-      db.prepare('INSERT INTO login_states (state, code_verifier, nonce, return_to, expires_at, binding_hash) VALUES (?, ?, ?, ?, ?, ?)').run(state, 'v', 'n', '/', Date.now() + 60_000, hash);
+      db.prepare("INSERT INTO login_states (state, code_verifier, nonce, return_to, expires_at, binding_hash, provider) VALUES (?, ?, ?, ?, ?, ?, 'principal')").run(state, 'v', 'n', '/', Date.now() + 60_000, hash);
     const url = (state: string) => new URL(`https://wiki.example.org/auth/callback?state=${state}&code=abc`);
 
     insert('s1', mine.hash);

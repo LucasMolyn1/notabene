@@ -73,7 +73,7 @@ export async function renderAuth(el) {
   if (!info || !data) return;
   const refresh = () => renderAuth(el);
   const ctx = { card, copyable, refresh };
-  el.replaceChildren(
+  el.replaceChildren(...[
     card('Méthodes de connexion', null, kv([
       ['Comptes locaux', status(session.config.auth.local, 'Activés', 'Désactivés')],
       ['Mode développement', session.config.auth.devLogin ? pill('DEV_LOGIN actif', 'warn') : pill('Désactivé', 'ok')],
@@ -82,9 +82,12 @@ export async function renderAuth(el) {
       ? h('div', { class: 'notice info' }, 'Configuration verrouillée (CONFIG_LOCKED) : les fournisseurs se règlent dans l’environnement du déploiement.')
       : h('p', { class: 'hint' }, 'Les fournisseurs se règlent ci-dessous. Chaque modification demande votre mot de passe, et la connexion doit être testée avant l’enregistrement. Les secrets sont chiffrés et jamais réaffichés. En cas d’erreur, le compte local et la commande create-admin --reset permettent de reprendre la main.')),
     providerCard('oidc', data, { ...ctx, kvRows: [['URI de redirection', data.redirectUris.oidc]] }),
+    data.sections.google && providerCard('google', data, { ...ctx, kvRows: [['URI de redirection', data.redirectUris.google]] }),
     providerCard('ldap', data, ctx),
     providerCard('saml', data, { ...ctx, kvRows: [['URL de réponse (ACS)', data.redirectUris.samlAcs], ['Métadonnées du service', data.redirectUris.samlMetadata]] }),
-    card('Documentation', null, h('a', { class: 'btn btn-ghost btn-sm', href: `${REPO_URL}/blob/main/docs/AUTHENTIK.md`, target: '_blank', rel: 'noopener' }, 'Configurer Authentik ↗')));
+    card('Documentation', null, h('a', { class: 'btn btn-ghost btn-sm', href: `${REPO_URL}/blob/main/docs/AUTHENTIK.md`, target: '_blank', rel: 'noopener' }, 'Configurer Authentik ↗'),
+      h('a', { class: 'btn btn-ghost btn-sm', href: `${REPO_URL}/blob/main/docs/GOOGLE.md`, target: '_blank', rel: 'noopener' }, 'Configurer Google ↗')),
+  ].filter(Boolean));
 }
 
 export async function renderMail(el) {

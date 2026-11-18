@@ -8,7 +8,7 @@ export const session = {
   provider: null,
   permissions: { read: false, write: false, ai: false, admin: false },
   aiProvider: null,
-  config: { auth: { oidc: false, devLogin: false, local: false, setupRequired: false, ldap: false, saml: false }, drawioUrl: null, embedHosts: [], ai: false },
+  config: { auth: { oidc: false, devLogin: false, local: false, setupRequired: false, ldap: false, saml: false, providers: [] }, drawioUrl: null, embedHosts: [], ai: false },
 
   async load() {
     const [config, me] = await Promise.all([api.get('/config'), api.get('/me')]);
@@ -46,6 +46,36 @@ export const session = {
 
   loginUrl(returnTo = location.pathname) {
     return `/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
+  },
+
+  // Fournisseurs OIDC secondaires (Google…) annoncés par le serveur. Seules les adresses relatives sous /auth/ sont retenues.
+  extraProviders() {
+    const list = Array.isArray(this.config.auth?.providers) ? this.config.auth.providers : [];
+    return list.filter((p) => p && p.id !== 'principal' && typeof p.label === 'string' && typeof p.loginUrl === 'string' && /^\/auth\/[a-z0-9/_-]+$/i.test(p.loginUrl));
+  },
+
+  providerLoginUrl(p, returnTo = location.pathname) {
+    return `${p.loginUrl}?returnTo=${encodeURIComponent(returnTo)}`;
+  },
+
+  // Vrai si au moins une méthode de connexion est proposée.
+  hasLogin() {
+    const { oidc, devLogin, local, ldap, saml } = this.config.auth;
+    return !!(oidc || devLogin || local || ldap || saml || this.extraProviders().length);
+  },
+
+  // Lien « Se connecter » : directement vers le fournisseur principal s'il est seul à proposer un clic, sinon vers l'écran de connexion.
+  loginEntry(returnTo = location.pathname) {
+    if (this.config.auth.oidc && !this.extraProviders().length) return this.loginUrl(returnTo);
+    return returnTo === location.pathname ? '/?login' : `/?login&returnTo=${encodeURIComponent(returnTo)}`;
+  },
+
+  // Adresse de reconnexion (action sensible) pour un compte fédéré OIDC ; null pour les autres comptes.
+  reauthUrl(returnTo = location.pathname) {
+    const q = `reauth=1&returnTo=${encodeURIComponent(returnTo)}`;
+    if (this.provider === 'oidc') return `/auth/login?${q}`;
+    if (this.provider === 'google') return `/auth/oidc/google/login?${q}`;
+    return null;
   },
 
   async devLogin(role) {

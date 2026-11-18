@@ -142,9 +142,9 @@ export const excludes = (q: { excludedAttributes?: string }, attr: string) =>
 const noControl = (v: string) => ![...v].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
 export const userNameSchema = z.string().trim().min(1).max(256).refine(noControl, 'caractères interdits');
 // Identifiant externe : sert aussi d'identifiant OIDC (`sub`) du compte créé. Les préfixes internes (comptes locaux, LDAP,
-// SAML, connexion de développement) sont refusés : SCIM ne doit jamais rattacher ni créer un compte de ce type.
+// SAML, Google, connexion de développement) sont refusés : SCIM ne doit jamais rattacher ni créer un compte de ce type.
 export const externalIdSchema = z.string().trim().min(1).max(256).refine(noControl, 'caractères interdits')
-  .refine((v) => !/^(local|ldap|saml|scim):/i.test(v) && !/^dev-/i.test(v), 'préfixe réservé');
+  .refine((v) => !/^(local|ldap|saml|scim|google):/i.test(v) && !/^dev-/i.test(v), 'préfixe réservé');
 export const emailSchema = z.string().trim().max(254).pipe(z.email());
 const short = z.string().max(200);
 export const nameSchema = z.object({ formatted: short.nullish(), givenName: short.nullish(), familyName: short.nullish(), middleName: short.nullish() });

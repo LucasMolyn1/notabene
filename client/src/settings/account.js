@@ -30,7 +30,7 @@ export async function renderProfile(el) {
       h('div', null,
         h('h2', null, u.name),
         h('p', { class: 'muted' }, u.email || 'Adresse e-mail non communiquée par le fournisseur'),
-        h('div', { class: 'row' }, pill(ROLE_LABELS[u.role], 'accent'), pill({ local: 'Compte local', ldap: 'Annuaire LDAP / AD', saml: 'SSO SAML', oidc: 'Connecté via Authentik (OIDC)', dev: 'Connexion de développement' }[session.provider] || 'Connecté')),
+        h('div', { class: 'row' }, pill(ROLE_LABELS[u.role], 'accent'), pill({ local: 'Compte local', ldap: 'Annuaire LDAP / AD', saml: 'SSO SAML', oidc: 'Connecté via Authentik (OIDC)', google: 'Connecté avec Google', dev: 'Connexion de développement' }[session.provider] || 'Connecté')),
         h('div', { class: 'row profile-photo-actions' },
           h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => chooseAvatar(repaint) }, session.avatars?.[u.id] ? 'Changer la photo' : 'Ajouter une photo'),
           session.avatars?.[u.id] && h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => removeAvatar(repaint) }, 'Retirer la photo'))))),

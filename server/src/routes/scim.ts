@@ -237,7 +237,7 @@ export default async function scimRoutes(app: FastifyInstance) {
       }
       // Compte déjà connu (première connexion OIDC avant SCIM, ou supprimé par SCIM puis provisionné de nouveau) : rattaché
       // s'il porte cet identifiant OIDC, n'est pas administrateur et n'est pas déjà géré par SCIM. Les préfixes internes
-      // (local:, ldap:, saml:) sont exclus par le schéma.
+      // (local:, ldap:, saml:, google:) sont exclus par le schéma.
       const known = externalId ? db.prepare('SELECT id, role, disabled FROM users WHERE sub = ?').get(externalId) as { id: string; role: string; disabled: number } | undefined : undefined;
       let id: string;
       let st: { disabled: number; byScim: number };

@@ -1072,6 +1072,22 @@ export const MIGRATIONS: string[] = [
   `,
 ];
 
+// Ordre des migrations : la version est la position dans MIGRATIONS (indice + 1, PRAGMA user_version), appliquées une à une
+// dans l'ordre du tableau. Deux branches qui ajoutent chacune une entrée en fin de tableau se disputent donc le même numéro :
+// à la fusion, la seconde branche place la sienne APRÈS celle déjà sur main (conflit git sur `];`, à résoudre à la main).
+//
+// Colonnes additives indépendantes de cet ordre : ajoutées après les migrations numérotées si elles manquent (idempotent).
+// Elles ne consomment aucun numéro, ne dépendent d'aucune autre branche et ne gênent pas les migrations à venir.
+//  - login_states.provider : fournisseur OIDC qui a lancé une tentative de connexion (« principal », « google ») ; un retour
+//    n'est accepté que sur la route de ce fournisseur. NULL pour SAML. Les tentatives en cours lors de la mise à jour
+//    (10 min au plus) sont à recommencer. Retour arrière : ALTER TABLE login_states DROP COLUMN provider;
+const ADDITIVE_COLUMNS: { table: string; column: string; ddl: string }[] = [
+  { table: 'login_states', column: 'provider', ddl: 'ALTER TABLE login_states ADD COLUMN provider TEXT' },
+  // - login_states.reauth : tentative lancée pour confirmer une action sensible (1) ; au retour, `auth_time` récent exigé
+  //   (fournisseurs qui le prévoient, Google). Retour arrière : ALTER TABLE login_states DROP COLUMN reauth;
+  { table: 'login_states', column: 'reauth', ddl: 'ALTER TABLE login_states ADD COLUMN reauth INTEGER NOT NULL DEFAULT 0' },
+];
+
 export function openDb(file: string): DB {
   const db = new Database(file);
   db.pragma('journal_mode = WAL');
@@ -1095,6 +1111,13 @@ function migrate(db: DB) {
       db.pragma(`user_version = ${v + 1}`);
     })();
   }
+  // Noms de table et de colonne : constantes du code ci-dessus, jamais une entrée.
+  db.transaction(() => {
+    for (const c of ADDITIVE_COLUMNS) {
+      const cols = db.prepare('SELECT name FROM pragma_table_info(?)').all(c.table) as { name: string }[];
+      if (!cols.some((x) => x.name === c.column)) db.exec(c.ddl);
+    }
+  })();
 }
 
 // `aiChatDays` : conversations du chat IA sans activité depuis ce nombre de jours (toujours purgées, 90 jours par défaut).

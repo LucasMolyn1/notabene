@@ -4,6 +4,15 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## Non publié
+
+### Ajouté
+- **Connexion avec Google** : en plus du fournisseur OIDC principal, un second fournisseur Google (Authorization Code + PKCE, state et nonce à usage unique). Désactivé par défaut ; actif avec `GOOGLE_CLIENT_ID` et `GOOGLE_CLIENT_SECRET` (ou carte « Google » de Paramètres, Accès). Compte identifié par `google:<sub>`, jamais rattaché à un compte existant par adresse e-mail ; e-mail vérifié exigé ; liste de domaines autorisés (`GOOGLE_ALLOWED_DOMAINS`) obligatoire dès que le rôle par défaut n'est pas `none` (`reader` ou `editor`, jamais administrateur). Boutons de connexion selon `auth.providers` de `GET /api/v3/config`. Voir `docs/GOOGLE.md`.
+
+### Modifié
+- **Connexion SSO principale** : un `sub` préfixé `local:`, `ldap:`, `saml:`, `scim:`, `google:` ou `dev-` est refusé (identifiants réservés) ; un compte désactivé est refusé dès le retour du fournisseur.
+- **Base de données** : colonnes `login_states.provider` et `login_states.reauth`, ajoutées de façon idempotente (sans consommer de numéro de migration).
+
 ## [3.18.1] - 2026-11-12
 
 ### Ajouté

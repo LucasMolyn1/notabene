@@ -33,6 +33,22 @@ const trustProxy = z.string().default('false').transform((raw, ctx): boolean | n
   return items.join(',');
 });
 
+// Règles communes à l'environnement et aux réglages de l'interface pour la connexion Google.
+// Domaine : nom en minuscules, sans joker ni schéma. Tout rôle autre que « none » exige une restriction de domaines :
+// sans elle, n'importe quel compte Google au monde pourrait lire (reader) ou modifier (editor) le wiki.
+const isDomain = (d: string) => {
+  const labels = d.split('.');
+  return d.length <= 253 && labels.length >= 2 && /^[a-z]{2,63}$/.test(labels.at(-1)!)
+    && labels.every((l) => l.length >= 1 && l.length <= 63 && /^[a-z0-9-]+$/.test(l) && !l.startsWith('-') && !l.endsWith('-'));
+};
+export function googlePolicyIssues(domains: string[], role: string): { path: 'domains' | 'role'; message: string }[] {
+  const issues: { path: 'domains' | 'role'; message: string }[] = [];
+  if (domains.length > 50) issues.push({ path: 'domains', message: '50 domaines au plus' });
+  for (const d of domains) if (!isDomain(d)) issues.push({ path: 'domains', message: `domaine invalide : ${d.slice(0, 80)} (ex. exemple.fr, sans https:// ni joker)` });
+  if (role !== 'none' && !domains.length) issues.push({ path: 'role', message: `le rôle « ${role} » exige une liste de domaines autorisés` });
+  return issues;
+}
+
 const csv = (def = '') =>
   z.string().default(def).transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean));
 
@@ -120,6 +136,15 @@ const schema = z
     // Co-édition temps réel (WebSocket Yjs) pour les rédacteurs.
     COLLAB_ENABLED: bool('true'),
     OIDC_REQUIRE_MFA: bool('false'),
+
+    // Connexion avec Google (second fournisseur OIDC, désactivé par défaut) : émetteur fixe https://accounts.google.com.
+    // Actif quand l'identifiant et le secret du client sont tous deux définis. Voir docs/GOOGLE.md.
+    GOOGLE_CLIENT_ID: z.string().trim().max(300).optional().transform((v) => v || undefined),
+    GOOGLE_CLIENT_SECRET: z.string().trim().max(500).optional().transform((v) => v || undefined),
+    // Domaines Google Workspace (claim `hd`) ou gmail.com acceptés. Obligatoire dès que GOOGLE_DEFAULT_ROLE n'est pas « none ».
+    GOOGLE_ALLOWED_DOMAINS: csv('').transform((all) => [...new Set(all.map((d) => d.toLowerCase()))]),
+    // Rôle donné à chaque connexion Google (Google ne transmet pas de groupes) : « none » refuse l'accès. Jamais « admin ».
+    GOOGLE_DEFAULT_ROLE: z.enum(['none', 'reader', 'editor']).default('none'),
 
     // LDAP / Active Directory : authentification par liaison (bind) avec le compte de l'annuaire.
     LDAP_URL: z.string().regex(/^ldaps?:\/\/[^\s]+$/, 'doit commencer par ldap:// ou ldaps://').optional(),
@@ -216,6 +241,12 @@ const schema = z
       if (c.NODE_ENV === 'production' && !c.SAML_ENTRY_POINT.startsWith('https://')) {
         ctx.addIssue({ code: 'custom', path: ['SAML_ENTRY_POINT'], message: 'doit être en https en production' });
       }
+    }
+    if (!!c.GOOGLE_CLIENT_ID !== !!c.GOOGLE_CLIENT_SECRET) {
+      ctx.addIssue({ code: 'custom', path: ['GOOGLE_CLIENT_ID'], message: 'GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET vont ensemble' });
+    }
+    for (const issue of googlePolicyIssues(c.GOOGLE_ALLOWED_DOMAINS, c.GOOGLE_DEFAULT_ROLE)) {
+      ctx.addIssue({ code: 'custom', path: [issue.path === 'domains' ? 'GOOGLE_ALLOWED_DOMAINS' : 'GOOGLE_DEFAULT_ROLE'], message: issue.message });
     }
     for (const host of c.CONTENT_EMBED_HOSTS) {
       if (!normalizeEmbedHost(host) || normalizeEmbedHost(host) !== host) {
