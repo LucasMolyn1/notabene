@@ -79,6 +79,8 @@ export const store = {
 
   /** @param {{ spaceId?: string, parentId?: string | null, title?: string, icon?: string, content?: object, afterId?: string }} [input] */
   async createPage({ spaceId, parentId = null, title = '', icon = '', content, afterId } = {}) {
+    // Une icône image appartient à sa page : elle ne se reprend pas à la création (modèle, copie), le serveur la refuserait.
+    if (typeof icon === 'string' && icon.startsWith('img:')) icon = '';
     const page = await api.post('/pages', { spaceId, parentId, title, icon, ...(content ? { content } : {}), ...(afterId ? { afterId } : {}) });
     setMeta(page);
     emit({ type: 'page', id: page.id, source: 'create' });
@@ -92,6 +94,23 @@ export const store = {
     setMeta(meta);
     emit({ type: 'page', id, source: 'local' });
     return meta;
+  },
+
+  /** Importe l'icône image d'une page (base64 sans préfixe « data: ») ; le serveur renvoie la page avec sa nouvelle icône. */
+  async setIconImage(id, base64) {
+    const meta = await api.put(`/pages/${id}/icon-image`, { image: base64 });
+    setMeta(meta);
+    emit({ type: 'page', id, source: 'local' });
+    return meta;
+  },
+
+  /** Retire l'icône image d'une page (l'icône redevient vide), puis relit la page pour connaître sa nouvelle version. */
+  async removeIconImage(id) {
+    await api.del(`/pages/${id}/icon-image`);
+    const page = state.pages.get(id);
+    if (page) state.pages.set(id, { ...page, icon: '' });
+    try { await store.fetchPage(id); } catch { /* la version sera rattrapée par l'événement distant */ }
+    emit({ type: 'page', id, source: 'local' });
   },
 
   async movePage(id, parentId, index, spaceId) {

@@ -1109,6 +1109,23 @@ export const MIGRATIONS: string[] = [
   CREATE TRIGGER space_shares_user_deleted BEFORE DELETE ON users
     BEGIN DELETE FROM space_shares WHERE created_by = OLD.id; END;
   `,
+  // v39 : icône de page importée (lib/page-icons.ts). Une image raster (PNG, JPEG, WebP, GIF ; jamais de SVG) par page au plus,
+  // rangée dans la base comme les photos de profil : elle suit la page (ON DELETE CASCADE) et les sauvegardes de la base.
+  // La page la désigne par `pages.icon = 'img:<id>'` ; une image que plus aucune icône ne désigne est purgée par cleanup.
+  // Additive. Retour arrière : UPDATE pages SET icon = '' WHERE icon LIKE 'img:%'; DROP TABLE page_icon_images;
+  `
+  CREATE TABLE page_icon_images (
+    id          TEXT PRIMARY KEY,
+    page_id     TEXT NOT NULL UNIQUE REFERENCES pages(id) ON DELETE CASCADE,
+    mime        TEXT NOT NULL CHECK (mime IN ('image/png', 'image/jpeg', 'image/webp', 'image/gif')),
+    data        BLOB NOT NULL,
+    size        INTEGER NOT NULL,
+    sha256      TEXT NOT NULL,
+    uploader_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at  INTEGER NOT NULL
+  );
+  CREATE INDEX page_icon_images_uploader ON page_icon_images(uploader_id) WHERE uploader_id IS NOT NULL;
+  `,
 ];
 
 // Ordre des migrations : la version est la position dans MIGRATIONS (indice + 1, PRAGMA user_version), appliquées une à une
@@ -1177,6 +1194,8 @@ export function cleanup(db: DB, retention: Retention = DEFAULT_RETENTION) {
   db.prepare('DELETE FROM password_resets WHERE expires_at < ?').run(now);
   // Liens de partage d'espace expirés (déjà muets à la lecture) : on n'en garde pas l'empreinte.
   db.prepare('DELETE FROM space_shares WHERE expires_at IS NOT NULL AND expires_at < ?').run(now);
+  // Icônes importées que l'icône de leur page ne désigne plus (remplacée par un emoji, une autre image, ou retirée).
+  db.prepare(`DELETE FROM page_icon_images WHERE NOT EXISTS (SELECT 1 FROM pages p WHERE p.id = page_icon_images.page_id AND p.icon = 'img:' || page_icon_images.id)`).run();
   if (retention.auditDays > 0) db.prepare('DELETE FROM audit_log WHERE at < ?').run(before(retention.auditDays));
   if (retention.auditIpDays > 0) db.prepare('UPDATE audit_log SET ip = NULL WHERE ip IS NOT NULL AND at < ?').run(before(retention.auditIpDays));
   if (retention.notificationDays > 0) db.prepare('DELETE FROM notifications WHERE read_at IS NOT NULL AND read_at < ?').run(before(retention.notificationDays));

@@ -10,13 +10,15 @@ import { hasPageLink } from '../lib/content.js';
 import { fillReadable } from '../lib/fill.js';
 import { labelsOf, normalizeLabel, pageIdsWithLabel } from '../lib/labels.js';
 import { filterReadable } from '../lib/page-acl.js';
+import { pageIconSchema } from '../lib/page-icons.js';
 import { searchAttachments } from '../lib/attachment-text.js';
 import { isFavorite, listPages, searchPages, toMeta, toPage, updatePage } from '../lib/pages.js';
 import { SyncedBlockConflict } from '../lib/synced-blocks.js';
 
 const patchBody = z.object({
   title: z.string().max(300).optional(),
-  icon: z.string().max(16).optional(),
+  // Emoji ou nom d'icône, ou `img:<identifiant>` de l'image de CETTE page (vérifié par updatePage).
+  icon: pageIconSchema.optional(),
   content: z.record(z.string(), z.unknown()).optional(),
   fullWidth: z.boolean().optional(),
 });

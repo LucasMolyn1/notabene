@@ -10,6 +10,7 @@ import { BUILTIN_TEMPLATES, builtinTemplate } from '../lib/builtin-templates.js'
 import { sanitizeDoc } from '../lib/content.js';
 import { HttpError, idSchema, newId } from '../lib/http.js';
 import { governingPage } from '../lib/page-acl.js';
+import { textIcon } from '../lib/page-icons.js';
 import { freshSources } from '../lib/synced-blocks.js';
 
 const MAX_PER_SPACE = 50;
@@ -89,7 +90,7 @@ export default async function templateRoutes(app: FastifyInstance) {
     try {
       db.transaction(() => {
         db.prepare('INSERT INTO page_templates (id, space_id, name, icon, content, created_at, created_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-          .run(id, page.space_id, body.name ?? (page.title.trim().slice(0, 80) || 'Sans titre'), page.icon, JSON.stringify(doc), now, req.auth?.user.id ?? null, now);
+          .run(id, page.space_id, body.name ?? (page.title.trim().slice(0, 80) || 'Sans titre'), textIcon(page.icon), JSON.stringify(doc), now, req.auth?.user.id ?? null, now);
         const copied = cloner.clone(doc, { templateId: id });
         db.prepare('UPDATE page_templates SET content = ? WHERE id = ?').run(JSON.stringify(copied), id);
       })();
