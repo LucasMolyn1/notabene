@@ -219,23 +219,24 @@ export default async function spaceRoutes(app: FastifyInstance) {
     return reply.status(204).send();
   });
 
-  // Recherche des personnes et groupes à ajouter : réservée à qui gère l'espace, deux caractères au moins, dix résultats au plus.
+  // Recherche des personnes et groupes à ajouter : réservée à qui gère l'espace, deux caractères au moins pour les personnes, dix résultats au plus ; sans saisie, la liste des groupes.
   app.get('/spaces/:id/member-candidates', {
     preHandler: guard('write'),
     config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
-    schema: { tags, summary: 'Chercher des personnes et des groupes à ajouter à un espace', params: idParams, querystring: z.object({ q: z.string().trim().min(2).max(80) }) },
+    schema: { tags, summary: 'Chercher des personnes et des groupes à ajouter à un espace', params: idParams, querystring: z.object({ q: z.union([z.literal(''), z.string().trim().min(2).max(80)]).default('') }) },
   }, async (req) => {
     const { id } = req.params as { id: string };
     manage(req, id);
     const esc = (req.query as { q: string }).q.replace(/[\\%_]/g, '\\$&').toLocaleLowerCase('fr');
     const like = `%${esc}%`;
-    const users = db.prepare(
+    // Sans saisie : seulement les groupes (proposition de départ) ; les personnes exigent deux caractères.
+    const users = !esc ? [] : db.prepare(
       `SELECT id, name, email FROM users WHERE disabled = 0 AND lower_fr(name) LIKE ? ESCAPE '\\'
          AND id NOT IN (SELECT user_id FROM space_members WHERE space_id = ? AND user_id IS NOT NULL) ORDER BY name COLLATE NOCASE LIMIT 10`,
     ).all(like, id) as { id: string; name: string; email: string | null }[];
     const groups = db.prepare(
       `SELECT id, name, source FROM groups WHERE lower_fr(name) LIKE ? ESCAPE '\\'
-         AND id NOT IN (SELECT group_id FROM space_members WHERE space_id = ? AND group_id IS NOT NULL) ORDER BY name COLLATE NOCASE LIMIT 10`,
+         AND id NOT IN (SELECT group_id FROM space_members WHERE space_id = ? AND group_id IS NOT NULL) ORDER BY name COLLATE NOCASE LIMIT ${esc ? 10 : 30}`,
     ).all(like, id) as { id: string; name: string; source: string }[];
     return { users: users.map((u) => ({ id: u.id, name: u.name, ...(isAdmin(req) ? { email: u.email } : {}) })), groups };
   });
