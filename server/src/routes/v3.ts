@@ -8,7 +8,7 @@ import { audit } from '../lib/audit.js';
 import { decodeCursor, encodeCursor, pageQuery } from '../lib/cursor.js';
 import { fillReadable } from '../lib/fill.js';
 import { HttpError, idParams, idSchema, newId } from '../lib/http.js';
-import { getPrefs, watch } from '../lib/notifications.js';
+import { getPrefs, setPrefs, watch } from '../lib/notifications.js';
 import { type AclEntry, entriesOf, filterReadable, governingPage, pageLevel } from '../lib/page-acl.js';
 import { mentionIds } from '../lib/content.js';
 import { MAX_MENTIONS, mentionableUsers, readersAmong, validMentions } from '../lib/mentions.js';
@@ -282,16 +282,18 @@ export default async function v3Routes(app: FastifyInstance) {
     return { updated: changes };
   });
 
-  const prefsBody = z.object({ emailComments: z.boolean(), emailChanges: z.boolean() });
+  // emailTasks et emailSummary facultatifs (ajout compatible) : absents, la valeur enregistrée est gardée.
+  const prefsBody = z.object({ emailComments: z.boolean(), emailChanges: z.boolean(), emailTasks: z.boolean().optional(), emailSummary: z.boolean().optional() });
   app.get('/notifications/preferences', { schema: { tags: ['notifications'], summary: 'Préférences d’e-mail' } }, async (req) =>
     ({ ...getPrefs(db, requireAuth(req).user.id), emailAvailable: app.mail.enabled }));
   app.put('/notifications/preferences', { schema: { tags: ['notifications'], summary: 'Modifier les préférences d’e-mail', body: prefsBody } }, async (req) => {
     const auth = requireAuth(req);
     const b = req.body as z.output<typeof prefsBody>;
-    db.prepare(
-      `INSERT INTO notification_prefs (user_id, email_comments, email_changes) VALUES (?, ?, ?)
-       ON CONFLICT(user_id) DO UPDATE SET email_comments = excluded.email_comments, email_changes = excluded.email_changes`,
-    ).run(auth.user.id, b.emailComments ? 1 : 0, b.emailChanges ? 1 : 0);
+    const current = getPrefs(db, auth.user.id);
+    setPrefs(db, auth.user.id, {
+      emailComments: b.emailComments, emailChanges: b.emailChanges,
+      emailTasks: b.emailTasks ?? current.emailTasks, emailSummary: b.emailSummary ?? current.emailSummary,
+    });
     // Valeurs relues en base : la réponse ne reprend jamais le corps de la requête.
     return { ...getPrefs(db, auth.user.id), emailAvailable: app.mail.enabled };
   });

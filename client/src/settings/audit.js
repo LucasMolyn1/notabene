@@ -13,6 +13,7 @@ export const AUDIT_LABELS = {
   'auth.local.forgot': 'Réinitialisation demandée', 'auth.local.reset': 'Mot de passe réinitialisé', 'auth.reauth.failed': 'Échec de ressaisie', 'settings.test': 'Test de configuration', 'settings.test.failed': 'Test de configuration échoué', 'settings.reset': 'Retour à l’environnement', 'settings.embed': 'Sites autorisés modifiés', 'settings.embeds': 'Hôtes intégrables modifiés', 'settings.oidc': 'OIDC modifié', 'settings.google': 'Google modifié', 'settings.ldap': 'LDAP modifié', 'settings.saml': 'SAML modifié', 'settings.smtp': 'SMTP modifié', 'settings.smtp.test-mail': 'E-mail de test envoyé', 'settings.siem': 'SIEM modifié',
   'token.create': 'Jeton créé', 'token.revoke': 'Jeton révoqué', 'settings.ai': 'Réglages IA', 'ai.ask': 'Question IA', 'ai.assist': 'Assistant de rédaction', 'ai.chat': 'Chat IA', 'ai.chat.delete': 'Conversation IA supprimée',
   'space.create': 'Espace créé', 'space.delete': 'Espace supprimé', 'space.visibility': 'Visibilité modifiée',
+  'space.share.mail': 'Lien de partage d’un espace envoyé par e-mail', 'settings.space_share_mail': 'Envoi des liens d’espace par e-mail réglé',
   'page.destroy': 'Page supprimée définitivement', 'trash.empty': 'Corbeille vidée',
   'page.export.zip': 'Page exportée en ZIP', 'space.export.zip': 'Espace exporté en ZIP',
   'user.export': 'Données d’un compte exportées', 'user.erase': 'Compte supprimé',

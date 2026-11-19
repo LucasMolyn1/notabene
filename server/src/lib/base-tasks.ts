@@ -67,6 +67,26 @@ function dueOf(db: DB, baseId: string, props: Property[]): { sql: string; params
   return { sql: 'json_extract(vals, ?)', params: [path(id)] };
 }
 
+/** Colonnes d'une base vue comme liste de tâches (e-mails de tâches, lib/task-mail.ts) : chemins JSON et expressions SQL. */
+export interface TaskColumns {
+  /** Chemins des colonnes Personne. */
+  people: string[];
+  /** Chemin de la première colonne Texte (titre de la tâche). */
+  title: string;
+  due: { sql: string; params: string[] };
+  done: { sql: string; params: unknown[] };
+}
+
+/** Colonnes de tâche d'une base, ou null sans colonne Personne. */
+export function taskColumns(db: DB, baseId: string, props: Property[] = propertiesOf(db, baseId)): TaskColumns | null {
+  const people = props.filter((p) => p.type === 'person').map((p) => path(p.id));
+  if (!people.length) return null;
+  return { people, title: path(props.find((p) => p.type === 'text')?.id), due: dueOf(db, baseId, props), done: doneSql(doneRule(props)) };
+}
+
+/** Une valeur lue est une date AAAA-MM-JJ valide. */
+export const isTaskDate = isDate;
+
 /**
  * Tâches de `userId` : lignes dont une colonne Personne le désigne, dans les bases lisibles (espace lisible, page lisible, hors
  * corbeille). Tri : en retard (non terminées, échéance passée), puis échéance croissante, puis sans échéance. `includeDone` à

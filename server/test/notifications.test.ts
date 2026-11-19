@@ -79,7 +79,7 @@ describe('notifications', () => {
 
   it('respecte les préférences d’e-mail', async () => {
     const [ed1, ed2] = [await login('ed1@example.com'), await login('ed2@example.com')];
-    expect((await call(ed2, 'GET', '/api/v3/notifications/preferences')).json()).toEqual({ emailComments: true, emailChanges: false, emailAvailable: true });
+    expect((await call(ed2, 'GET', '/api/v3/notifications/preferences')).json()).toEqual({ emailComments: true, emailChanges: false, emailTasks: true, emailSummary: false, emailAvailable: true });
     await call(ed2, 'PUT', '/api/v3/notifications/preferences', { emailComments: false, emailChanges: false });
     await call(ed2, 'PUT', `/api/v3/pages/${pageId()}/watch`);
     await call(ed1, 'POST', `/api/v3/pages/${pageId()}/comments`, { body: 'x' });

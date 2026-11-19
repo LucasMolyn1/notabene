@@ -15,6 +15,7 @@ import type { DB } from './db.js';
 import { type OidcClient, type OidcClientOptions, OidcProviders } from './auth/oidc.js';
 import { Mailer } from './lib/mail.js';
 import { createNotifier, type Notifier, startNotifications } from './lib/notifications.js';
+import { TaskMailer } from './lib/task-mail.js';
 import { REMINDER_INTERVAL, remindVerifications } from './lib/verifications.js';
 import { startWebhooks } from './lib/webhooks.js';
 import { AutomationEngine } from './lib/base-automations.js';
@@ -157,6 +158,10 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
   const remindFirst = setTimeout(remind, 60_000).unref();
   const remindEvery = setInterval(remind, REMINDER_INTERVAL).unref();
   app.addHook('onClose', async () => { clearTimeout(remindFirst); clearInterval(remindEvery); });
+  // E-mails de tâches (attribution, retard, résumé hebdomadaire) : un passage par minute (lib/task-mail.ts).
+  const taskMail = new TaskMailer(db, app.mail, () => rt.get(), (msg) => app.log.warn(msg));
+  const stopTaskMail = taskMail.start();
+  app.addHook('onClose', async () => { stopTaskMail(); });
   // Automatisations des bases : déclenchées par les routes d'écriture des lignes, récurrences par le planificateur (chaque minute).
   const automations = new AutomationEngine({ db, bus, box, notifier, allowPrivate: config.WEBHOOK_ALLOW_PRIVATE, log: (err) => app.log.warn({ err }, 'automatisations') });
   app.decorate('automations', automations);

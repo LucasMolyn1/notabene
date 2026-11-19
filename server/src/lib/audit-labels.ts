@@ -49,6 +49,7 @@ export const AUDIT_LABELS: Record<string, string> = {
   'space.personal.delete': 'Espace personnel supprimé',
   'space.personal.recover': 'Espace personnel récupéré',
   'space.export.zip': 'Espace exporté (ZIP)',
+  'space.share.mail': 'Lien de partage d’un espace envoyé par e-mail',
   // Pages
   'page.create': 'Page créée',
   'page.update': 'Page modifiée',
@@ -128,6 +129,7 @@ export const AUDIT_LABELS: Record<string, string> = {
   // Administration
   'settings.ai': 'Réglages de l’IA modifiés',
   'settings.sharing': 'Partage public de l’instance réglé',
+  'settings.space_share_mail': 'Envoi des liens d’espace par e-mail réglé',
   'settings.forms': 'Formulaires de l’instance réglés',
   'settings.automations': 'Automatisations de l’instance réglées',
   'settings.test': 'Test d’une configuration réussi',

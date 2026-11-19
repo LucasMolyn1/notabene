@@ -19,10 +19,20 @@ interface UserRow { id: string; name: string; email: string | null; role: 'admin
 const asAuth = (u: UserRow): Auth => ({ user: { id: u.id, name: u.name, email: u.email, role: u.role }, via: 'session', scopes: new Set(['read']) });
 const oneLine = (v: string) => v.replace(/[\r\n]+/g, ' ').trim().slice(0, 120);
 
+// Valeurs par défaut sans ligne : commentaires et tâches activés, modifications et résumé hebdomadaire désactivés.
 export const getPrefs = (db: DB, userId: string) => {
-  const row = db.prepare('SELECT email_comments AS c, email_changes AS g FROM notification_prefs WHERE user_id = ?').get(userId) as { c: number; g: number } | undefined;
-  return { emailComments: row ? !!row.c : true, emailChanges: row ? !!row.g : false };
+  const row = db.prepare('SELECT email_comments AS c, email_changes AS g, email_tasks AS t, email_summary AS s FROM notification_prefs WHERE user_id = ?')
+    .get(userId) as { c: number; g: number; t: number; s: number } | undefined;
+  return { emailComments: row ? !!row.c : true, emailChanges: row ? !!row.g : false, emailTasks: row ? !!row.t : true, emailSummary: row ? !!row.s : false };
 };
+export type Prefs = ReturnType<typeof getPrefs>;
+
+/** Enregistre les préférences (toutes les colonnes : la fusion avec les valeurs actuelles est faite par l'appelant). */
+export const setPrefs = (db: DB, userId: string, p: Prefs) => db.prepare(
+  `INSERT INTO notification_prefs (user_id, email_comments, email_changes, email_tasks, email_summary) VALUES (?, ?, ?, ?, ?)
+   ON CONFLICT(user_id) DO UPDATE SET email_comments = excluded.email_comments, email_changes = excluded.email_changes,
+     email_tasks = excluded.email_tasks, email_summary = excluded.email_summary`,
+).run(userId, p.emailComments ? 1 : 0, p.emailChanges ? 1 : 0, p.emailTasks ? 1 : 0, p.emailSummary ? 1 : 0);
 
 export const watch = (db: DB, userId: string, pageId: string) =>
   db.prepare('INSERT OR IGNORE INTO page_watch (user_id, page_id, created_at) VALUES (?, ?, ?)').run(userId, pageId, Date.now());

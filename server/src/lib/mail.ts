@@ -6,6 +6,25 @@ export interface Mail { to: string; subject: string; text: string }
 
 const oneLine = (v: string) => v.replace(/[\r\n]+/g, ' ').trim();
 
+/**
+ * Nom inséré dans un e-mail envoyé à une adresse extérieure (lien d'espace) : sans URL ni adresse e-mail (un nom d'espace ou de
+ * personne ne doit pas servir à faire passer un lien d'hameçonnage), sur une ligne, sans caractère de contrôle, 60 caractères
+ * au plus ; `fallback` s'il ne reste rien.
+ */
+export function cleanMailName(v: string, fallback: string): string {
+  const out = v.slice(0, 500)
+    .replace(/https?:\/\/\S*/gi, ' ')
+    .replace(/www\.\S*/gi, ' ')
+    .replace(/\S*@\S*/g, ' ')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
+    .trim();
+  return out || fallback;
+}
+
 export class Mailer {
   constructor(private readonly getCfg: () => Config) {}
 
@@ -55,6 +74,14 @@ export const mails = {
   notification: (subject: string, text: string): Omit<Mail, 'to'> => ({
     subject,
     text: `${text}\n\nVous pouvez régler ces e-mails dans Paramètres > Profil > Notifications.`,
+  }),
+  // Lien de partage d'un espace : sujet fixe ; le corps ne contient que le nom de l'espace, celui de l'expéditeur, le lien et
+  // l'expiration (jamais de contenu de page ni de texte libre saisi au moment de l'envoi).
+  spaceShare: (url: string, spaceName: string, sender: string, expiresAt: number | null): Omit<Mail, 'to'> => ({
+    subject: 'BeNote : un espace a été partagé avec vous',
+    text: `${cleanMailName(sender, 'Un gestionnaire')} vous a partagé l'espace « ${cleanMailName(spaceName, 'un espace partagé')} » de BeNote, en lecture seule.\n\nOuvrir l'espace : ${url}\n`
+      + (expiresAt !== null ? `\nCe lien expire le ${new Date(expiresAt).toLocaleDateString('fr-FR', { timeZone: 'UTC' })}.\n` : '')
+      + `\nCe lien est personnel : ne le transférez pas. Si vous n'attendiez pas ce message, ignorez-le.`,
   }),
   alert: (what: string): Omit<Mail, 'to'> => ({
     subject: 'BeNote : alerte de sécurité sur votre compte',
