@@ -9,6 +9,7 @@ import { parseSources, readableSources } from '../ai/chat.js';
 import { attachmentPath, sanitizeFilename } from './attachments.js';
 import { zipEntryName, zipStream, type ZipEntry } from './zip.js';
 import { filterReadable, keepPagesClosed, pagesOnlyOpenTo } from './page-acl.js';
+import { getPrefs } from './notifications.js';
 import { inPersonalSpace } from './personal-spaces.js';
 
 interface UserRow {
@@ -33,7 +34,6 @@ export function exportUserData(db: DB, userId: string, requesterId: string = use
   const uploads = filterReadable(db, subject, all<{ id: string; att: string; name: string; mime: string; size: number; sha256: string; created_at: number }>(
     `SELECT a.page_id AS id, a.id AS att, a.name, a.mime, a.size, a.sha256, a.created_at FROM attachments a JOIN pages p ON p.id = a.page_id
      WHERE a.uploader_id = ? AND p.deleted_at IS NULL ORDER BY a.created_at, a.rowid`, userId)).filter((a) => !hidden(a.id));
-  const prefs = db.prepare('SELECT email_comments AS c, email_changes AS g FROM notification_prefs WHERE user_id = ?').get(userId) as { c: number; g: number } | undefined;
 
   return {
     format: 'notabene-personal-data/1',
@@ -52,7 +52,7 @@ export function exportUserData(db: DB, userId: string, requesterId: string = use
       .map((s) => ({ createdAt: s.created_at, lastSeenAt: s.last_seen_at, expiresAt: s.expires_at })),
     groups: all<{ name: string; source: string }>("SELECT g.name, g.source FROM group_members m JOIN groups g ON g.id = m.group_id WHERE m.user_id = ? ORDER BY g.name", userId),
     spaceMemberships: all<{ name: string; role: string }>('SELECT s.name, m.role FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.user_id = ? ORDER BY s.name', userId),
-    notificationPreferences: { emailComments: prefs ? !!prefs.c : true, emailChanges: prefs ? !!prefs.g : false },
+    notificationPreferences: getPrefs(db, userId),
     favorites: filterReadable(db, subject, all<{ id: string; title: string }>(
       'SELECT p.id, p.title FROM favorites f JOIN pages p ON p.id = f.page_id WHERE f.user_id = ? AND p.deleted_at IS NULL', userId)).filter((p) => !hidden(p.id)),
     watchedPages: filterReadable(db, subject, all<{ id: string; title: string }>(

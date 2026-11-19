@@ -136,14 +136,21 @@ export async function preferencesCard(card) {
     input.checked = prefs[key];
     input.addEventListener('change', async () => {
       prefs[key] = input.checked;
-      try { await api3.put('/notifications/preferences', { emailComments: prefs.emailComments, emailChanges: prefs.emailChanges }); toast('Préférences enregistrées'); } catch (err) { input.checked = !input.checked; prefs[key] = input.checked; toast(err.message, { kind: 'error' }); }
+      const body = { emailComments: prefs.emailComments, emailChanges: prefs.emailChanges, emailTasks: prefs.emailTasks, emailSummary: prefs.emailSummary };
+      try { await api3.put('/notifications/preferences', body); toast('Préférences enregistrées'); } catch (err) { input.checked = !input.checked; prefs[key] = input.checked; toast(err.message, { kind: 'error' }); }
     });
     input.disabled = !prefs.emailAvailable;
+    if (!prefs.emailAvailable) input.setAttribute('aria-describedby', 'notif-email-off');
     return h('label', { class: 'switch-row' }, h('span', { class: 'switch-text' }, h('strong', null, label), h('small', null, desc)), input, h('span', { class: 'switch', 'aria-hidden': 'true' }));
   };
+  // Défauts du contrat : tâches activées, résumé désactivé (au cas où le serveur ne renverrait pas encore ces champs).
+  if (typeof prefs.emailTasks !== 'boolean') prefs.emailTasks = true;
+  if (typeof prefs.emailSummary !== 'boolean') prefs.emailSummary = false;
   return card('Notifications', 'La cloche reçoit toujours les notifications des pages que vous suivez (pages que vous créez ou commentez, ou suivies à la main). L’e-mail est facultatif et ne contient jamais le contenu.',
     h('div', { class: 'stack' },
-      !prefs.emailAvailable && h('div', { class: 'notice info' }, 'L’envoi d’e-mails n’est pas configuré par votre administrateur.'),
+      !prefs.emailAvailable && h('div', { class: 'notice info', id: 'notif-email-off' }, 'L’envoi d’e-mails n’est pas configuré par votre administrateur : ces réglages sont sans effet pour l’instant.'),
       box('E-mail pour les commentaires et réponses', 'Un e-mail avec un lien à chaque commentaire sur une page suivie.', 'emailComments'),
-      box('E-mail pour les modifications', 'Au plus un e-mail par page et par heure.', 'emailChanges')));
+      box('E-mail pour les modifications', 'Au plus un e-mail par page et par heure.', 'emailChanges'),
+      box('Être prévenu par e-mail quand une tâche m’est attribuée ou passe en retard', 'Un e-mail avec le titre de la tâche et un lien vers la base.', 'emailTasks'),
+      box('Recevoir un résumé de mes tâches chaque lundi matin', 'La liste des tâches à faire qui vous sont attribuées, dont celles en retard.', 'emailSummary')));
 }

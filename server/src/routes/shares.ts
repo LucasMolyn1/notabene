@@ -18,8 +18,9 @@ import { expandSyncedCopies, MAX_ANONYMOUS_SOURCE_CHARS } from '../lib/synced-bl
 import { activeShare, anonymousCanRead, publicDoc, restrictionKey, setSharingEnabled, sharedDescendants, sharingEnabled, type ShareRow } from '../lib/shares.js';
 import {
   activeSpaceShare, createSpaceShare, MAX_SPACE_SHARES, setSpaceSharingEnabled, spaceAllowsShare, spaceSharePages, spaceSharingEnabled,
-  spaceSharingSetting, type SpaceShareRow,
+  setSpaceShareMail, spaceShareMailSetting, spaceSharingSetting, type SpaceShareRow, takeSpaceShareMail, NOTIFY_EMAIL_CHARS,
 } from '../lib/space-shares.js';
+import { mails } from '../lib/mail.js';
 
 const putBody = z.object({
   includeChildren: z.boolean().optional(),
@@ -28,9 +29,12 @@ const putBody = z.object({
   regenerate: z.boolean().optional(),
 });
 // Lien de partage d'un espace : un libellé (pour qui, par exemple le nom du client) et une expiration facultative.
+// `notifyEmail` : envoyer le lien à une seule adresse (réglage d'instance dédié, SMTP requis). Aucun rognage : un espace ou un retour
+// à la ligne, même en bordure, est refusé.
 const spaceShareBody = z.object({
   label: z.string().trim().max(80).default(''),
   expiresInDays: z.number().int().min(1).max(365).optional(),
+  notifyEmail: z.string().max(254).regex(NOTIFY_EMAIL_CHARS, 'adresse e-mail invalide').pipe(z.email('adresse e-mail invalide')).optional(),
 });
 const spaceShareParams = z.object({ id: idSchema, shareId: idSchema });
 
@@ -145,6 +149,8 @@ export default async function shareRoutes(app: FastifyInstance) {
       instanceEnabled: sharingEnabled(db),
       spaceSharingEnabled: spaceSharingSetting(db),
       spaceAllows: spaceAllowsShare(db, id),
+      // Envoi du lien par e-mail possible à la création : réglage d'instance ET SMTP configuré.
+      mailAvailable: spaceShareMailSetting(db) && app.mail.enabled,
       // Jamais le lien lui-même : seule son empreinte est gardée, il n'est montré qu'à la création.
       items: rows.map((r) => ({ id: r.id, label: r.label, createdAt: r.created_at, expiresAt: r.expires_at, expired: isExpired(r, now), createdBy: r.by_name })),
     };
@@ -163,9 +169,26 @@ export default async function shareRoutes(app: FastifyInstance) {
     const now = Date.now();
     const active = (db.prepare('SELECT COUNT(*) AS n FROM space_shares WHERE space_id = ? AND (expires_at IS NULL OR expires_at > ?)').get(id, now) as { n: number }).n;
     if (active >= MAX_SPACE_SHARES) throw new HttpError(409, `Au plus ${MAX_SPACE_SHARES} liens actifs par espace`);
+    // Envoi par e-mail demandé : tout se vérifie AVANT de créer le lien (un refus ne laisse aucun lien orphelin).
+    if (b.notifyEmail !== undefined) {
+      if (!spaceShareMailSetting(db)) throw new HttpError(403, 'L’envoi des liens d’espace par e-mail n’est pas activé sur cette instance');
+      if (!app.mail.enabled) throw new HttpError(409, 'Envoi d’e-mails non configuré (SMTP)');
+      if (!takeSpaceShareMail(db, id, now)) throw new HttpError(429, 'Trop d’envois de liens par e-mail : réessayez plus tard');
+    }
     const { row, token } = createSpaceShare(db, id, { label: b.label, expiresAt: b.expiresInDays ? now + b.expiresInDays * 86_400_000 : null }, req.auth!.user.id);
     audit(db, req, 'space.share.create', id, { shareId: row.id, expires: row.expires_at !== null });
-    return reply.status(201).send({ id: row.id, label: row.label, url: urlOf(token), createdAt: row.created_at, expiresAt: row.expires_at });
+    const out = { id: row.id, label: row.label, url: urlOf(token), createdAt: row.created_at, expiresAt: row.expires_at };
+    if (b.notifyEmail === undefined) return reply.status(201).send(out);
+    // Un échec SMTP ne fait pas échouer la création : le lien est rendu avec mailSent false et un message générique.
+    // Ni l'adresse ni l'erreur du serveur SMTP (qui peut la citer) ne vont au journal ou à l'audit.
+    const space = db.prepare('SELECT name FROM spaces WHERE id = ?').get(id) as { name: string };
+    let mailSent = true;
+    try { await app.mail.send({ to: b.notifyEmail, ...mails.spaceShare(urlOf(token), space.name, req.auth!.user.name, row.expires_at) }); } catch {
+      mailSent = false;
+      req.log.warn('lien d’espace : e-mail non envoyé');
+    }
+    audit(db, req, 'space.share.mail', id, { shareId: row.id, sent: mailSent });
+    return reply.status(201).send({ ...out, mailSent, ...(mailSent ? {} : { mailError: 'L’e-mail n’a pas pu être envoyé ; transmettez le lien vous-même.' }) });
   });
 
   app.delete('/spaces/:id/shares/:shareId', {
@@ -184,8 +207,20 @@ export default async function shareRoutes(app: FastifyInstance) {
   app.get('/admin/sharing', { preHandler: guard('admin'), schema: { tags: ['admin'], summary: 'Partage public : réglage d’instance' } }, async () => ({
     enabled: sharingEnabled(db),
     shares: (db.prepare('SELECT COUNT(*) AS n FROM page_shares').get() as { n: number }).n,
-    spaces: { enabled: spaceSharingSetting(db), links: (db.prepare('SELECT COUNT(*) AS n FROM space_shares').get() as { n: number }).n },
+    spaces: { enabled: spaceSharingSetting(db), links: (db.prepare('SELECT COUNT(*) AS n FROM space_shares').get() as { n: number }).n, mail: spaceShareMailSetting(db), smtp: app.mail.enabled },
   }));
+
+  app.put('/admin/sharing/spaces/mail', {
+    preHandler: guard('admin'),
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    schema: { tags: ['admin'], summary: 'Autoriser ou non l’envoi des liens d’espace par e-mail à leur création (désactivé par défaut)', body: z.object({ enabled: z.boolean() }) },
+  }, async (req) => {
+    const { enabled } = req.body as { enabled: boolean };
+    setSpaceShareMail(db, enabled, req.auth!.user.id);
+    audit(db, req, 'settings.space_share_mail', null, { enabled });
+    // `effective` : faux tant que le partage d'espace ou le SMTP manque.
+    return { enabled, effective: enabled && spaceSharingEnabled(db) && app.mail.enabled };
+  });
 
   app.put('/admin/sharing/spaces', {
     preHandler: guard('admin'),
