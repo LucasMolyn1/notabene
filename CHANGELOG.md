@@ -6,6 +6,9 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## Non publié
 
+### Corrigé
+- **Membres d'un espace** : la liste des groupes est proposée dès l'ouverture, sans devoir taper pour découvrir qu'on peut en ajouter (les personnes se cherchent toujours à partir de 2 lettres). L'avertissement d'un espace public précise qu'il est visible des personnes non connectées.
+
 ### Ajouté
 - **Icônes de page personnalisées** : une page peut avoir une image importée comme icône (sélecteur d'icône, « Importer une image » ; « Retirer l'image » pour revenir en arrière). PNG, JPEG, WebP ou GIF (pas de SVG), 512 Ko au plus, 8 à 1024 px de côté ; type vérifié sur le contenu du fichier, métadonnées (EXIF, GPS) retirées avant stockage, une seule image par page. Droit de lecture de la page vérifié à chaque affichage, y compris sur les pages partagées par lien. L'image compte dans le quota de stockage des pièces jointes ; elle est copiée avec la page, rangée dans `attachments/` à l'export ZIP, et supprimée avec la page. API : `PUT` et `DELETE /api/v3/pages/:id/icon-image` ; la valeur de `icon` vaut `img:<identifiant>`.
 
