@@ -1,5 +1,6 @@
 // Conversion d'un document TipTap (JSON) en Markdown GFM (export API).
 import type { DocNode } from './content.js';
+import { textIcon } from './page-icons.js';
 
 const WRAP: Record<string, [string, string]> = {
   bold: ['**', '**'], italic: ['_', '_'], strike: ['~~', '~~'], code: ['`', '`'], underline: ['<u>', '</u>'], highlight: ['==', '=='],
@@ -22,6 +23,8 @@ export interface ExportLinks {
   page?: (id: string) => string | null;
   file?: (id: string) => string | null;
   image?: (src: string) => string | null;
+  /** Chemin relatif de l'icône image de la page copiée dans l'archive (sinon : aucune icône image dans le titre). */
+  icon?: string | null;
 }
 
 export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: TitleOf, mentionName: MentionName = () => null, links: ExportLinks = {}): string {
@@ -97,5 +100,7 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
 
   const blocks = (nodes: DocNode[] = [], sep = '\n\n'): string => nodes.map(block).filter((s) => s !== '').join(sep);
 
-  return `# ${icon ? `${icon} ` : ''}${title || 'Sans titre'}\n\n${blocks(doc.content)}\n`;
+  // Icône image : jamais la valeur « img:… » ; l'image elle-même seulement dans une archive qui la contient.
+  const shown = links.icon ? `![icône](${mdUrl(links.icon)}) ` : textIcon(icon) ? `${textIcon(icon)} ` : '';
+  return `# ${shown}${title || 'Sans titre'}\n\n${blocks(doc.content)}\n`;
 }

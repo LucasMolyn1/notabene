@@ -16,6 +16,7 @@ import { HttpError } from './http.js';
 import { type ExportLinks, toMarkdown } from './markdown.js';
 import { readersAmong } from './mentions.js';
 import { canReadPage, filterReadable } from './page-acl.js';
+import { getIconImage, iconImageId, textIcon } from './page-icons.js';
 import { escapeHtml, renderHtml } from './render-html.js';
 import { expandSyncedCopies } from './synced-blocks.js';
 import { zipEntryName, zipStream, type ZipEntry } from './zip.js';
@@ -73,7 +74,7 @@ function relative(from: string, to: string): string {
   return '../'.repeat(depth) + to.split('/').map(encodeURIComponent).join('/');
 }
 
-const htmlPage = (title: string, body: string) => `<!doctype html>
+const htmlPage = (title: string, body: string, icon: string | null = null) => `<!doctype html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
@@ -84,7 +85,7 @@ const htmlPage = (title: string, body: string) => `<!doctype html>
 <style>body{max-width:48rem;margin:2rem auto;padding:0 1rem;font-family:system-ui,sans-serif;line-height:1.6}img{max-width:100%}pre{overflow:auto;background:#f4f4f5;padding:.75rem}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:.25rem .5rem}aside{border-left:4px solid #888;padding-left:1rem}</style>
 </head>
 <body>
-<h1>${escapeHtml(title)}</h1>
+<h1>${icon ? `<img src="${escapeHtml(icon)}" alt="" width="32" height="32"> ` : ''}${escapeHtml(title)}</h1>
 ${body}
 </body>
 </html>
@@ -196,6 +197,28 @@ export async function buildExport(db: DB, req: FastifyRequest, opts: {
     return out;
   };
 
+  // Icône image d'une page de l'archive (donc lisible) : copiée dans `attachments/`, relue en base au moment de l'écriture.
+  const icons = new Map<string, { path: string; entry: ZipEntry } | null>();
+  let iconCount = 0;
+  const iconFor = (n: Node) => {
+    if (icons.has(n.id) || frozen) return icons.get(n.id) ?? null;
+    const id = iconImageId(n.icon);
+    const row = id ? getIconImage(db, id) : undefined;
+    let out: { path: string; entry: ZipEntry } | null = null;
+    if (row && row.page_id === n.id) {
+      const ext = FILE_EXT[row.mime];
+      const path = `${FILES_DIR}/${reserve(usedFiles, `icone-${++iconCount}`, ext, false)}${ext}`;
+      const body = () => {
+        const now = getIconImage(db, row.id);
+        if (!now) throw new Error('icône modifiée pendant l’export');
+        return now.data;
+      };
+      out = { path, entry: { name: path, size: row.size, mtime: row.created_at, store: true, body } };
+    }
+    icons.set(n.id, out);
+    return out;
+  };
+
   // Contenu d'une page tel qu'exporté : copies synchronisées résolues seulement si la personne peut lire la page source.
   const canReadSource = (pid: string) => { try { loadReadablePage(db, req, pid); return true; } catch { return false; } };
   const docOf = (pageId: string) => expandSyncedCopies(db,
@@ -235,14 +258,16 @@ export async function buildExport(db: DB, req: FastifyRequest, opts: {
     }
     const doc = docOf(n.id);
     const names = new Map(readersAmong(db, n.id, mentionIds(doc), 200).map((u) => [u.id, u.name]));
+    const icon = iconFor(n);
     const links: ExportLinks = {
+      icon: icon ? relative(n.file, icon.path) : null,
       page: (id) => (fileOfPage.has(id) ? relative(n.file, fileOfPage.get(id)!) : null),
       file: (id) => { const f = ATTACHMENT_ID.test(id) ? fileFor(id) : null; return f ? relative(n.file, f.path) : null; },
       image: (src) => { const f = imageFor(src, n.id); return f ? relative(n.file, f.path) : null; },
     };
-    const title = `${n.icon ? `${n.icon} ` : ''}${n.title || 'Sans titre'}`;
+    const title = `${textIcon(n.icon) ? `${textIcon(n.icon)} ` : ''}${n.title || 'Sans titre'}`;
     return Buffer.from(opts.format === 'html'
-      ? htmlPage(title, renderHtml(doc, titleOf, (id) => names.get(id) ?? null, links))
+      ? htmlPage(title, renderHtml(doc, titleOf, (id) => names.get(id) ?? null, links), links.icon)
       : toMarkdown(n.title, n.icon, doc, titleOf, (id) => names.get(id) ?? null, links), 'utf8');
   };
 
@@ -256,7 +281,7 @@ export async function buildExport(db: DB, req: FastifyRequest, opts: {
   baseBudget = readBudget();
 
   const pageEntries: ZipEntry[] = all.map((n) => ({ name: n.file, size: sizes.get(n.id)!, exact: false, mtime: n.updated_at, body: () => render(n) }));
-  const fileEntries = [...new Map([...files.values(), ...images.values()].filter((f): f is { path: string; entry: ZipEntry } => !!f).map((f) => [f.path, f.entry])).values()];
+  const fileEntries = [...new Map([...files.values(), ...images.values(), ...icons.values()].filter((f): f is { path: string; entry: ZipEntry } => !!f).map((f) => [f.path, f.entry])).values()];
   const entries = [...pageEntries, ...fileEntries];
   const bytes = entries.reduce((s, e) => s + e.size, 0);
   if (bytes > opts.limits.maxBytes) throw new HttpError(413, `Export trop volumineux (${Math.round(opts.limits.maxBytes / MB)} Mo au plus) : exportez une partie de l’arborescence`);

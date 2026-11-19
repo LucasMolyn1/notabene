@@ -33,6 +33,7 @@ import seoRoutes from './routes/seo.js';
 import icalRoutes from './routes/ical.js';
 import avatarRoutes from './routes/avatars.js';
 import attachmentRoutes from './routes/attachments.js';
+import pageIconRoutes from './routes/page-icons.js';
 import { attachmentsDir, drainAttachmentGc } from './lib/attachments.js';
 import v3Routes from './routes/v3.js';
 import syncedBlockRoutes from './routes/synced-blocks.js';
@@ -378,6 +379,7 @@ export async function buildApp({ config, db, logger = false, clientDir, ldap, ld
     await scope.register(aboutRoutes);
     await scope.register(avatarRoutes);
     await scope.register(attachmentRoutes);
+    await scope.register(pageIconRoutes);
     await scope.register(exportRoutes);
     await scope.register(imageMigrationRoutes);
   }, { prefix: '/api/v3' });

@@ -4,6 +4,11 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## Non publié
+
+### Ajouté
+- **Icônes de page personnalisées** : une page peut avoir une image importée comme icône (sélecteur d'icône, « Importer une image » ; « Retirer l'image » pour revenir en arrière). PNG, JPEG, WebP ou GIF (pas de SVG), 512 Ko au plus, 8 à 1024 px de côté ; type vérifié sur le contenu du fichier, métadonnées (EXIF, GPS) retirées avant stockage, une seule image par page. Droit de lecture de la page vérifié à chaque affichage, y compris sur les pages partagées par lien. L'image compte dans le quota de stockage des pièces jointes ; elle est copiée avec la page, rangée dans `attachments/` à l'export ZIP, et supprimée avec la page. API : `PUT` et `DELETE /api/v3/pages/:id/icon-image` ; la valeur de `icon` vaut `img:<identifiant>`.
+
 ## [3.18.4] - 2026-11-18
 
 ### Ajouté

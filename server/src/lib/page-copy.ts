@@ -8,6 +8,7 @@ import { type DocNode, stripCommentAnchors } from './content.js';
 import { copyBaseData } from './bases.js';
 import { HttpError } from './http.js';
 import { entriesOf, governingPage } from './page-acl.js';
+import { copyIconImage } from './page-icons.js';
 import { createPage, getPageRow, type PageRow } from './pages.js';
 
 export const MAX_COPY_PAGES = 500;
@@ -48,6 +49,8 @@ export function copyTree(
         content: stripCommentAnchors(JSON.parse(src.content) as DocNode),
         kind: src.kind,
       }, userId, cloner);
+      // Icône image : copiée pour la nouvelle page (la source est lisible), jamais partagée avec elle.
+      copyIconImage(db, src.id, src.icon, copy.id, userId, cloner);
       if (src.kind === 'base') copyBaseData(db, src.id, copy.id, userId);
       created.push(copy);
       db.prepare('INSERT INTO page_acl (page_id, user_id, level) SELECT ?, user_id, level FROM page_acl WHERE page_id = ?').run(copy.id, src.id);

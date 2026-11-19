@@ -206,6 +206,7 @@ kbd {
 .brand-logo { width: 24px; height: 24px; border-radius: 7px; }
 /* Logo utilisé comme icône de page ou d'espace : taille donnée en ligne, jamais comprimé. */
 .brand-glyph { display: inline-block; flex: none; vertical-align: middle; }
+.icon-img { display: inline-block; flex: none; vertical-align: middle; object-fit: contain; border-radius: 3px; }
 
 .space-switch {
   display: flex; align-items: center; gap: 10px; margin: 6px 8px 4px; padding: 8px;
@@ -1913,3 +1914,14 @@ td.bt-cell:has(.bt-linkcell) { padding: 0; }
 /* Case d'une colonne « case à cocher » : zone de clic agrandie sur écran tactile (voir mobile.css), même dessin. */
 .bt-check-hit { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; cursor: pointer; }
 .bt-check-hit:has(input:disabled) { cursor: default; }
+
+/* Sélecteur d'icône : import d'une image */
+.icon-upload { display: grid; gap: 10px; }
+.icon-upload-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.icon-upload-row.end { justify-content: space-between; padding-top: 8px; border-top: 1px solid var(--border); }
+.icon-upload-preview { display: flex; gap: 10px; align-items: center; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); }
+.icon-upload-preview img { width: 48px; height: 48px; object-fit: contain; flex: none; border-radius: 6px; background: var(--bg-soft); }
+.icon-upload-meta { display: grid; min-width: 0; }
+.icon-upload-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.icon-upload-status { margin: 0; min-height: 1.2em; font-size: 13px; color: var(--text-2); }
+.icon-upload-status.error { color: var(--danger); }

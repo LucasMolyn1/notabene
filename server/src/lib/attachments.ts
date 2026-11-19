@@ -85,8 +85,13 @@ export function contentDisposition(kind: 'inline' | 'attachment', name: string):
   return `${kind}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
-export const usedBytes = (db: DB): number => (db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM attachments').get() as { n: number }).n;
-export const userBytes = (db: DB, userId: string): number => (db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM attachments WHERE uploader_id = ?').get(userId) as { n: number }).n;
+// Les icônes de page importées (page_icon_images) comptent dans les mêmes plafonds que les pièces jointes.
+export const usedBytes = (db: DB): number => (db.prepare(
+  'SELECT (SELECT COALESCE(SUM(size), 0) FROM attachments) + (SELECT COALESCE(SUM(size), 0) FROM page_icon_images) AS n',
+).get() as { n: number }).n;
+export const userBytes = (db: DB, userId: string): number => (db.prepare(
+  'SELECT (SELECT COALESCE(SUM(size), 0) FROM attachments WHERE uploader_id = @u) + (SELECT COALESCE(SUM(size), 0) FROM page_icon_images WHERE uploader_id = @u) AS n',
+).get({ u: userId }) as { n: number }).n;
 
 /**
  * Efface du disque les fichiers dont la ligne a disparu (suppression d'une pièce jointe, d'une page, d'un espace : le déclencheur
@@ -248,6 +253,18 @@ export class AttachmentCloner {
       return out;
     };
     return (walk(doc) ?? doc) as T;
+  }
+
+  /**
+   * Octets copiés hors pièce jointe (icône image d'une page copiée) : mêmes plafonds que copy() (opération, instance, personne),
+   * sans jamais lever. Renvoie false si la copie dépasserait l'un d'eux ; sinon les octets sont comptés dans l'opération.
+   */
+  allowExtra(size: number): boolean {
+    if (this.bytes + size > this.limits.operationBytes) return false;
+    if (usedBytes(this.db) + reservations(this.db).total + size > this.limits.totalBytes) return false;
+    if (this.userId && userBytes(this.db, this.userId) + (reservations(this.db).byUser.get(this.userId)?.bytes ?? 0) + size > this.limits.userBytes) return false;
+    this.bytes += size;
+    return true;
   }
 
   private copy(row: AttachmentRef, pageId: string | null, templateId: string | null): string | null {

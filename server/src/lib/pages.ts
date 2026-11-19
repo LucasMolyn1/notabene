@@ -5,6 +5,7 @@ import type { AttachmentCloner } from './attachments.js';
 import { type DocNode, docText, emptyDoc, sanitizeDoc } from './content.js';
 import { copyBaseData } from './bases.js';
 import { HttpError, newId } from './http.js';
+import { assertIconForPage, copyIconImage, dropStaleIconImage, textIcon } from './page-icons.js';
 import { dropEmptySources, freshSources, moveIndexToSpace, syncIndex } from './synced-blocks.js';
 
 const VERSION_WINDOW = 5 * 60_000;
@@ -131,6 +132,7 @@ export interface CreatePageInput {
 }
 
 // `cloner` : copie les pièces jointes citées par le contenu et les rattache à la nouvelle page (copie, duplication, modèle).
+// Une icône image (`img:`) n'est jamais reprise telle quelle : la nouvelle page ne possède encore aucune image (voir copyIconImage).
 export function createPage(db: DB, input: CreatePageInput, userId: string | null, cloner?: AttachmentCloner) {
   return db.transaction(() => {
     const parentId = input.parentId ?? null;
@@ -151,7 +153,7 @@ export function createPage(db: DB, input: CreatePageInput, userId: string | null
     db.prepare(
       `INSERT INTO pages (id, space_id, parent_id, position, title, icon, content, text, created_at, created_by, updated_at, updated_by, kind)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, input.spaceId, parentId, position, input.title ?? '', input.icon ?? '', JSON.stringify(doc), docText(doc), now, userId, now, userId, input.kind ?? 'doc');
+    ).run(id, input.spaceId, parentId, position, input.title ?? '', textIcon(input.icon), JSON.stringify(doc), docText(doc), now, userId, now, userId, input.kind ?? 'doc');
     if (cloner) {
       // La page doit exister avant ses pièces jointes (clé étrangère) : le contenu réécrit est enregistré ensuite.
       const copied = cloner.clone(doc, { pageId: id });
@@ -191,7 +193,12 @@ export function updatePage(db: DB, id: string, input: UpdatePageInput, userId: s
     if (current.kind === 'base' && input.content !== undefined) throw new HttpError(422, 'Le contenu d’une base se modifie par ses lignes');
     const next = { ...current };
     if (input.title !== undefined) next.title = input.title;
-    if (input.icon !== undefined) next.icon = input.icon;
+    if (input.icon !== undefined) {
+      // Icône image : seulement celle de cette page. L'image que l'icône ne désigne plus est retirée.
+      assertIconForPage(db, id, input.icon);
+      if (input.icon !== current.icon) dropStaleIconImage(db, id, input.icon);
+      next.icon = input.icon;
+    }
     if (input.fullWidth !== undefined) next.full_width = input.fullWidth ? 1 : 0;
     if (input.content !== undefined) {
       let doc = sanitizeDoc(input.content);
@@ -267,12 +274,13 @@ export function duplicatePage(db: DB, id: string, userId: string | null, cloner?
       afterId: id,
       kind: src.kind,
     }, userId, cloner);
+    copyIconImage(db, id, src.icon, copy.id, userId, cloner);
     if (src.kind === 'base') copyBaseData(db, id, copy.id, userId);
     // La copie reste aussi restreinte que la source : sinon dupliquer une page cachée la rendrait visible à tout le parent.
     db.prepare('INSERT INTO page_acl (page_id, user_id, level) SELECT ?, user_id, level FROM page_acl WHERE page_id = ?').run(copy.id, id);
     db.prepare('INSERT INTO page_acl_groups (page_id, group_id, level) SELECT ?, group_id, level FROM page_acl_groups WHERE page_id = ?').run(copy.id, id);
     db.prepare('INSERT INTO page_labels (page_id, name, created_at, created_by) SELECT ?, name, created_at, created_by FROM page_labels WHERE page_id = ?').run(copy.id, id);
-    return copy;
+    return getPageRow(db, copy.id)!;
   })();
 }
 

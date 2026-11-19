@@ -4,7 +4,7 @@ import { h } from './util.js';
 import { icon } from './icons.js';
 import { api } from './api.js';
 import { createEditor } from './editor.js';
-import { pageIcon } from './ui.js';
+import { pageIcon, setIconShareToken } from './ui.js';
 import { beginView, setView } from './views.js';
 
 // Un lien vers une autre page du partage devient un lien ordinaire vers cette page, dans la vue publique.
@@ -33,6 +33,8 @@ export async function showShare(token, pageId) {
       h('p', { class: 'muted' }, 'Cette page n’est plus partagée, ou l’adresse est incorrecte.')));
     return;
   }
+  // Les icônes image de cette vue se lisent par le lien (la personne n'a pas forcément de compte).
+  setIconShareToken(token);
   if (!data.indexing) metas.push(h('meta', { name: 'robots', content: 'noindex, nofollow' }));
   document.head.append(...metas);
   const isSpace = data.kind === 'space';
@@ -75,5 +77,5 @@ export async function showShare(token, pageId) {
 
   // Le corps de la page ne défile pas (overflow: hidden) : comme les autres vues, la page défile dans un conteneur dédié.
   main.replaceChildren(h('div', { class: 'scroller share-scroller' }, h('div', { class: 'share-page' }, head, h('div', { class: 'share-layout' }, nav, article))));
-  setView({ kind: 'share', destroy: () => { editor?.destroy(); for (const m of metas) m.remove(); document.body.classList.remove('share'); } });
+  setView({ kind: 'share', destroy: () => { editor?.destroy(); setIconShareToken(null); for (const m of metas) m.remove(); document.body.classList.remove('share'); } });
 }

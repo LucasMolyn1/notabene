@@ -11,6 +11,7 @@ import { assertMoveKeepsRestriction, canReadPage, filterReadable, governingPage 
 import { audit } from '../lib/audit.js';
 import { HttpError, idParams, idSchema } from '../lib/http.js';
 import { toMarkdown } from '../lib/markdown.js';
+import { isImageIcon, pageIconSchema } from '../lib/page-icons.js';
 import { expandSyncedCopies } from '../lib/synced-blocks.js';
 import {
   createPage, destroyPage, duplicatePage, getPageRow, getVersion, listPages, listVersions,
@@ -18,7 +19,7 @@ import {
 } from '../lib/pages.js';
 
 const title = z.string().max(300);
-const icon = z.string().max(16);
+const icon = pageIconSchema;
 const content = z.record(z.string(), z.unknown());
 
 const createBody = z.object({
@@ -55,6 +56,8 @@ export default async function pageRoutes(app: FastifyInstance) {
   app.post('/pages', { preHandler: guard('write'), schema: { tags, summary: 'Créer une page', body: createBody } }, async (req, reply) => {
     const body = req.body as z.output<typeof createBody>;
     requireSpaceRole(db, req, body.spaceId, 'edit'); // 404 si l'espace n'est pas visible, 403 en lecture seule
+    // Une page qui n'existe pas encore n'a aucune image : l'icône image s'importe après la création (PUT /pages/:id/icon-image).
+    if (body.icon !== undefined && isImageIcon(body.icon)) throw new HttpError(400, 'Icône image inconnue pour cette page : importez-la d’abord');
     if (body.parentId) assertWritableParent(db, req, body.parentId);
     // Contenu venu d'un modèle ou d'une autre page : les pièces jointes citées (et lisibles) sont copiées dans la nouvelle page.
     const row = withCloner(req, (cloner) => createPage(db, body, userId(req), cloner));

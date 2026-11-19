@@ -104,9 +104,38 @@ export const PAGE_ICONS = [
   'upload', 'users', 'sparkle', 'diamond', 'hexagon', 'webhook', 'pdf', 'wand', 'table',
 ];
 
-// Icône d'une page ou d'un espace : nom d'une icône de l'interface (« folder ») ou emoji. Un emoji s'affiche en texte (jamais en HTML).
+// Icône image importée : `img:<identifiant>` (22 caractères base64url). L'adresse est construite avec l'identifiant validé seul.
+const ICON_IMAGE = /^img:([A-Za-z0-9_-]{22})$/;
+const SHARE_TOKEN = /^[A-Za-z0-9_-]{20,90}$/;
+let iconShareToken = null;
+
+/** Vue publique d'un lien de partage : les icônes image se lisent par ce lien (sans compte). `null` en sortant de la vue. */
+export function setIconShareToken(token) { iconShareToken = typeof token === 'string' && SHARE_TOKEN.test(token) ? token : null; }
+
+/** Identifiant de l'image désignée par une icône, ou null (emoji, nom d'icône, vide). */
+export const iconImageId = (name) => (typeof name === 'string' ? ICON_IMAGE.exec(name)?.[1] ?? null : null);
+
+/** Adresse d'une icône image ; sur une page partagée, par le lien public. */
+export const iconImageUrl = (id) => (iconShareToken
+  ? `/api/v3/public/shares/${iconShareToken}/page-icons/${id}`
+  : `/api/v3/page-icons/${id}`);
+
+// Icône d'une page ou d'un espace : nom d'une icône de l'interface (« folder »), emoji, ou image importée (`img:<identifiant>`).
+// Un emoji s'affiche en texte (jamais en HTML) ; une image est décorative (le titre de la page l'accompagne toujours).
 export function pageIcon(name, size = 16) {
   if (!name) return icon('file', size);
+  const imageId = iconImageId(name);
+  if (imageId) {
+    const img = h('img', {
+      class: 'icon-img', src: iconImageUrl(imageId), alt: '', 'aria-hidden': 'true', draggable: 'false',
+      width: String(size), height: String(size), loading: 'lazy', decoding: 'async',
+      style: { width: `${size}px`, height: `${size}px` },
+    });
+    // Image retirée, illisible ou réseau coupé : repli sur l'icône vide.
+    img.addEventListener('error', () => img.replaceWith(icon('file', size)), { once: true });
+    return img;
+  }
+  if (name.startsWith('img:')) return icon('file', size); // valeur image mal formée
   // Le « N » de BeNote : pastille violette fixe (pas une icône au trait, elle garde ses couleurs).
   if (name === 'benote') return h('span', { class: 'brand-logo brand-glyph', style: { width: `${size}px`, height: `${size}px`, borderRadius: `${Math.round(size * 0.29)}px` }, 'aria-hidden': 'true' });
   if (PAGE_ICONS.includes(name)) return icon(name, size);

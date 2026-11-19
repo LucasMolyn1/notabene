@@ -123,7 +123,13 @@ export async function moveToSpace(id, spaceId) {
 }
 
 export function pickIcon(anchor, id) {
-  iconPicker(anchor, (name) => attempt(() => store.updatePage(id, { icon: name })));
+  iconPicker(anchor, (name) => attempt(() => store.updatePage(id, { icon: name })), {
+    image: {
+      current: () => store.page(id)?.icon || '',
+      upload: (base64) => store.setIconImage(id, base64),
+      remove: () => store.removeIconImage(id),
+    },
+  });
 }
 
 export const pageUrl = (id, { embed = false } = {}) => `${location.origin}${pagePathById(id)}${embed ? '?embed' : ''}`;
