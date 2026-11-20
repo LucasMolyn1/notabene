@@ -27,6 +27,7 @@ import { showBase } from './base.js';
 import { readOnlyNotice } from './read-only.js';
 import { openMoveDialog } from './move-dialog.js';
 import * as A from './actions.js';
+import { pageIn, stagger } from './motion.js';
 
 const main = () => document.getElementById('main');
 let view = null;
@@ -154,6 +155,8 @@ function mountPage(page) {
     topbar(crumbsEl, app.embed ? [] : [presenceEl, saveEl, commentsButton(id, () => editor), watchBtn, shareBtn, permBtn, starBtn, modeBtn, histBtn, moreBtn]),
     scroller,
   );
+  // Fondu seul (sans déplacement) : les menus de l'éditeur se placent d'après la position du texte.
+  pageIn(wrap, { y: 0 });
 
   // -- Sauvegarde : une requête à la fois, avec la version de base pour détecter les conflits --
   let saveTimer = null;
@@ -495,6 +498,7 @@ export function showSpace(spaceId) {
   const canWrite = session.can('write') && store.canWriteIn(spaceId);
 
   const scroller = h('div', { class: 'scroller' });
+  let first = true; // l'apparition se joue à l'arrivée sur l'espace, pas à chaque mise à jour venue du serveur
   function render() {
     const s = store.space(spaceId);
     if (!s) { A.go('/'); return; }
@@ -535,6 +539,11 @@ export function showSpace(spaceId) {
           h('div', { class: 'empty-emoji' }, icon('plus', 32)),
           h('p', null, 'Cet espace est encore vide.'),
           canWrite && !app.embed && h('button', { class: 'btn btn-primary', onClick: () => A.newPage(spaceId) }, 'Créer la première page'))));
+    if (first) {
+      first = false;
+      pageIn(scroller.firstElementChild);
+      stagger(scroller.querySelectorAll('.card'));
+    }
   }
   render();
   view = { kind: 'space', id: spaceId, onStore: render };
@@ -573,6 +582,8 @@ export async function showLabel(name) {
             h('div', { class: 'card-foot' }, h('span', null, timeAgo(p.updatedAt)), space && h('span', { class: 'card-parent' }, space.name)));
         }))
         : h('div', { class: 'empty' }, h('p', null, 'Aucune page ne porte ce libellé.'), h('a', { class: 'btn btn-ghost', href: '/' }, 'Retour à l’accueil')))));
+  pageIn(main().querySelector('.space-home'));
+  stagger(main().querySelectorAll('.space-home .card'));
   view = { kind: 'label', id: name };
 }
 
@@ -616,6 +627,7 @@ export function showLogin() {
       h('div', { class: 'row center' }, ['admin', 'editor', 'reader'].map((role) =>
         h('button', { class: 'btn btn-ghost btn-sm', onClick: () => session.devLogin(role) }, { admin: 'Admin', editor: 'Éditeur', reader: 'Lecteur' }[role])))),
     !session.hasLogin() && h('p', { class: 'notice warning' }, 'Aucun fournisseur d’identité n’est configuré.'))));
+  pageIn(main().querySelector('.login-card'));
 }
 
 // ---- Introuvable ----------------------------------------------------------
@@ -635,6 +647,7 @@ export function showMissing(id, status = 404) {
       h('div', { class: 'row center' },
         anonymous && session.hasLogin() && h('a', { class: 'btn btn-primary', href: session.loginEntry() }, 'Se connecter'),
         h('a', { class: 'btn btn-ghost', href: '/' }, 'Retour à l’accueil')))));
+  pageIn(main().querySelector('.scroller > .empty'));
   view = { kind: 'missing', id };
 }
 

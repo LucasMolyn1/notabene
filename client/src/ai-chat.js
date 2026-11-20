@@ -9,6 +9,7 @@ import { store } from './store.js';
 import { pagePath, parseRoute } from './urls.js';
 import { confirmModal, toast } from './ui.js';
 import { renderAnswer } from './ai-markdown.js';
+import { slideIn, stop } from './motion.js';
 
 const MAX_MESSAGE = 4000;
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -352,6 +353,7 @@ function buildPanel() {
     opener = active instanceof HTMLElement && !el.contains(active) ? active : null;
     syncContext();
     el.hidden = false;
+    slideIn(el);
     document.body.classList.add('ai-chat-open');
     // Plein écran sur téléphone : le reste de l'application devient inerte.
     if (narrow()) document.getElementById('app')?.setAttribute('inert', '');
@@ -362,6 +364,7 @@ function buildPanel() {
 
   function close(restoreFocus = true) {
     el.hidden = true;
+    stop(el);
     document.body.classList.remove('ai-chat-open');
     document.getElementById('app')?.removeAttribute('inert');
     syncLaunchers();

@@ -110,6 +110,8 @@ const schema = z
     // Plafond général par utilisateur (ou par adresse pour un visiteur anonyme), fichiers statiques compris.
     RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(60).max(100_000).default(600),
     AUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(10),
+    // Liste « Mes tâches » (requête coûteuse, balaie plusieurs bases) : requêtes par minute et par utilisateur (défaut 30).
+    MY_TASKS_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(30),
     // Une session sans aucune requête pendant cette durée est fermée (en plus de la durée absolue ci-dessus).
     // Conservation (jours ; 0 = jamais purgé) : corbeille, notifications lues, adresses IP et entrées du journal d'audit.
     TRASH_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(30),

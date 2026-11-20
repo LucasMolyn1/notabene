@@ -14,6 +14,7 @@ import { openReviewList } from './verification.js';
 import { openSpaceShares } from './space-share-dialog.js';
 import { lateTasks, onTasksChange } from './tasks.js';
 import { openMoveDialog } from './move-dialog.js';
+import { stagger } from './motion.js';
 
 let dragId = null;
 
@@ -129,8 +130,12 @@ function startRename(id) {
 
 // Focus à rétablir après le prochain rendu (la barre latérale est reconstruite à chaque changement).
 let pendingFocus = null;
+// Animations : l'arbre apparaît à l'arrivée dans un espace, les sous-pages quand on déplie (pas à chaque reconstruction).
+let animatedSpace = null;
+let justExpanded = null;
 
 function setExpanded(id, value) {
+  if (value && !prefs.expanded[id]) justExpanded = id;
   prefs.expanded[id] = value;
   savePrefs();
   pendingFocus = id;
@@ -217,6 +222,7 @@ function treeNode(page, depth, activeId, canWrite, filter = null) {
     onClick: (e) => {
       e.stopPropagation();
       if (!kids.length) return;
+      if (!open) justExpanded = page.id;
       prefs.expanded[page.id] = !open;
       savePrefs();
       renderSidebar();
@@ -422,6 +428,14 @@ export function renderSidebar() {
     pendingFocus = null;
     if (target) { tree.querySelectorAll('.tree-row[tabindex="0"]').forEach((r) => { /** @type {HTMLElement} */ (r).tabIndex = -1; }); target.tabIndex = 0; target.focus(); }
   }
+  if (animatedSpace !== space.id) {
+    animatedSpace = space.id;
+    stagger(el.querySelectorAll('.sb-scroll .tree-row'));
+  } else if (justExpanded) {
+    const group = tree?.querySelector(`.tree-row[data-id="${CSS.escape(justExpanded)}"]`)?.parentElement?.querySelector(':scope > ul');
+    if (group) stagger(group.querySelectorAll(':scope > li > .tree-row'));
+  }
+  justExpanded = null;
 }
 
 // Quand les nouveautés sont consultées, la pastille de « Paramètres » s'éteint.

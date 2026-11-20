@@ -1,17 +1,20 @@
 // Primitives d'interface : toasts, menus contextuels, modales, sélecteur d'emoji.
 import { h } from './util.js';
 import { icon } from './icons.js';
+import { leave, modalIn, modalOut, popIn, rememberDialog, toastIn } from './motion.js';
 
 // ---- Toasts ---------------------------------------------------------------
 
 /** @param {string} message @param {{ action?: { label: string, onClick: () => void }, timeout?: number, kind?: string }} [options] */
 export function toast(message, { action, timeout = 3800, kind = '' } = {}) {
   const host = document.querySelector('.toasts') || document.body.appendChild(h('div', { class: 'toasts', 'aria-live': 'polite' }));
-  const dismiss = () => { el.classList.add('out'); setTimeout(() => el.remove(), 200); };
+  let gone = false;
+  const dismiss = () => { if (gone) return; gone = true; leave(el, { y: 6, duration: 0.18 }); };
   const el = h('div', { class: `toast ${kind}` },
     h('span', null, message),
     action && h('button', { class: 'toast-action', onClick: () => { action.onClick(); dismiss(); } }, action.label));
   host.append(el);
+  toastIn(el);
   setTimeout(dismiss, timeout);
 }
 
@@ -24,7 +27,7 @@ export function closePopover() {
   const { anchor, el } = activePopover;
   const hadFocus = el.contains(document.activeElement);
   anchor.setAttribute('aria-expanded', 'false');
-  activePopover.el.remove();
+  leave(el); // retiré de l'interaction tout de suite, effacé ensuite
   document.removeEventListener('mousedown', activePopover.outside, true);
   document.removeEventListener('keydown', activePopover.esc, true);
   activePopover = null;
@@ -54,6 +57,7 @@ export function openPopover(anchor, content, { align = 'left', className = '' } 
   document.addEventListener('keydown', esc, true);
   activePopover = { el, outside, esc, anchor };
   anchor.setAttribute('aria-expanded', 'true');
+  popIn(el, { y: top < r.top ? 4 : -4 });
   return el;
 }
 
@@ -149,7 +153,7 @@ let modalSeq = 0;
 export function openModal({ title, body, actions = [], size = '' }) {
   const titleId = `modal-title-${++modalSeq}`;
   const dlg = h('dialog', { class: `modal ${size}`, 'aria-labelledby': titleId });
-  const close = () => { if (dlg.open) dlg.close(); };
+  const close = () => { if (dlg.open) { rememberDialog(dlg); dlg.close(); } };
   dlg.append(h('div', { class: 'modal-inner' },
     h('div', { class: 'modal-head' },
       h('h2', { id: titleId }, title),
@@ -160,9 +164,12 @@ export function openModal({ title, body, actions = [], size = '' }) {
       onClick: async () => { if ((await a.onClick?.()) !== false) close(); },
     }, a.label)))));
   dlg.addEventListener('mousedown', (e) => { if (e.target === dlg) close(); });
-  dlg.addEventListener('close', () => dlg.remove());
+  // Échap : la position est relevée avant la fermeture native, pour l'animation de sortie.
+  dlg.addEventListener('cancel', () => rememberDialog(dlg));
+  dlg.addEventListener('close', () => modalOut(dlg));
   document.body.append(dlg);
   dlg.showModal();
+  modalIn(dlg);
   return { el: dlg, close };
 }
 

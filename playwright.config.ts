@@ -11,7 +11,9 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   timeout: 45_000,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
-  use: { baseURL: `http://localhost:${PORT}`, trace: 'retain-on-failure', screenshot: 'only-on-failure', locale: 'fr-FR' },
+  // Animations désactivées (préférence « réduire les animations ») : les tests ne dépendent pas de leur durée.
+  // e2e/animations.spec.ts les réactive pour vérifier qu'elles se terminent dans un état correct.
+  use: { baseURL: `http://localhost:${PORT}`, trace: 'retain-on-failure', screenshot: 'only-on-failure', locale: 'fr-FR', reducedMotion: 'reduce' },
   projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
   webServer: {
     // Base temporaire neuve et administrateur de test créés par le script avant le démarrage.
@@ -36,6 +38,8 @@ export default defineConfig({
       AUTH_RATE_LIMIT_PER_MINUTE: '500',
       // Une seule IP et un seul compte pour toute la série, lancée vite : le plafond par défaut (600 requêtes par minute) est atteint.
       RATE_LIMIT_PER_MINUTE: '20000',
+      // Chaque connexion de test appelle « Mes tâches » : le plafond par défaut (30 par minute) est atteint sur une série rapide.
+      MY_TASKS_RATE_LIMIT_PER_MINUTE: '1000',
       LOG_LEVEL: 'warn',
       // Plafond bas : le refus d'un fichier trop lourd se teste avec un petit fichier.
       ATTACHMENT_MAX_MB: '1',
