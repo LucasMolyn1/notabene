@@ -199,7 +199,7 @@ describe('export HTML', () => {
   });
   it('échappe tout libellé', () => {
     const out = html(graph([node('a', 'start', '<script>alert(1)</script>'), node('b', 'end', '"><img src=x onerror=1>')], [edge('e1', 'a', 'out', 'b', '<b>x</b>')]));
-    expect(out).not.toMatch(/<script|<img|<b>/);
+    expect(out).not.toMatch(/<script|<img|<b>/i);
     expect(out).toContain('&lt;script&gt;');
     expect(out).toContain('&lt;b&gt;x&lt;/b&gt;');
   });
