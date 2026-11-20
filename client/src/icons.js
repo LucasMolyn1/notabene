@@ -57,6 +57,7 @@ const PATHS = {
   calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
+  workflow: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><path d="M6.5 10v3a3 3 0 0 0 3 3H14"/>',
   wand:'<path d="m15 4-1 1m-2 8-8 8 4 4 8-8M21.4 6.1a2 2 0 0 0-2.8 0L15 9.7 18.3 13l3.5-3.5a2 2 0 0 0-.4-3.4Z"/>',
 };
 

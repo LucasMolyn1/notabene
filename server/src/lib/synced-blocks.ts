@@ -11,7 +11,7 @@
 import { randomBytes } from 'node:crypto';
 import type { DB } from '../db.js';
 import {
-  type DocNode, isDroppedBySanitize, MAX_SYNCED_BLOCKS, NOT_BLOCK, stripCommentAnchors, SYNCED_BLOCK_ID, SYNCED_CONTAINERS, SYNCED_PARENTS, UNWRAP_PARENTS,
+  type DocNode, isDroppedBySanitize, MAX_SYNCED_BLOCKS, newDropState, NOT_BLOCK, stripCommentAnchors, SYNCED_BLOCK_ID, SYNCED_CONTAINERS, SYNCED_PARENTS, UNWRAP_PARENTS,
 } from './content.js';
 import { HttpError } from './http.js';
 
@@ -120,7 +120,7 @@ export function planCollabSynced(
   // Nœuds que l'assainissement retirera (prédicat partagé, content.ts) : une source dont aucun bloc ne survit est sortie de son
   // enveloppe. `visible` : nœud que l'assainissement lira (ni dans un nœud retiré, ni dans une copie), pour compter comme lui.
   const dropped = new WeakSet<DocNode>();
-  const dropState = { baseBlocks: 0 };
+  const dropState = newDropState();
 
   // Renvoie les nœuds qui remplacent `n` dans son parent (lui-même, ses enfants s'il est sorti de son enveloppe, ou rien).
   const walk = (n: DocNode, parent: string, chain: boolean, visible: boolean): DocNode[] => {

@@ -23,10 +23,26 @@ Ce test n'a pas été réalisé : il demande un lecteur d'écran réel. À faire
 | Dialogues et menus | Le focus entre dans le dialogue, y reste, et revient au déclencheur à la fermeture. |
 | Déplacer vers… | Le champ s'annonce comme une liste déroulante ; l'option active est lue pendant les flèches ; l'emplacement actuel est annoncé indisponible. |
 | Loupe d'un schéma | La zone s'annonce avec ses commandes (flèches, plus, moins, zéro) ; le niveau de zoom est lu quand il change. |
+| Bloc Workflow | Chaque nœud est annoncé « Type : libellé » ; Tab les parcourt de gauche à droite puis de haut en bas ; les actions (ajout, lien, suppression, déplacement) sont annoncées ; la « Vue texte » liste les nœuds et leurs suites. |
 | Notifications | La cloche annonce le nombre de nouveautés ; une action (enregistrement, erreur) est annoncée. |
 | Paramètres | Chaque section est atteignable ; les interrupteurs et listes ont un nom. |
 
 Consigner pour chaque ligne : lecteur et version, navigateur, résultat, anomalie. Une anomalie confirmée se corrige, puis se couvre par un contrôle dans `e2e/a11y.spec.ts` si axe peut le détecter.
+
+## Raccourcis clavier du bloc Workflow
+
+La barre d'outils du bloc est une seule butée de tabulation (flèches, Début et Fin pour parcourir les boutons). Sur un nœud :
+
+| Touche | Action |
+|---|---|
+| Tab, Maj+Tab | Nœud suivant ou précédent (ordre de lecture) |
+| Flèches | Déplacer de 20 px (Maj : 100 px) |
+| Entrée ou F2 | Modifier le libellé (Entrée valide, Maj+Entrée saute une ligne, Échap annule) |
+| L | Menu « Relier à… » (flèches, Entrée ; Échap ferme) |
+| Suppr ou Retour arrière | Supprimer le nœud et ses liens |
+| Ctrl ou Cmd + Z, Maj+Z | Annuler, refaire (historique de la page) |
+
+Sur un lien (la pastille au milieu du trait) : Entrée modifie le libellé, Suppr supprime le lien. Ctrl ou Cmd + molette, ou pincement sur écran tactile, zooment ; le bouton « Vue texte » affiche le plan du schéma en texte (toujours présent pour les lecteurs d'écran). Co-édition : le schéma entier est un seul attribut, la dernière modification enregistrée sur un même bloc l'emporte.
 
 ## Autres vérifications à la main
 

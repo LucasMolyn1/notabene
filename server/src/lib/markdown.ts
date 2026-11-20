@@ -1,6 +1,7 @@
 // Conversion d'un document TipTap (JSON) en Markdown GFM (export API).
 import type { DocNode } from './content.js';
 import { textIcon } from './page-icons.js';
+import { readWorkflowGraph, workflowToMermaid } from './workflow.js';
 
 const WRAP: Record<string, [string, string]> = {
   bold: ['**', '**'], italic: ['_', '_'], strike: ['~~', '~~'], code: ['`', '`'], underline: ['<u>', '</u>'], highlight: ['==', '=='],
@@ -73,6 +74,7 @@ export function toMarkdown(title: string, icon: string, doc: DocNode, titleOf: T
       case 'syncedSource': return blocks(node.content);
       case 'syncedCopy': return node.content?.length ? blocks(node.content) : '_[Contenu indisponible]_';
       case 'excalidraw': return '_[Dessin Excalidraw]_';
+      case 'workflow': { const code = workflowToMermaid(readWorkflowGraph(a.graph)); return code ? `\`\`\`mermaid\n${code}\n\`\`\`` : '_[Workflow vide]_'; }
       case 'drawio': return '_[Diagramme Draw.io]_';
       case 'horizontalRule': return '---';
       // Pièce jointe : lien vers le fichier ; le serveur revérifie le droit de lecture à chaque téléchargement.

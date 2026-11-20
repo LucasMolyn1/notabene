@@ -12,14 +12,14 @@ import { svgToDataUrl, zoomButton } from './diagram-zoom.js';
 
 export const DEFAULT_MERMAID = 'flowchart LR\n  A[Idée] --> B{Validée ?}\n  B -->|oui| C[Documenter]\n  B -->|non| D[Archiver]';
 
-const updateAttrs = (editor, getPos, attrs) => {
+export const updateAttrs = (editor, getPos, attrs) => {
   const pos = typeof getPos === 'function' ? getPos() : null;
   if (pos == null) return;
   const node = editor.state.doc.nodeAt(pos);
   if (node) editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...attrs }));
 };
 
-function frame(label, body, actions) {
+export function frame(label, body, actions) {
   return h('div', { class: 'diagram', contenteditable: 'false' },
     h('div', { class: 'diagram-bar' }, h('span', { class: 'diagram-label' }, label), h('span', { class: 'diagram-actions' }, actions)),
     body);

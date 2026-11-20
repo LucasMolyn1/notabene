@@ -6,6 +6,9 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## Non publié
 
+### Ajouté
+- **Bloc « Workflow »** (menu `/`, groupe Diagrammes) : éditeur de schémas de processus fait maison, sans nouvelle dépendance. Nœuds Début, Étape, Décision (sorties Oui et Non), Fin et Note ; liens par glisser ou par le menu « Relier à… » ; libellés modifiables en place ; déplacement à la souris, au doigt ou au clavier ; rangement automatique, zoom, ajustement à l'écran, loupe plein écran, annuler et refaire par l'historique de la page, « Vue texte » pour les lecteurs d'écran. Rien ne s'exécute. Limite connue : en co-édition, le schéma entier est un seul attribut, donc la dernière modification enregistrée sur un même bloc l'emporte.
+
 ### Corrigé
 - **Écran de connexion** : les fournisseurs d'identité (Authentik, Google, SAML) sont présentés en tuiles carrées à coins arrondis avec leur logo, au lieu de gros boutons (nom en infobulle et pour les lecteurs d'écran). Demande de l'issue 159.
 
