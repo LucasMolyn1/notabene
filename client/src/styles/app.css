@@ -986,6 +986,10 @@ select.input { height: 36px; }
 .login-card h1 { margin: 4px 0 0; font-size: 26px; letter-spacing: -.02em; }
 .login-card p { margin: 0; }
 .login-card .btn-lg { width: 100%; }
+.sso-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; width: 100%; }
+.sso-tile { display: grid; place-items: center; width: 64px; height: 64px; border: 1px solid var(--border-strong, var(--border)); border-radius: 16px; background: var(--bg); color: var(--text); text-decoration: none; transition: border-color .15s, box-shadow .15s, transform .15s; }
+.sso-tile:hover { border-color: var(--accent); box-shadow: var(--shadow); transform: translateY(-1px); }
+.sso-tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .dev-login { width: 100%; padding-top: 12px; border-top: 1px dashed var(--border-strong); }
 
 /* Squelette de chargement */

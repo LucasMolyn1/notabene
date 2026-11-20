@@ -7,6 +7,7 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 ## Non publié
 
 ### Corrigé
+- **Écran de connexion** : les fournisseurs d'identité (Authentik, Google, SAML) sont présentés en tuiles carrées à coins arrondis avec leur logo, au lieu de gros boutons (nom en infobulle et pour les lecteurs d'écran). Demande de l'issue 159.
 - **Membres d'un espace** : la liste des groupes est proposée dès l'ouverture, sans devoir taper pour découvrir qu'on peut en ajouter (les personnes se cherchent toujours à partir de 2 lettres). L'avertissement d'un espace public précise qu'il est visible des personnes non connectées.
 
 ### Ajouté

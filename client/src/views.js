@@ -1,7 +1,7 @@
 // Vues principales : page (éditeur), accueil d'espace, connexion, page introuvable.
 import { h, timeAgo, fullDate, wordCount, debounce, modKey } from './util.js';
 import { pagePath, spacePath } from './urls.js';
-import { icon } from './icons.js';
+import { icon, googleLogo } from './icons.js';
 import { store } from './store.js';
 import { session } from './session.js';
 import { prefs, savePrefs, app } from './prefs.js';
@@ -587,6 +587,11 @@ const AUTH_ERRORS = {
   reauth_failed: 'La confirmation auprès du fournisseur d’identité a échoué ou n’est pas assez récente. Réessayez.',
 };
 
+// Tuile carrée à coins arrondis portant le logo du fournisseur ; le nom reste exposé aux lecteurs d'écran et en infobulle.
+function ssoTile(label, href, logo) {
+  return h('a', { class: 'sso-tile', href, title: `Se connecter avec ${label}`, 'aria-label': `Se connecter avec ${label}` }, logo);
+}
+
 export function showLogin() {
   teardown();
   document.title = 'Connexion · BeNote';
@@ -603,9 +608,10 @@ export function showLogin() {
     h('p', { class: 'muted' }, 'Le wiki de votre équipe. Connectez-vous pour continuer.'),
     error && h('div', { class: 'notice warning' }, AUTH_ERRORS[error] || 'Connexion impossible.'),
     // Le fournisseur d'identité d'abord (un clic), puis les formulaires à mot de passe ; l'installation initiale passe avant tout.
-    !setupRequired && oidc && h('a', { class: 'btn btn-primary btn-lg', href: session.loginUrl(returnTo) }, icon('users', 16), 'Se connecter avec Authentik'),
-    !setupRequired && extra.map((p, j) => h('a', { class: oidc || j > 0 ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: session.providerLoginUrl(p, returnTo) }, icon('globe', 16), `Se connecter avec ${p.label}`)),
-    !setupRequired && saml && h('a', { class: oidc || extra.length ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: `/auth/saml/login?returnTo=${encodeURIComponent(returnTo)}` }, icon('key', 16), 'Se connecter avec le SSO (SAML)'),
+    !setupRequired && sso && h('div', { class: 'sso-row', role: 'group', 'aria-label': 'Se connecter avec' },
+      oidc && ssoTile('Authentik', session.loginUrl(returnTo), icon('users', 26)),
+      extra.map((p) => ssoTile(p.label, session.providerLoginUrl(p, returnTo), p.id === 'google' ? googleLogo(26) : icon('globe', 26))),
+      saml && ssoTile('le SSO (SAML)', `/auth/saml/login?returnTo=${encodeURIComponent(returnTo)}`, icon('key', 26))),
     !setupRequired && sso && (local || ldap) && h('p', { class: 'or' }, h('span', null, 'ou avec un mot de passe')),
     local && localLoginForm(setupRequired),
     local && !setupRequired && session.config.auth.mail && forgotPasswordForm(),
