@@ -4,7 +4,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
-## Non publié
+## [3.19.0] - 2026-11-20
 
 ### Corrigé
 - **Membres d'un espace** : la liste des groupes est proposée dès l'ouverture, sans devoir taper pour découvrir qu'on peut en ajouter (les personnes se cherchent toujours à partir de 2 lettres). L'avertissement d'un espace public précise qu'il est visible des personnes non connectées.
