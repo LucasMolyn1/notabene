@@ -7,6 +7,7 @@ import Typography from '@tiptap/extension-typography';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
+import { Workflow } from './workflow/index.js';
 import { DrawIo, Excalidraw, MathBlock, Mermaid, PlantUml } from './diagrams.js';
 import { Column, Columns, ColoredHighlight, ContainerDelete, Details, DetailsContent, DetailsSummary, TextAlign, TextColor } from './editor/blocks.js';
 import { CodeBlockEditor } from './editor/code-block.js';
@@ -75,6 +76,7 @@ function baseExtensions({ collab = false, shareToken = null } = {}) {
     PlantUml,
     Excalidraw,
     DrawIo,
+    Workflow,
     SyncedSource,
     SyncedCopy.configure({ shareToken, createViewer: (element, doc) => createViewer(element, doc, shareToken) }),
     SyncedGuard,

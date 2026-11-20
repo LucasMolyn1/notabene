@@ -4,6 +4,7 @@
 import { ATTACHMENT_ID, ATTACHMENT_MIMES } from './attachments.js';
 import { embedUrl } from './embed.js';
 import { HttpError } from './http.js';
+import { MAX_WORKFLOW_BLOCKS, parseWorkflowGraph, readWorkflowGraph, workflowText } from './workflow.js';
 
 export interface DocNode {
   type: string;
@@ -107,6 +108,8 @@ const NODES: Record<string, AttrRules> = {
   plantuml: { code: str(50_000), width: nullable(int(120, 4000)) },
   excalidraw: { scene: str(MAX_DIAGRAM), svg: isSvgDataUrl, width: nullable(int(120, 4000)) },
   drawio: { xml: str(MAX_DIAGRAM), svg: isSvgDataUrl, width: nullable(int(120, 4000)) },
+  // Workflow : graphe en JSON texte, validé et réécrit en forme canonique (lib/workflow.ts). Graphe invalide : attribut retiré (le client affiche un graphe vide).
+  workflow: { graph: parseWorkflowGraph, width: nullable(int(120, 4000)), height: nullable(int(160, 2000)) },
   // Pièces jointes : seul l'identifiant compte (le fichier, son type et ses droits sont ceux de la ligne en base, revérifiés à chaque
   // lecture). Nom, taille et type ne servent qu'à l'affichage. Un bloc sans identifiant valide est retiré.
   attachment: { id: attachmentId, name: str(200), size: int(0, Number.MAX_SAFE_INTEGER), mime: oneOf(...ATTACHMENT_MIMES) },
@@ -189,19 +192,23 @@ export const NOT_BLOCK = new Set([...INLINE, 'doc', 'listItem', 'taskItem', 'tab
 
 /**
  * Nœud retiré en silence par l'assainissement (attributs déjà nettoyés) : image sans adresse sûre, lien de page, mention, intégration
- * ou pièce jointe sans identifiant valide, bloc « base » sans identifiant ou au-delà de MAX_BASE_BLOCKS (`state` compte les blocs
- * « base » dans l'ordre du document). Prédicat unique, partagé avec la co-édition (planCollabSynced, lib/synced-blocks.ts).
+ * ou pièce jointe sans identifiant valide, bloc « base » sans identifiant ou au-delà de MAX_BASE_BLOCKS, bloc « workflow » au-delà de MAX_WORKFLOW_BLOCKS (`state` compte
+ * ces blocs dans l'ordre du document). Prédicat unique, partagé avec la co-édition (planCollabSynced, lib/synced-blocks.ts).
  */
-export function droppedNode(type: string, attrs: Record<string, unknown> | undefined, state: { baseBlocks: number }): boolean {
+export interface DropState { baseBlocks: number; workflowBlocks: number }
+export const newDropState = (): DropState => ({ baseBlocks: 0, workflowBlocks: 0 });
+
+export function droppedNode(type: string, attrs: Record<string, unknown> | undefined, state: DropState): boolean {
   if (type === 'image') return !attrs?.src;
   if (type === 'pageLink' || type === 'mention' || ATTACHMENT_NODES.has(type)) return !attrs?.id;
   if (type === 'embed') return !attrs?.url;
   if (type === 'baseBlock') return !attrs?.id || ++state.baseBlocks > MAX_BASE_BLOCKS;
+  if (type === 'workflow') return ++state.workflowBlocks > MAX_WORKFLOW_BLOCKS;
   return false;
 }
 
 /** Le nœud brut `node` serait-il retiré en silence par l'assainissement ? (Texte vide compris ; type inconnu : non, il est refusé.) */
-export function isDroppedBySanitize(node: DocNode, state: { baseBlocks: number }): boolean {
+export function isDroppedBySanitize(node: DocNode, state: DropState): boolean {
   if (node.type === 'text') return typeof node.text !== 'string' || !node.text;
   if (!Object.hasOwn(NODES, node.type)) return false;
   return droppedNode(node.type, cleanAttrs(NODES[node.type], node.attrs), state);
@@ -214,7 +221,7 @@ export function isDroppedBySanitize(node: DocNode, state: { baseBlocks: number }
  * structure imposée : dépliable, colonnes…) ; une copie est retirée. Le JSON enregistré fait foi.
  */
 export function sanitizeDoc(input: unknown, opts: { lenientSynced?: boolean } = {}): DocNode {
-  const counters = { baseBlocks: 0 };
+  const counters = newDropState();
   let syncedBlocks = 0;
   let count = 0;
   let textLength = 0;
@@ -333,6 +340,7 @@ export function docText(node: DocNode | undefined): string {
   if (node.type === 'syncedCopy') return '';
   if (node.type === 'mermaid' || node.type === 'plantuml' || node.type === 'math') return ` ${String(node.attrs?.code ?? '')} `;
   if (ATTACHMENT_NODES.has(node.type)) return ` ${String(node.attrs?.name ?? '')} `;
+  if (node.type === 'workflow') return ` ${workflowText(readWorkflowGraph(node.attrs?.graph))} `;
   const sep = TEXT_BLOCKS.has(node.type) ? '' : ' ';
   const out = (node.content ?? []).map(docText).join(sep);
   return node.type === 'doc' ? out.replace(/\s+/g, ' ').trim() : out;

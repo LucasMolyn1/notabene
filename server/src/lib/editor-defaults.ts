@@ -3,6 +3,7 @@
 // et un paragraphe vide final (extension TrailingNode de TipTap). Ces ajouts ne changent pas le sens du contenu : ils ne doivent
 // créer ni version, ni « modifiée par ». La comparaison passe donc par une forme canonique qui les ignore.
 import type { DocNode } from './content.js';
+import { DEFAULT_WORKFLOW_GRAPH } from './workflow.js';
 
 // Valeurs par défaut NON nulles du schéma de l'éditeur (client/src/editor.js et ses extensions), limitées aux attributs gardés
 // par l'assainissement (content.ts). Un attribut nul n'est jamais écrit dans l'état Yjs (y-prosemirror l'omet) : inutile ici.
@@ -20,6 +21,7 @@ export const EDITOR_NODE_DEFAULTS: Readonly<Record<string, Readonly<Record<strin
   plantuml: { code: '@startuml\nactor Utilisateur\nUtilisateur -> BeNote : Requête\nBeNote --> Utilisateur : Réponse\n@enduml' },
   excalidraw: { scene: '', svg: '' },
   drawio: { xml: '', svg: '' },
+  workflow: { graph: DEFAULT_WORKFLOW_GRAPH, height: 360 },
   attachment: { name: '', mime: 'application/octet-stream' },
   video: { name: '' },
   audio: { name: '' },

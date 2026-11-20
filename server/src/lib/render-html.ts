@@ -3,6 +3,7 @@
 import { ATTACHMENT_ID } from './attachments.js';
 import { type DocNode, isSafeHref, isSafeImageSrc } from './content.js';
 import type { ExportLinks } from './markdown.js';
+import { readWorkflowGraph, workflowOutline } from './workflow.js';
 
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
@@ -48,6 +49,10 @@ export function renderHtml(doc: DocNode, titleOf: TitleOf, mentionName: MentionN
       case 'syncedSource': return `<div>${children(node)}</div>`;
       case 'syncedCopy': return node.content?.length ? `<div>${children(node)}</div>` : '<p>Contenu indisponible</p>';
       case 'mermaid': case 'plantuml': return `<pre><code>${escapeHtml(String(a.code ?? ''))}</code></pre>`;
+      case 'workflow': {
+        const steps = workflowOutline(readWorkflowGraph(a.graph));
+        return steps.length ? `<figure><figcaption>Workflow</figcaption><ol>${steps.map((t) => `<li>${escapeHtml(t)}</li>`).join('')}</ol></figure>` : '';
+      }
       case 'horizontalRule': return '<hr>';
       // Pièce jointe : lien de téléchargement seulement (aucun lecteur intégré) ; le fichier n'est servi qu'à qui peut lire sa page.
       case 'attachment': case 'video': case 'audio':
