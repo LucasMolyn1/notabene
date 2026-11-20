@@ -4,6 +4,11 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## Non publié
+
+### Corrigé
+- **Écran de connexion** : les fournisseurs d'identité (Authentik, Google, SAML) sont présentés en tuiles carrées à coins arrondis avec leur logo, au lieu de gros boutons (nom en infobulle et pour les lecteurs d'écran). Demande de l'issue 159.
+
 ## [3.19.0] - 2026-11-20
 
 ### Corrigé
