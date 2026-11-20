@@ -713,7 +713,6 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
 }
 .slash-menu {
   position: fixed; z-index: 50; width: 300px; max-height: 340px; overflow-y: auto; padding: 6px;
-  animation: pop .12s ease-out;
 }
 @keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
 .slash-group { padding: 8px 8px 4px; font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
@@ -747,7 +746,7 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
 /* ==========================================================================
    Popovers, menus, modales, toasts
    ========================================================================== */
-.popover { position: fixed; z-index: 60; animation: pop .1s ease-out; }
+.popover { position: fixed; z-index: 60; }
 .menu { min-width: 220px; padding: 5px; }
 .menu-item {
   display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 8px;
@@ -786,7 +785,6 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
 }
 .modal.wide { width: min(980px, calc(100vw - 32px)); }
 .modal::backdrop { background: rgba(10, 10, 20, .38); backdrop-filter: blur(2px); }
-.modal[open] { animation: pop .15s ease-out; }
 .modal-inner { display: flex; flex-direction: column; max-height: calc(100vh - 64px); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 8px 20px; }
 .modal-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
@@ -803,21 +801,18 @@ a.crumb:hover { background: var(--hover); color: var(--text); }
 .toast {
   display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-radius: 10px;
   background: #1f1f24; color: #f3f3f1; box-shadow: var(--shadow); font-size: 13.5px; max-width: calc(100vw - 32px);
-  animation: toast-in .2s ease-out;
 }
 [data-theme='dark'] .toast { background: #f0efec; color: #1a1a1d; }
 .toast.error { background: var(--danger); color: #fff; }
-.toast.out { opacity: 0; transform: translateY(6px); transition: .2s; }
 .toast-action { font-weight: 600; color: #b3abff; }
 [data-theme='dark'] .toast-action { color: var(--accent); }
-@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 
 /* Palette de recherche */
 .overlay {
   position: fixed; inset: 0; z-index: 70; background: rgba(10, 10, 20, .32); backdrop-filter: blur(2px);
   display: flex; justify-content: center; align-items: flex-start; padding: 12vh 16px 16px;
 }
-.palette { width: min(620px, 100%); overflow: hidden; animation: pop .12s ease-out; display: flex; flex-direction: column; max-height: 70vh; }
+.palette { width: min(620px, 100%); overflow: hidden; display: flex; flex-direction: column; max-height: 70vh; }
 .pal-head { display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--border); color: var(--text-3); }
 .pal-input { flex: 1; height: 52px; border: 0; outline: none; background: none; font-size: 16px; color: var(--text); }
 .pal-list { overflow-y: auto; padding: 6px; }
@@ -1267,9 +1262,11 @@ ul.table { list-style: none; margin: 0; padding: 0; }
 .comment.reply { margin-left: 14px; padding-left: 10px; border-left: 2px solid var(--border); }
 .comment.resolved .comment-body { opacity: .65; }
 
-/* Respecte la préférence « réduire les animations » du système. */
+/* Respecte la préférence « réduire les animations » du système (les animations GSAP, elles, ne sont pas lancées : motion.js).
+   Pas de transition du tout : une durée minuscule rendrait au contraire toutes les propriétés transitoires (valeur par défaut
+   « all ») et chaque changement de style ne s'appliquerait qu'à l'image suivante. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
 }
 
 /* Blocs redimensionnables (images et diagrammes) */

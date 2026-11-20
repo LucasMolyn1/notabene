@@ -225,7 +225,7 @@ export function calendarEl(ctx) {
         class: `cal-ev cal-ev-static c-${colorOf(ev.row)}`, type: 'button', 'aria-label': describe(ev.row, ev),
         onClick: () => { closePopover(); const el = /** @type {HTMLElement | null} */ (wrap.querySelector(`[data-focus-key="cal-ev-${CSS.escape(ev.row.id)}"]`)); editor(el && el.isConnected ? el : anchor, ev.row); },
       }, h('span', { class: 'cal-ev-label' }, titleOf(ev.row))))))), { className: 'bt-popover' });
-    /** @type {HTMLElement | null} */ (document.querySelector('.popover .cal-ev'))?.focus();
+    /** @type {HTMLElement | null} */ (document.querySelector('.popover:not([inert]) .cal-ev'))?.focus();
   }
 
   // ---- Grille ----

@@ -253,3 +253,5 @@ Un audit automatisé (axe, clair et sombre) tourne dans la CI. Un audit avec lec
 ## Licence
 
 MIT. Inspiré de Docmost (AGPL-3.0), sans reprise de son code.
+
+Exception côté client : les animations utilisent [GSAP](https://gsap.com) (GreenSock), qui n'est pas sous licence MIT mais sous sa [licence « no charge »](https://gsap.com/standard-license) (usage libre, y compris commercial, hors outils concurrents de Webflow). GSAP reste une dépendance npm, intégrée au bundle du client ; son code n'est pas copié dans le dépôt.
