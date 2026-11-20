@@ -17,6 +17,7 @@ import { renderScim } from './settings/scim.js';
 import { renderShares } from './settings/shares.js';
 import { renderSecurity } from './settings/security.js';
 import { store } from './store.js';
+import { pageIn } from './motion.js';
 
 // ---- Page -----------------------------------------------------------------------------
 
@@ -89,6 +90,7 @@ export function showSettings(sectionId) {
       nav,
       h('div', { class: 'set-main' }, h('h1', null, icon(section.ico, 24), ` ${section.label}`), ...body))));
   for (const { part, box } of slots) part.render(box);
+  pageIn(document.querySelector('#main .set-main'));
   if (anchor && multi) requestAnimationFrame(() => document.getElementById(`set-${anchor}`)?.scrollIntoView({ block: 'start' }));
   // Les parties qui affichent des espaces se rafraîchissent quand ils changent.
   setView({ kind: 'settings', id: section.id, onStore: (evt) => { if (evt.type !== 'page') for (const { part, box } of slots) if (['spaces', 'groups', 'embed'].includes(part.id)) part.render(box); } });
