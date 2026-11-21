@@ -37,12 +37,17 @@ La barre d'outils du bloc est une seule butée de tabulation (flèches, Début e
 |---|---|
 | Tab, Maj+Tab | Nœud suivant ou précédent (ordre de lecture) |
 | Flèches | Déplacer de 20 px (Maj : 100 px) |
-| Entrée ou F2 | Modifier le libellé (Entrée valide, Maj+Entrée saute une ligne, Échap annule) |
+| Entrée | Ouvrir le panneau d'explication du nœud (le focus va sur son premier paramètre ; Échap le ferme et rend le focus au nœud) |
+| F2 | Modifier le libellé en place (Entrée valide, Maj+Entrée saute une ligne, Échap annule) |
 | L | Menu « Relier à… » (flèches, Entrée ; Échap ferme) |
 | Suppr ou Retour arrière | Supprimer le nœud et ses liens |
 | Ctrl ou Cmd + Z, Maj+Z | Annuler, refaire (historique de la page) |
 
+Le bouton « Agrandir » ouvre le schéma en plein écran, modifiable (fenêtre modale : le focus y reste, Échap la ferme et le focus revient au bouton ; si le panneau d'explication est ouvert, un premier Échap le ferme). Le panneau d'explication d'un nœud (clic ou Entrée) indique à quoi sert son type, ses paramètres (libellé, couleur) et ses connexions, avec un bouton pour aller au nœud relié. En lecture seule, il n'a aucun contrôle de modification.
+
 Sur un lien (la pastille au milieu du trait) : Entrée modifie le libellé, Suppr supprime le lien. Ctrl ou Cmd + molette, ou pincement sur écran tactile, zooment ; le bouton « Vue texte » affiche le plan du schéma en texte (toujours présent pour les lecteurs d'écran). Co-édition : le schéma entier est un seul attribut, la dernière modification enregistrée sur un même bloc l'emporte.
+
+Automatisations en schéma (panneau « Automatisations », bouton « Schéma ») : même canevas et mêmes touches (Tab, Entrée pour configurer un nœud, Suppr, L pour « Relier à… »), nœuds figés (rangement automatique, pas de déplacement aux flèches). L'état de l'automatisation et le dernier résultat du journal sont écrits en texte sous le schéma et sur le déclencheur : la couleur des nœuds ne porte jamais seule l'information.
 
 ## Autres vérifications à la main
 

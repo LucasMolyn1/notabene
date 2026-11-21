@@ -150,10 +150,17 @@ export function pageIcon(name, size = 16) {
 // ---- Modales --------------------------------------------------------------
 
 let modalSeq = 0;
-export function openModal({ title, body, actions = [], size = '' }) {
+// `beforeClose` (facultatif) : appelée avant toute fermeture (croix, bouton, clic à côté, Échap) ; rendre false garde la fenêtre ouverte.
+export function openModal({ title, body, actions = [], size = '', beforeClose = null }) {
   const titleId = `modal-title-${++modalSeq}`;
   const dlg = h('dialog', { class: `modal ${size}`, 'aria-labelledby': titleId });
-  const close = () => { if (dlg.open) { rememberDialog(dlg); dlg.close(); } };
+  const shut = () => { if (dlg.open) { rememberDialog(dlg); dlg.close(); } };
+  // Sans `beforeClose`, la fermeture reste immédiate (synchrone), comme avant.
+  const close = () => {
+    if (!dlg.open) return;
+    if (!beforeClose) { shut(); return; }
+    Promise.resolve(beforeClose()).then((ok) => { if (ok !== false) shut(); });
+  };
   dlg.append(h('div', { class: 'modal-inner' },
     h('div', { class: 'modal-head' },
       h('h2', { id: titleId }, title),
@@ -165,7 +172,9 @@ export function openModal({ title, body, actions = [], size = '' }) {
     }, a.label)))));
   dlg.addEventListener('mousedown', (e) => { if (e.target === dlg) close(); });
   // Échap : la position est relevée avant la fermeture native, pour l'animation de sortie.
-  dlg.addEventListener('cancel', () => rememberDialog(dlg));
+  dlg.addEventListener('cancel', (e) => {
+    if (beforeClose) { e.preventDefault(); close(); } else rememberDialog(dlg);
+  });
   dlg.addEventListener('close', () => modalOut(dlg));
   document.body.append(dlg);
   dlg.showModal();

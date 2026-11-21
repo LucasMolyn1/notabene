@@ -104,6 +104,8 @@ export function addNode(graph, kinds, kind, x, y) {
 
 export const moveNode = (graph, id, x, y) => ({ ...graph, nodes: graph.nodes.map((n) => (n.id === id ? { ...n, x: coord(x), y: coord(y) } : n)) });
 export const setNodeLabel = (graph, id, label) => ({ ...graph, nodes: graph.nodes.map((n) => (n.id === id ? { ...n, label: cleanLabel(label) } : n)) });
+/** Couleur par nom (liste fermée COLORS) ; toute autre valeur donne « aucune couleur ». */
+export const setNodeColor = (graph, id, color) => ({ ...graph, nodes: graph.nodes.map((n) => (n.id === id ? { ...n, color: typeof color === 'string' && COLORS.includes(color) ? color : null } : n)) });
 export const setEdgeLabel = (graph, id, label) => ({ ...graph, edges: graph.edges.map((e) => (e.id === id ? { ...e, label: cleanLabel(label, LIMITS.edgeLabel, false).trim() || null } : e)) });
 export const removeEdge = (graph, id) => ({ ...graph, edges: graph.edges.filter((e) => e.id !== id) });
 export const removeNode = (graph, id) => ({ ...graph, nodes: graph.nodes.filter((n) => n.id !== id), edges: graph.edges.filter((e) => e.from !== id && e.to !== id) });
