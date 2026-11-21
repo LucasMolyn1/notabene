@@ -1,5 +1,6 @@
 // Bloc « Workflow » : insertion par « / », ajout de nœuds, liens, libellés, clavier, suppression, annuler, persistance,
-// lecture seule, Vue texte, largeur téléphone et audit axe (clair et sombre).
+// lecture seule, Vue texte, vue plein écran modifiable (« Agrandir »), panneau d'explication d'un nœud, petits écrans
+// (1280 x 720 et 375 px) et audit axe (clair et sombre).
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test';
 import { ADMIN } from './accounts';
@@ -53,7 +54,7 @@ test('insérer, ajouter, relier, renommer, déplacer, supprimer, annuler, rechar
   await expect(page.locator('.wf-node')).toHaveCount(4);
   const decision = page.getByRole('group', { name: /^Décision : / });
   await expect(decision).toBeFocused();
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('F2'); // F2 : modifier le libellé en place (Entrée ouvre le panneau d'explication)
   await page.getByRole('textbox', { name: 'Libellé : Décision' }).fill('Validée ?');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('group', { name: 'Décision : Validée ?' })).toBeFocused();
@@ -166,11 +167,161 @@ test('lecture seule : aucun contrôle de modification, loupe, Vue texte', async 
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await expect(list).not.toHaveClass(/sr-only/);
 
-  // Loupe : le schéma est recopié en image (aucun script).
+  // Entrée ouvre le panneau d'explication, sans aucun contrôle de modification.
+  await node(page, 'Documenter').focus();
+  await page.keyboard.press('Enter');
+  const info = page.getByRole('complementary', { name: 'Étape : Documenter' });
+  await expect(info).toBeVisible();
+  await expect(info).toContainText('Une action à réaliser');
+  await expect(info.locator('input, textarea, select')).toHaveCount(0);
+  await expect(info.getByRole('button', { name: 'Supprimer ce nœud' })).toHaveCount(0);
+  await expect(info.locator('dd').first()).toHaveText('Documenter');
+  await page.keyboard.press('Escape');
+  await expect(info).toBeHidden();
+
+  // Agrandir : même vue en plein écran, en lecture seule pour ce lecteur.
   await page.getByRole('button', { name: 'Agrandir le schéma Workflow' }).click();
   const dialog = page.getByRole('dialog', { name: 'Schéma Workflow agrandi' });
-  await expect(dialog.getByRole('img', { name: 'Schéma Workflow agrandi' })).toHaveAttribute('src', /^data:image\/svg\+xml;base64,/);
-  await expect(dialog.locator('script')).toHaveCount(0);
+  await expect(dialog.locator('.wf-node')).toHaveCount(4);
+  await expect(dialog.getByRole('button', { name: /^Ajouter / })).toHaveCount(0);
+  await expect(dialog.locator('.wf-port')).toHaveCount(0);
+  await dialog.locator('.wf-node').filter({ hasText: 'Archiver' }).click();
+  await expect(dialog.getByRole('complementary', { name: 'Fin : Archiver' })).toBeVisible();
+  await expect(dialog.locator('.wf-panel').locator('input, textarea, select')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Agrandir le schéma Workflow' })).toBeFocused();
+});
+
+test('agrandir reste modifiable : ajouter et renommer en plein écran, fermer, retrouver dans la page', async ({ page, browser }) => {
+  const id = await adminPage(browser, 'Workflow agrandi', GRAPH);
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto(`/p/${id}`);
+  await expect(page.locator('.wf-node')).toHaveCount(4);
+  const open = page.getByRole('button', { name: 'Agrandir le schéma Workflow' });
+  await open.click();
+  const dialog = page.getByRole('dialog', { name: 'Schéma Workflow agrandi' });
+  await expect(dialog.locator('.wf-node')).toHaveCount(4);
+
+  // Mêmes droits que dans la page : ajout, liaison par le menu « Relier à… », libellé par le panneau.
+  await dialog.getByRole('button', { name: 'Ajouter Étape' }).click();
+  await expect(dialog.locator('.wf-node')).toHaveCount(5);
+  await dialog.getByRole('group', { name: 'Étape : Étape' }).press('Enter');
+  const label = dialog.getByLabel('Libellé', { exact: true });
+  await expect(label).toBeFocused();
+  await label.fill('Relire');
+  await label.press('Enter');
+  await expect(dialog.getByRole('group', { name: 'Étape : Relire' })).toBeVisible();
+  await expect(dialog.getByRole('complementary', { name: 'Étape : Relire' })).toBeVisible();
+
+  // Échap : d'abord le panneau (focus rendu au nœud), puis la fenêtre ; le focus revient au bouton « Agrandir ».
+  await page.keyboard.press('Escape');
+  await expect(dialog.locator('.wf-panel')).toBeHidden();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('group', { name: 'Étape : Relire' })).toBeFocused();
+  await page.keyboard.press('l');
+  await dialog.getByRole('menuitem', { name: 'Fin : Archiver' }).click();
+  await expect(dialog.locator('.wf-edge')).toHaveCount(4);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(open).toBeFocused();
+
+  // La page montre le résultat et le serveur l'a enregistré (une transaction par action, comme dans la page).
+  await expect(page.locator('.wf-node')).toHaveCount(5);
+  await expect(page.getByRole('group', { name: 'Étape : Relire' })).toBeVisible();
+  await expect(page.locator('.wf-edge')).toHaveCount(4);
+  await expect.poll(async () => {
+    const ctx = await adminContext(browser);
+    const p = (await (await api(ctx.request, 'GET', `/pages/${id}`)).json()) as { content?: unknown };
+    await ctx.close();
+    return JSON.stringify(p.content ?? '').includes('Relire');
+  }, { timeout: 15_000 }).toBe(true);
+  await page.reload();
+  await expect(page.locator('.wf-node')).toHaveCount(5);
+});
+
+test('panneau d’explication : clic, clavier, paramètres, connexions, suppression', async ({ page, browser }) => {
+  const id = await adminPage(browser, 'Workflow panneau', GRAPH);
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.goto(`/p/${id}`);
+  await expect(page.locator('.wf-node')).toHaveCount(4);
+  await expect(page.locator('.wf-panel')).toBeHidden();
+
+  // Clic : à quoi sert le nœud, ses paramètres, ses connexions.
+  await node(page, 'Validée ?').click();
+  const info = page.getByRole('complementary', { name: 'Décision : Validée ?' });
+  await expect(info).toBeVisible();
+  await expect(info).toContainText('Une question dont la réponse oriente le processus');
+  await expect(info.getByLabel('Libellé', { exact: true })).toHaveValue('Validée ?');
+  await expect(info.getByRole('button', { name: 'Depuis Début : Demande reçue' })).toBeVisible();
+  await expect(info.getByRole('button', { name: 'Oui vers Étape : Documenter' })).toBeVisible();
+  await expect(info.getByRole('button', { name: 'Non vers Fin : Archiver' })).toBeVisible();
+
+  // Paramètres : couleur par nom, libellé.
+  await info.getByLabel('Couleur').selectOption('green');
+  await expect(node(page, 'Validée ?')).toHaveClass(/wf-color-green/);
+  await info.getByLabel('Libellé', { exact: true }).fill('Conforme ?');
+  await info.getByLabel('Libellé', { exact: true }).press('Enter');
+  await expect(page.getByRole('group', { name: 'Décision : Conforme ?' })).toBeVisible();
+
+  // Aller au nœud relié : le panneau suit, le focus est sur le nœud.
+  await page.locator('.wf-panel').getByRole('button', { name: 'Oui vers Étape : Documenter' }).click();
+  await expect(page.getByRole('complementary', { name: 'Étape : Documenter' })).toBeVisible();
+  await expect(node(page, 'Documenter')).toBeFocused();
+
+  // Clic hors nœud : le panneau se ferme.
+  const box = (await page.locator('.wf-viewport').boundingBox())!;
+  await page.mouse.click(box.x + box.width - 20, box.y + box.height - 20);
+  await expect(page.locator('.wf-panel')).toBeHidden();
+
+  // Clavier : Entrée ouvre le panneau et place le focus sur le premier paramètre ; Échap le ferme et rend le focus au nœud.
+  await node(page, 'Archiver').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('complementary', { name: 'Fin : Archiver' })).toBeVisible();
+  await expect(page.getByLabel('Libellé', { exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.wf-panel')).toBeHidden();
+  await expect(node(page, 'Archiver')).toBeFocused();
+
+  // Suppression par le panneau (retire aussi les liens du nœud).
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Supprimer ce nœud' }).click();
+  await expect(page.locator('.wf-node')).toHaveCount(3);
+  await expect(page.locator('.wf-edge')).toHaveCount(2);
+  await expect(page.locator('.wf-panel')).toBeHidden();
+});
+
+test('petit écran : plein écran sur 1280 x 720, libellés lisibles, schéma ajusté', async ({ page, browser }) => {
+  const id = await adminPage(browser, 'Workflow portable', GRAPH);
+  await loginUi(page, ADMIN.email, ADMIN.password);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`/p/${id}`);
+  await expect(page.locator('.wf-node')).toHaveCount(4);
+  await page.getByRole('button', { name: 'Agrandir le schéma Workflow' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Schéma Workflow agrandi' });
+  await expect(dialog.locator('.wf-node')).toHaveCount(4);
+  const d = (await dialog.boundingBox())!;
+  expect(d.x).toBeGreaterThanOrEqual(0);
+  expect(d.y).toBeGreaterThanOrEqual(0);
+  expect(d.x + d.width).toBeLessThanOrEqual(1280);
+  expect(d.y + d.height).toBeLessThanOrEqual(720);
+  expect(d.height).toBeGreaterThan(680);
+  // Ajusté à l'ouverture : tous les nœuds sont dans la zone, et un libellé (13 px) reste au moins à ~11 px à l'écran.
+  const area = (await dialog.locator('.wf-viewport').boundingBox())!;
+  for (const n of await dialog.locator('.wf-node').all()) {
+    await expect.poll(async () => {
+      const b = (await n.boundingBox())!;
+      return b.x >= area.x - 1 && b.y >= area.y - 1 && b.x + b.width <= area.x + area.width + 1 && b.y + b.height <= area.y + area.height + 1;
+    }).toBe(true);
+  }
+  const scale = await dialog.locator('.wf-world').evaluate((w) => Number(/scale\(([\d.]+)\)/.exec((w as HTMLElement).style.transform)?.[1] ?? 0));
+  expect(scale * 13).toBeGreaterThanOrEqual(10.9);
+  // Panneau à droite du canevas.
+  await dialog.locator('.wf-node').filter({ hasText: 'Documenter' }).click();
+  const panel = (await dialog.locator('.wf-panel').boundingBox())!;
+  const view = (await dialog.locator('.wf-viewport').boundingBox())!;
+  expect(panel.x).toBeGreaterThanOrEqual(view.x + view.width - 1);
+  await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 });
@@ -202,6 +353,21 @@ test.describe('téléphone', () => {
     expect(wf.x + wf.width).toBeLessThanOrEqual(375);
     await page.getByRole('button', { name: 'Ajouter Étape' }).tap();
     await expect(page.locator('.wf-node')).toHaveCount(5);
+
+    // Plein écran : la fenêtre tient dans l'écran, le panneau s'ouvre sous le canevas, sans défilement horizontal.
+    await page.getByRole('button', { name: 'Agrandir le schéma Workflow' }).tap();
+    const dialog = page.getByRole('dialog', { name: 'Schéma Workflow agrandi' });
+    await expect(dialog.locator('.wf-node')).toHaveCount(5);
+    const d = (await dialog.boundingBox())!;
+    expect(d.x).toBeGreaterThanOrEqual(0);
+    expect(d.x + d.width).toBeLessThanOrEqual(375);
+    expect(d.y + d.height).toBeLessThanOrEqual(800);
+    await dialog.locator('.wf-node').filter({ hasText: 'Documenter' }).tap();
+    const panel = (await dialog.locator('.wf-panel').boundingBox())!;
+    const view = (await dialog.locator('.wf-viewport').boundingBox())!;
+    expect(panel.y).toBeGreaterThanOrEqual(view.y + view.height - 1);
+    expect(panel.x + panel.width).toBeLessThanOrEqual(375);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     await ctx.close();
   });
 });
@@ -216,8 +382,18 @@ for (const scheme of ['light', 'dark'] as const) {
     await expect(page.locator('.wf-node')).toHaveCount(4);
     await page.getByRole('button', { name: 'Vue texte' }).click();
     await node(page, 'Documenter').focus();
+    await page.keyboard.press('Enter'); // panneau d'explication ouvert pendant l'audit
+    await expect(page.locator('.wf-panel')).toBeVisible();
     const result = await new AxeBuilder({ page }).include('.wf').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
     expect(result.violations.map((v) => `${v.id} | ${v.nodes.slice(0, 2).map((n) => n.target.join(' ')).join(' ; ')}`)).toEqual([]);
+
+    // Vue plein écran, panneau ouvert.
+    await page.getByRole('button', { name: 'Agrandir le schéma Workflow' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Schéma Workflow agrandi' });
+    await dialog.locator('.wf-node').filter({ hasText: 'Validée' }).click();
+    await expect(dialog.locator('.wf-panel')).toBeVisible();
+    const full = await new AxeBuilder({ page }).include('dialog.wf-modal').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+    expect(full.violations.map((v) => `${v.id} | ${v.nodes.slice(0, 2).map((n) => n.target.join(' ')).join(' ; ')}`)).toEqual([]);
     await ctx.close();
   });
 }

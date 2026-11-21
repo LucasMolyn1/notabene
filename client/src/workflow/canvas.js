@@ -5,11 +5,18 @@
 // - kinds : registre { type: { label, in, out: [prises], shape, icon, defaultLabel } } ;
 // - graph : graphe courant (voir model.js) ; setGraph() le remplace (mise à jour distante) ;
 // - constraints : { canAdd(graph, kind), canConnect(graph, from, port, to) } renvoient un message d'erreur ou null ;
+//   afterAdd(graph, node) et afterRemove(graph, removed, before) peuvent renvoyer le graphe corrigé (insertion dans une chaîne,
+//   rangement) ; un type peut être figé (`movable: false`) ; edgeLabels: false retire la modification du libellé des liens ;
 // - onChange(graph, json) : une action terminée (un déplacement = un seul appel, au relâchement) ;
 // - onUndo / onRedo : Ctrl+Z et Ctrl+Maj+Z dans le canevas (l'historique appartient à l'appelant) ;
-// - renderNodeBody(node, def, body) : remplace le contenu d'un nœud (par défaut : type et libellé).
+// - renderNodeBody(node, def, body) : remplace le contenu d'un nœud (par défaut : type et libellé) ;
+// - panneau d'explication (clic ou Entrée sur un nœud) : contenu fourni par le registre (`describe`, `fields`, voir kinds.js) ;
+//   onField(node, name, value) enregistre un paramètre (libellé et couleur par défaut), renderFields(node, def, host) le remplace
+//   (configuration des automatisations). Un type peut interdire la modification du libellé (`labelEditable: false`).
 import { h } from '../util.js';
 import { icon } from '../icons.js';
+import { fadeIn, slideIn } from '../motion.js';
+import { createInspector } from './inspector.js';
 import { KINDS, LIMITS, PORT_LABELS } from './kinds.js';
 import * as M from './model.js';
 
@@ -19,6 +26,8 @@ const NODE_H = 56;
 const MIN_Z = 0.5;
 const MAX_Z = 2;
 const STEP_Z = 1.25;
+// Taille de lecture : un libellé (13 px) ne descend jamais sous ~11 px à l'écran au zoom « ajusté » ; sinon le canevas défile.
+const MIN_FIT_Z = 11 / 13;
 const DRAG_PX = 4;
 let seq = 0;
 
@@ -38,11 +47,13 @@ function curve(a, b) {
 }
 
 /**
- * @param {{ kinds?: any, graph?: any, editable?: boolean, constraints?: { canAdd?: (graph: any, kind: string) => string | null | undefined, canConnect?: (graph: any, from: string, port: string, to: string) => string | null | undefined },
- *   onChange?: (graph: any, json: string) => void, onUndo?: () => void, onRedo?: () => void, renderNodeBody?: (node: any, def: any, body: HTMLElement) => void, portLabels?: Record<string, string>, label?: string }} [options]
+ * @param {{ kinds?: any, graph?: any, editable?: boolean, constraints?: { canAdd?: (graph: any, kind: string) => string | null | undefined, canConnect?: (graph: any, from: string, port: string, to: string) => string | null | undefined,
+ *     afterAdd?: (graph: any, node: any) => any, afterRemove?: (graph: any, removed: any, before: any) => any },
+ *   onChange?: (graph: any, json: string) => void, onUndo?: () => void, onRedo?: () => void, renderNodeBody?: (node: any, def: any, body: HTMLElement) => void, portLabels?: Record<string, string>, label?: string, edgeLabels?: boolean,
+ *   onField?: (node: any, name: string, value: string) => void, renderFields?: (node: any, def: any, host: HTMLElement) => void }} [options]
  */
 export function createCanvas({
-  kinds = KINDS, graph, editable = false, constraints = {}, onChange, onUndo, onRedo, renderNodeBody, portLabels = PORT_LABELS, label = 'Schéma',
+  kinds = KINDS, graph, editable = false, constraints = {}, onChange, onUndo, onRedo, renderNodeBody, portLabels = PORT_LABELS, label = 'Schéma', onField, renderFields, edgeLabels = true,
 } = {}) {
   const uid = ++seq;
   let g = graph || M.emptyGraph();
@@ -61,6 +72,7 @@ export function createCanvas({
   let statusTimer = 0;
   const pointers = new Map();
   let pinch = null;
+  let panelOpen = false; // panneau d'explication ouvert (suit le nœud choisi)
   let frozen = null; // ancêtre déplaçable (bloc d'éditeur) dont le glisser natif est suspendu pendant un geste
   const nodeEls = new Map();
   const edgeEls = new Map();
@@ -88,10 +100,18 @@ export function createCanvas({
   const world = h('div', { class: 'wf-world' }, links);
   const empty = h('div', { class: 'wf-empty' }, 'Schéma vide');
   const viewport = h('div', { class: 'wf-viewport', tabindex: '-1' }, world, empty);
+  const inspector = createInspector({
+    kinds, portLabels, isEditable: () => canEdit, renderFields,
+    onField: (id, name, value) => applyField(id, name, value),
+    onGoto: (id) => gotoNode(id),
+    onDelete: (id) => { select({ type: 'node', id }); deleteSelection(); },
+    onClose: () => closePanel(true),
+  });
+  const main = h('div', { class: 'wf-main' }, viewport, inspector.el);
   const bar = h('div', { class: 'wf-bar', role: 'toolbar', 'aria-label': `Outils du schéma ${label}` });
   const textList = h('ol', { class: 'wf-text sr-only', 'aria-label': `Vue texte du schéma ${label}` });
   const status = h('div', { class: 'wf-status sr-only', role: 'status' });
-  const el = h('div', { class: 'wf', role: 'group', 'aria-label': label }, bar, viewport, textList, status);
+  const el = h('div', { class: 'wf', role: 'group', 'aria-label': label }, bar, main, textList, status);
 
   // ---- Messages ----
   function say(message, isError = false) {
@@ -152,9 +172,10 @@ export function createCanvas({
     if (!b) { view.x = 20; view.y = 20; view.z = 1; applyView(); return; }
     const bw = b.x1 - b.x0;
     const bh = b.y1 - b.y0;
-    view.z = Math.min(1.25, Math.max(MIN_Z, Math.min((vw - 48) / bw, (vh - 48) / bh)));
-    view.x = (vw - bw * view.z) / 2 - b.x0 * view.z;
-    view.y = (vh - bh * view.z) / 2 - b.y0 * view.z;
+    // Jamais sous la taille de lecture : si le schéma ne tient pas, il commence en haut à gauche et se fait défiler.
+    view.z = Math.min(1.25, Math.max(MIN_FIT_Z, Math.min((vw - 48) / bw, (vh - 48) / bh)));
+    view.x = bw * view.z <= vw ? (vw - bw * view.z) / 2 - b.x0 * view.z : 24 - b.x0 * view.z;
+    view.y = bh * view.z <= vh ? (vh - bh * view.z) / 2 - b.y0 * view.z : 24 - b.y0 * view.z;
     fitted = true;
     applyView();
   }
@@ -275,7 +296,7 @@ export function createCanvas({
           rec.chip.setAttribute('role', 'button');
           rec.chip.tabIndex = 0;
           rec.chip.removeAttribute('aria-hidden');
-          rec.chip.setAttribute('aria-label', `Lien de « ${short(a.label, 30)} » vers « ${short(b.label, 30)} »${text ? ` : ${text}` : ''}. Entrée : modifier le libellé. Suppr : supprimer.`);
+          rec.chip.setAttribute('aria-label', `Lien de « ${short(a.label, 30)} » vers « ${short(b.label, 30)} »${text ? ` : ${text}` : ''}. ${edgeLabels ? 'Entrée : modifier le libellé. ' : ''}Suppr : supprimer.`);
         } else {
           rec.chip.removeAttribute('role');
           rec.chip.removeAttribute('tabindex');
@@ -302,13 +323,14 @@ export function createCanvas({
   }
 
   function render() {
-    if (selection && !(selection.type === 'node' ? nodeById(selection.id) : g.edges.some((e) => e.id === selection.id))) selection = null;
+    if (selection && !(selection.type === 'node' ? nodeById(selection.id) : g.edges.some((e) => e.id === selection.id))) { selection = null; panelOpen = false; }
     renderNodes();
     renderEdges();
     renderText();
     applySelection();
     empty.hidden = g.nodes.length > 0;
     updateBar();
+    syncPanel();
   }
 
   function redraw() {
@@ -415,6 +437,49 @@ export function createCanvas({
     selection = sel;
     applySelection();
     updateBar();
+    if (!sel) panelOpen = false;
+    syncPanel();
+  }
+
+  // ---- Panneau d'explication ----
+  function syncPanel() {
+    const n = panelOpen && selection?.type === 'node' ? nodeById(selection.id) : null;
+    if (!n) { inspector.hide(); return; }
+    if (inspector.show(n, g)) (el.classList.contains('wf-full') ? slideIn : fadeIn)(inspector.el, el.classList.contains('wf-full') ? { x: 16 } : { y: 6 });
+  }
+  /** Ouvre le panneau sur un nœud (clic, Entrée) ; `focus` y place le focus (clavier). */
+  function openPanel(id, focus = false) {
+    if (!nodeById(id)) return;
+    panelOpen = true;
+    if (selection?.type === 'node' && selection.id === id) syncPanel(); else select({ type: 'node', id });
+    if (focus) inspector.focusFirst();
+  }
+  function closePanel(refocus = false) {
+    const id = inspector.nodeId;
+    panelOpen = false;
+    syncPanel();
+    if (refocus) (id && nodeEls.get(id) ? nodeEls.get(id) : viewport).focus({ preventScroll: true });
+  }
+  function gotoNode(id) {
+    if (!nodeById(id)) return;
+    select({ type: 'node', id });
+    reveal(id);
+    nodeEls.get(id)?.focus({ preventScroll: true });
+  }
+  /** Enregistre un paramètre du nœud (libellé, couleur par nom, ou champ propre au registre via onField). */
+  function applyField(id, name, value) {
+    if (!canEdit) return;
+    const n = nodeById(id);
+    if (!n) return;
+    if (onField) { onField(n, name, value); return; }
+    if (name === 'label') {
+      const label = M.cleanLabel(value).trim();
+      if (!label) { say('Le libellé ne peut pas être vide.', true); syncPanel(); return; }
+      if (label !== n.label) commit(M.setNodeLabel(g, id, label), `Libellé modifié : ${short(label, 30)}.`);
+    } else if (name === 'color') {
+      const color = value || null;
+      if (color !== (n.color ?? null)) commit(M.setNodeColor(g, id, color), color ? 'Couleur modifiée.' : 'Couleur retirée.');
+    }
   }
 
   function addAtCenter(kind) {
@@ -426,7 +491,8 @@ export function createCanvas({
     for (let i = 0; i < 50 && g.nodes.some((n) => n.x === x && n.y === y); i++) { x += LIMITS.grid; y += LIMITS.grid; }
     const r = M.addNode(g, kinds, kind, x, y);
     if (r.error) { say(r.error, true); return; }
-    if (commit(r.graph, `${kinds[kind].label} ajouté.`)) {
+    const graphAfter = constraints.afterAdd?.(r.graph, r.node) ?? r.graph;
+    if (commit(graphAfter, `${kinds[kind].label} ajouté.`)) {
       select({ type: 'node', id: r.node.id });
       nodeEls.get(r.node.id)?.focus({ preventScroll: true });
       reveal(r.node.id);
@@ -447,7 +513,8 @@ export function createCanvas({
       const i = order.findIndex((n) => n.id === selection.id);
       const nextId = (order[i + 1] || order[i - 1])?.id;
       const n = nodeById(selection.id);
-      if (commit(M.removeNode(g, selection.id), `« ${short(n.label, 30)} » supprimé.`)) {
+      const removed = M.removeNode(g, selection.id);
+      if (commit(constraints.afterRemove?.(removed, n, g) ?? removed, `« ${short(n.label, 30)} » supprimé.`)) {
         selection = null;
         const target = nextId && nodeEls.get(nextId);
         (target || viewport).focus({ preventScroll: true });
@@ -478,6 +545,8 @@ export function createCanvas({
   // ---- Édition d'un libellé en place ----
   function startEdit(type, id) {
     if (!canEdit) return;
+    if (type === 'node' && nodeById(id) && kinds[nodeById(id).kind].labelEditable === false) return;
+    if (type === 'edge' && !edgeLabels) return;
     finishEdit(true);
     const isNode = type === 'node';
     const host = isNode ? nodeEls.get(id) : edgeEls.get(id)?.chip;
@@ -619,7 +688,7 @@ export function createCanvas({
       const n = nodeById(id);
       select({ type: 'node', id });
       nodeEl.focus({ preventScroll: true });
-      drag = canEdit ? { ...base, type: 'move', id, ox: n.x, oy: n.y, x: n.x, y: n.y } : { ...base, type: 'pan', id, vx: view.x, vy: view.y };
+      drag = canEdit && kinds[n.kind].movable !== false ? { ...base, type: 'move', id, ox: n.x, oy: n.y, x: n.x, y: n.y } : { ...base, type: 'pan', id, vx: view.x, vy: view.y };
     } else if (edgeEl) {
       select({ type: 'edge', id: edgeEl.dataset.id });
       edgeEls.get(edgeEl.dataset.id)?.chip.focus({ preventScroll: true });
@@ -695,6 +764,7 @@ export function createCanvas({
     } else if (d.moved) render();
     else if (d.id) {
       // Double appui (souris ou doigt) sur un nœud : modifier le libellé.
+      openPanel(d.id);
       const now = Date.now();
       if (lastTap.id === d.id && now - lastTap.at < 400) { lastTap = { id: null, at: 0 }; editNode(d.id); }
       else lastTap = { id: d.id, at: now };
@@ -719,7 +789,17 @@ export function createCanvas({
 
   el.addEventListener('keydown', (e) => {
     const t = e.target;
-    if (t.matches?.('textarea, input')) return;
+    if (e.key === 'Escape' && menu) { e.preventDefault(); e.stopPropagation(); closeMenu(true); return; } // menu sans élément actif : Échap ne ferme que lui
+    if (e.key === 'Escape' && inspector.contains(t)) {
+      // Échap dans le panneau : annule la saisie non validée, ferme le panneau et rend le focus au nœud (ne ferme pas la fenêtre).
+      e.preventDefault();
+      e.stopPropagation();
+      const n = selection?.type === 'node' ? nodeById(selection.id) : null;
+      if (n) inspector.revertActive(n, g);
+      closePanel(true);
+      return;
+    }
+    if (t.matches?.('textarea, input, select')) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
     if (mod && !e.altKey && (k === 'z' || k === 'y')) {
@@ -730,19 +810,21 @@ export function createCanvas({
     if (mod || e.altKey) return;
     const chip = t.closest?.('.wf-chip');
     if (chip && canEdit) {
-      if (e.key === 'Enter' || e.key === 'F2') { e.preventDefault(); editEdge(chip.dataset.id); }
+      if ((e.key === 'Enter' || e.key === 'F2') && edgeLabels) { e.preventDefault(); editEdge(chip.dataset.id); }
       else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); select({ type: 'edge', id: chip.dataset.id }); deleteSelection(); }
       return;
     }
     if (!t.classList?.contains('wf-node')) return;
     const id = t.dataset.id;
+    if (e.key === 'Enter') { e.preventDefault(); openPanel(id, true); return; }
     if (!canEdit) return;
+    if (kinds[nodeById(id)?.kind]?.movable === false && e.key.startsWith('Arrow')) return;
     const step = e.shiftKey ? 100 : LIMITS.grid;
     if (e.key === 'ArrowLeft') moveBy(id, -step, 0);
     else if (e.key === 'ArrowRight') moveBy(id, step, 0);
     else if (e.key === 'ArrowUp') moveBy(id, 0, -step);
     else if (e.key === 'ArrowDown') moveBy(id, 0, step);
-    else if (e.key === 'Enter' || e.key === 'F2') editNode(id);
+    else if (e.key === 'F2') editNode(id);
     else if (e.key === 'Delete' || e.key === 'Backspace') { select({ type: 'node', id }); deleteSelection(); }
     else if (k === 'l' && !e.shiftKey) openLinkMenu(id, t);
     else return;
@@ -774,6 +856,11 @@ export function createCanvas({
       render();
     },
     fit,
+    /** Redessine les nœuds (le contenu affiché dépend d'un état extérieur, par exemple la configuration d'une automatisation). */
+    refresh: render,
+    openPanel,
+    closePanel,
+    select: (id) => select(id ? { type: 'node', id } : null),
     /** Vrai pendant un déplacement ou une liaison (la vue ne doit pas être redessinée). */
     isBusy: () => !!drag || !!editing,
     destroy() {
