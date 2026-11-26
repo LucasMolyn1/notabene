@@ -48,6 +48,45 @@ export function setSpaceSharingEnabled(db: DB, enabled: boolean, userId: string)
   })();
 }
 
+// Envoi du lien par e-mail à sa création (routes/shares.ts, champ `notifyEmail`) : réglage d'instance dédié, désactivé par défaut.
+// Un seul destinataire, sujet et corps fixes (nom de l'espace, nom de l'expéditeur, lien, expiration) : aucun relais ouvert.
+// L'adresse n'est ni stockée ni journalisée ; seuls l'instant et l'espace de chaque envoi le sont, pour les plafonds.
+const MAIL_KEY = 'space_share_mail';
+/** E-mails de lien au plus par espace et par heure. */
+export const SPACE_SHARE_MAILS_PER_HOUR = 10;
+/** E-mails de lien au plus pour toute l'instance sur 24 heures. */
+export const SPACE_SHARE_MAILS_PER_DAY = 100;
+
+/**
+ * Caractères admis dans l'adresse d'un destinataire (en plus du format vérifié par z.email()) : ni espace, ni virgule, ni
+ * chevron, ni guillemet, ni retour à la ligne, donc aucune injection d'en-tête ni liste de destinataires possible.
+ */
+export const NOTIFY_EMAIL_CHARS = /^[A-Za-z0-9._%+@-]+$/;
+
+/** Réglage d'instance de l'envoi des liens d'espace par e-mail (désactivé tant qu'un administrateur ne l'a pas activé). */
+export const spaceShareMailSetting = (db: DB): boolean => {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(MAIL_KEY) as { value: string } | undefined;
+  try { return !!row && (JSON.parse(row.value) as { enabled?: boolean }).enabled === true; } catch { return false; }
+};
+
+export function setSpaceShareMail(db: DB, enabled: boolean, userId: string): void {
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+  ).run(MAIL_KEY, JSON.stringify({ enabled }), Date.now(), userId);
+}
+
+/** Réserve un envoi dans les plafonds (par espace et par heure, instance sur 24 heures) ; false si l'un est atteint. */
+export function takeSpaceShareMail(db: DB, spaceId: string, now = Date.now()): boolean {
+  return db.transaction(() => {
+    const space = (db.prepare('SELECT COUNT(*) AS n FROM space_share_mails WHERE space_id = ? AND at > ?').get(spaceId, now - 3_600_000) as { n: number }).n;
+    const all = (db.prepare('SELECT COUNT(*) AS n FROM space_share_mails WHERE at > ?').get(now - 86_400_000) as { n: number }).n;
+    if (space >= SPACE_SHARE_MAILS_PER_HOUR || all >= SPACE_SHARE_MAILS_PER_DAY) return false;
+    db.prepare('INSERT INTO space_share_mails (space_id, at) VALUES (?, ?)').run(spaceId, now);
+    return true;
+  }).immediate();
+}
+
 /** L'espace accepte un lien de partage : espace partagé (jamais personnel) dont le partage public est autorisé. */
 export const spaceAllowsShare = (db: DB, spaceId: string): boolean =>
   !!db.prepare("SELECT 1 FROM spaces WHERE id = ? AND kind = 'shared' AND sharing_enabled = 1").get(spaceId);

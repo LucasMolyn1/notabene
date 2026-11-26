@@ -252,6 +252,9 @@ describe('API : gestion des membres d’un espace', () => {
     const g = (await call(await login('ed1'), 'GET', '/api/v3/spaces/sA/member-candidates?q=equ')).json() as { groups: { id: string }[] };
     expect(g.groups.map((x) => x.id)).toEqual(['equipe']);
     expect((await call(await login('ed1'), 'GET', '/api/v3/spaces/sA/member-candidates?q=a')).statusCode).toBe(400); // deux caractères au moins
+    const none = (await call(await login('ed1'), 'GET', '/api/v3/spaces/sA/member-candidates')).json() as { users: unknown[]; groups: unknown[] }; // sans saisie : groupes seulement
+    expect(none.users).toEqual([]);
+    expect(none.groups.length).toBeGreaterThan(0);
     const admin = (await call(await login('admin'), 'GET', '/api/v3/spaces/sA/member-candidates?q=nom ed2')).json() as { users: { email?: string }[] };
     expect(admin.users[0]?.email).toBe('ed2@example.com');
   });

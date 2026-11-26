@@ -57,6 +57,7 @@ const PATHS = {
   calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
+  workflow: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><path d="M6.5 10v3a3 3 0 0 0 3 3H14"/>',
   wand:'<path d="m15 4-1 1m-2 8-8 8 4 4 8-8M21.4 6.1a2 2 0 0 0-2.8 0L15 9.7 18.3 13l3.5-3.5a2 2 0 0 0-.4-3.4Z"/>',
 };
 
@@ -65,5 +66,14 @@ export function icon(name, size = 16) {
   span.className = 'ico';
   // eslint-disable-next-line no-unsanitized/property -- `size` est numérique (appelants internes) et PATHS est constant
   span.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATHS[name] || ''}</svg>`;
+  return span;
+}
+
+// Logo Google multicolore (marque officielle simplifiée), pour les tuiles de connexion.
+export function googleLogo(size = 24) {
+  const span = document.createElement('span');
+  span.className = 'ico';
+  // eslint-disable-next-line no-unsanitized/property -- `size` est numérique (appelants internes) et le SVG est constant
+  span.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.6 5.9c4.4-4.1 7-10.1 7-17.6z"/><path fill="#FBBC05" d="M10.5 28.7A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.2.9-4.7l-7.9-6.1A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.9 2.3-8.3 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>`;
   return span;
 }

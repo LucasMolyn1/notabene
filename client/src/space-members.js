@@ -15,7 +15,7 @@ const roleSelect = (value, label, onChange) => {
 export function openSpaceMembers(space) {
   const list = h('div', { class: 'table' }, h('p', { class: 'muted' }, 'Chargement…'));
   const results = h('div', { class: 'table' });
-  const q = h('input', { class: 'input', type: 'search', 'aria-label': 'Chercher une personne ou un groupe', placeholder: 'Chercher une personne ou un groupe (2 lettres au moins)…', maxlength: '80' });
+  const q = h('input', { class: 'input', type: 'search', 'aria-label': 'Chercher une personne ou un groupe', placeholder: 'Chercher une personne (2 lettres au moins) ou un groupe…', maxlength: '80' });
   const newRole = roleSelect('view', 'Rôle à donner', () => {});
   let timer = 0;
 
@@ -38,11 +38,11 @@ export function openSpaceMembers(space) {
   };
 
   const add = async (body) => {
-    try { await api.put(`/spaces/${space.id}/members`, { ...body, role: newRole.value }); toast('Ajouté'); q.value = ''; results.replaceChildren(); refresh(); } catch (err) { toast(err.message, { kind: 'error' }); }
+    try { await api.put(`/spaces/${space.id}/members`, { ...body, role: newRole.value }); toast('Ajouté'); q.value = ''; refresh(); search(); } catch (err) { toast(err.message, { kind: 'error' }); }
   };
   const search = async () => {
     const term = q.value.trim();
-    if (term.length < 2) { results.replaceChildren(); return; }
+    if (term.length === 1) { results.replaceChildren(); return; }
     try {
       const found = await api.get(`/spaces/${space.id}/member-candidates?q=${encodeURIComponent(term)}`);
       const rows = [
@@ -55,6 +55,7 @@ export function openSpaceMembers(space) {
         : [h('p', { class: 'muted' }, 'Aucun résultat.')]));
     } catch (err) { results.textContent = err.message; }
   };
+  search();
   q.addEventListener('input', () => { clearTimeout(timer); timer = window.setTimeout(search, 250); });
 
   openModal({
@@ -62,7 +63,7 @@ export function openSpaceMembers(space) {
     size: 'wide',
     body: h('div', { class: 'stack' },
       h('p', { class: 'muted' }, 'Lecture : lire. Édition : lire et modifier. Gestion : en plus, gérer les membres et renommer l’espace. Le rôle global de la personne reste un plafond (un lecteur ne peut jamais modifier) et le droit le plus élevé entre ses groupes l’emporte.'),
-      space.visibility === 'public' && h('div', { class: 'notice info' }, 'Cet espace est public : tout le monde le lit, même sans adhésion. Les membres ne servent qu’à donner des droits de modification.'),
+      space.visibility === 'public' && h('div', { class: 'notice info' }, 'Espace public : visible par tout le monde, y compris les personnes non connectées. Les membres ne servent qu’à donner des droits de modification ; ne mettez aucun contenu confidentiel ici.'),
       list,
       h('div', { class: 'row' }, q, newRole),
       results),

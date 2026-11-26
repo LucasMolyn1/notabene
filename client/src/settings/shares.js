@@ -33,6 +33,15 @@ export async function renderShares(el) {
             toast(value ? (res?.effective ? 'Partage d’espaces activé' : 'Partage d’espaces activé : il prendra effet avec le partage public') : `Partage d’espaces désactivé${res?.removed ? ` (${res.removed} lien${res.removed > 1 ? 's' : ''} supprimé${res.removed > 1 ? 's' : ''})` : ''}`);
           } catch (err) { toast(err.message, { kind: 'error' }); }
           refresh();
+        }),
+      admin.spaces && typeof admin.spaces.mail === 'boolean' && toggle('Autoriser l’envoi du lien d’espace par e-mail',
+        `À la création d’un lien d’espace, son auteur pourra l’envoyer à une seule adresse. Seul le lien est envoyé, jamais le contenu des pages. Désactivé par défaut.${admin.spaces.smtp ? '' : ' L’envoi d’e-mails (SMTP) n’est pas configuré : l’activation reste sans effet tant qu’il ne l’est pas.'}`,
+        admin.spaces.mail, async (value) => {
+          try {
+            const res = await api.put('/admin/sharing/spaces/mail', { enabled: value });
+            toast(!value ? 'Envoi des liens d’espace par e-mail désactivé' : res?.effective ? 'Envoi des liens d’espace par e-mail activé' : 'Envoi par e-mail activé : sans effet tant que le partage d’espaces et le SMTP ne sont pas actifs');
+          } catch (err) { toast(err.message, { kind: 'error' }); }
+          refresh();
         })),
     card('Pages partagées', list.enabled ? 'Les liens publics des pages que vous pouvez modifier.' : 'Le partage public est désactivé sur cette instance.',
       list.items.length

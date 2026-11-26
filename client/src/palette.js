@@ -9,6 +9,7 @@ import { session } from './session.js';
 import { streamAsk } from './api.js';
 import { normalizeLabel } from './labels.js';
 import { renderAnswer } from './ai-markdown.js';
+import { fadeIn, leave, popIn, stagger } from './motion.js';
 
 let current = null;
 
@@ -54,6 +55,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
   let askController = null;
   let spaceFilter = null; // null : tous les espaces
   const collapsed = new Set(); // espaces repliés dans les résultats
+  let animateResults = false; // nouveaux résultats : apparition échelonnée (pas à chaque déplacement de la sélection)
 
   const opener = /** @type {HTMLElement | null} */ (document.activeElement); // le focus y revient à la fermeture
   const input = h('input', {
@@ -74,6 +76,8 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
   const overlay = h('div', { class: 'overlay' }, box);
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
   document.body.append(overlay);
+  fadeIn(overlay, { y: 0, duration: 0.15 });
+  popIn(box, { y: -6, duration: 0.18 });
 
   function switchTab(next) {
     if (activeTab !== next) input.value = '';
@@ -108,6 +112,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
       results = [];
     }
     active = 0;
+    animateResults = true;
     render();
   }, 180);
 
@@ -117,6 +122,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
     if (!query) {
       results = store.recent(null, 8).filter((p) => p.id !== exclude).map((page) => ({ page, snippet: '' }));
       active = 0;
+      animateResults = true;
       render();
       return;
     }
@@ -149,6 +155,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
     if (filters) list.append(filters);
     if (!results.length) {
       list.append(h('div', { class: 'pal-empty' }, query ? `Aucun résultat pour « ${query} »` : 'Aucune page pour le moment.'));
+      animateResults = false;
       return;
     }
     const shown = visible();
@@ -185,6 +192,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
         r.snippet ? h('span', { class: 'pal-snippet', html: snippetHTML(r.snippet) }) : null)));
     });
     list.querySelector('.pal-item.active')?.scrollIntoView({ block: 'nearest' });
+    if (animateResults) { animateResults = false; stagger(list.querySelectorAll('.pal-item')); }
     if (shown.length) input.setAttribute('aria-activedescendant', `pal-opt-${active}`);
     else input.removeAttribute('aria-activedescendant');
   }
@@ -234,7 +242,7 @@ export function openPalette({ mode = 'search', onPick, onOpen, exclude, tab = 's
 
   function close() {
     askController?.abort();
-    overlay.remove();
+    leave(overlay);
     current = null;
     if (opener?.isConnected) opener.focus();
   }

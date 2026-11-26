@@ -1,7 +1,7 @@
 // Vues principales : page (éditeur), accueil d'espace, connexion, page introuvable.
 import { h, timeAgo, fullDate, wordCount, debounce, modKey } from './util.js';
 import { pagePath, spacePath } from './urls.js';
-import { icon } from './icons.js';
+import { icon, googleLogo } from './icons.js';
 import { store } from './store.js';
 import { session } from './session.js';
 import { prefs, savePrefs, app } from './prefs.js';
@@ -27,6 +27,7 @@ import { showBase } from './base.js';
 import { readOnlyNotice } from './read-only.js';
 import { openMoveDialog } from './move-dialog.js';
 import * as A from './actions.js';
+import { pageIn, stagger } from './motion.js';
 
 const main = () => document.getElementById('main');
 let view = null;
@@ -154,6 +155,8 @@ function mountPage(page) {
     topbar(crumbsEl, app.embed ? [] : [presenceEl, saveEl, commentsButton(id, () => editor), watchBtn, shareBtn, permBtn, starBtn, modeBtn, histBtn, moreBtn]),
     scroller,
   );
+  // Fondu seul (sans déplacement) : les menus de l'éditeur se placent d'après la position du texte.
+  pageIn(wrap, { y: 0 });
 
   // -- Sauvegarde : une requête à la fois, avec la version de base pour détecter les conflits --
   let saveTimer = null;
@@ -495,6 +498,7 @@ export function showSpace(spaceId) {
   const canWrite = session.can('write') && store.canWriteIn(spaceId);
 
   const scroller = h('div', { class: 'scroller' });
+  let first = true; // l'apparition se joue à l'arrivée sur l'espace, pas à chaque mise à jour venue du serveur
   function render() {
     const s = store.space(spaceId);
     if (!s) { A.go('/'); return; }
@@ -535,6 +539,11 @@ export function showSpace(spaceId) {
           h('div', { class: 'empty-emoji' }, icon('plus', 32)),
           h('p', null, 'Cet espace est encore vide.'),
           canWrite && !app.embed && h('button', { class: 'btn btn-primary', onClick: () => A.newPage(spaceId) }, 'Créer la première page'))));
+    if (first) {
+      first = false;
+      pageIn(scroller.firstElementChild);
+      stagger(scroller.querySelectorAll('.card'));
+    }
   }
   render();
   view = { kind: 'space', id: spaceId, onStore: render };
@@ -573,6 +582,8 @@ export async function showLabel(name) {
             h('div', { class: 'card-foot' }, h('span', null, timeAgo(p.updatedAt)), space && h('span', { class: 'card-parent' }, space.name)));
         }))
         : h('div', { class: 'empty' }, h('p', null, 'Aucune page ne porte ce libellé.'), h('a', { class: 'btn btn-ghost', href: '/' }, 'Retour à l’accueil')))));
+  pageIn(main().querySelector('.space-home'));
+  stagger(main().querySelectorAll('.space-home .card'));
   view = { kind: 'label', id: name };
 }
 
@@ -586,6 +597,11 @@ const AUTH_ERRORS = {
   email_unverified: 'Votre adresse e-mail n’est pas vérifiée auprès du fournisseur d’identité. Vérifiez-la, puis reconnectez-vous.',
   reauth_failed: 'La confirmation auprès du fournisseur d’identité a échoué ou n’est pas assez récente. Réessayez.',
 };
+
+// Tuile carrée à coins arrondis portant le logo du fournisseur ; le nom reste exposé aux lecteurs d'écran et en infobulle.
+function ssoTile(label, href, logo) {
+  return h('a', { class: 'sso-tile', href, title: `Se connecter avec ${label}`, 'aria-label': `Se connecter avec ${label}` }, logo);
+}
 
 export function showLogin() {
   teardown();
@@ -603,9 +619,10 @@ export function showLogin() {
     h('p', { class: 'muted' }, 'Le wiki de votre équipe. Connectez-vous pour continuer.'),
     error && h('div', { class: 'notice warning' }, AUTH_ERRORS[error] || 'Connexion impossible.'),
     // Le fournisseur d'identité d'abord (un clic), puis les formulaires à mot de passe ; l'installation initiale passe avant tout.
-    !setupRequired && oidc && h('a', { class: 'btn btn-primary btn-lg', href: session.loginUrl(returnTo) }, icon('users', 16), 'Se connecter avec Authentik'),
-    !setupRequired && extra.map((p, j) => h('a', { class: oidc || j > 0 ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: session.providerLoginUrl(p, returnTo) }, icon('globe', 16), `Se connecter avec ${p.label}`)),
-    !setupRequired && saml && h('a', { class: oidc || extra.length ? 'btn btn-ghost btn-lg' : 'btn btn-primary btn-lg', href: `/auth/saml/login?returnTo=${encodeURIComponent(returnTo)}` }, icon('key', 16), 'Se connecter avec le SSO (SAML)'),
+    !setupRequired && sso && h('div', { class: 'sso-row', role: 'group', 'aria-label': 'Se connecter avec' },
+      oidc && ssoTile('Authentik', session.loginUrl(returnTo), icon('users', 26)),
+      extra.map((p) => ssoTile(p.label, session.providerLoginUrl(p, returnTo), p.id === 'google' ? googleLogo(26) : icon('globe', 26))),
+      saml && ssoTile('le SSO (SAML)', `/auth/saml/login?returnTo=${encodeURIComponent(returnTo)}`, icon('key', 26))),
     !setupRequired && sso && (local || ldap) && h('p', { class: 'or' }, h('span', null, 'ou avec un mot de passe')),
     local && localLoginForm(setupRequired),
     local && !setupRequired && session.config.auth.mail && forgotPasswordForm(),
@@ -616,6 +633,7 @@ export function showLogin() {
       h('div', { class: 'row center' }, ['admin', 'editor', 'reader'].map((role) =>
         h('button', { class: 'btn btn-ghost btn-sm', onClick: () => session.devLogin(role) }, { admin: 'Admin', editor: 'Éditeur', reader: 'Lecteur' }[role])))),
     !session.hasLogin() && h('p', { class: 'notice warning' }, 'Aucun fournisseur d’identité n’est configuré.'))));
+  pageIn(main().querySelector('.login-card'));
 }
 
 // ---- Introuvable ----------------------------------------------------------
@@ -635,6 +653,7 @@ export function showMissing(id, status = 404) {
       h('div', { class: 'row center' },
         anonymous && session.hasLogin() && h('a', { class: 'btn btn-primary', href: session.loginEntry() }, 'Se connecter'),
         h('a', { class: 'btn btn-ghost', href: '/' }, 'Retour à l’accueil')))));
+  pageIn(main().querySelector('.scroller > .empty'));
   view = { kind: 'missing', id };
 }
 

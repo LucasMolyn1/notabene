@@ -19,6 +19,7 @@ import { openAutomations, runMessage } from './automations.js';
 import { openForms } from './forms.js';
 import { readOnlyNotice } from './read-only.js';
 import * as A from './actions.js';
+import { pageIn } from './motion.js';
 
 const main = () => document.getElementById('main');
 const PAGE_SIZE = 300;
@@ -112,6 +113,7 @@ export async function showBase(initial) {
     for (const [vid, cfg] of pendingConfigs) { const v = data.views.find((x) => x.id === vid); if (v) v.config = cfg; }
     if (!data.views.some((v) => v.id === activeView)) activeView = data.views[0]?.id ?? null;
     render();
+    if (loadSeq === 1) pageIn(body, { y: 0 }); // arrivée sur la base seulement, pas aux rechargements
   }
 
   const visibleRows = () => applyView(props(), data.rows, config());
@@ -286,7 +288,7 @@ export async function showBase(initial) {
   }
   // Un menu fermé sans choix (clic ailleurs, Échap) ramène l'affichage normal.
   const watchClose = () => {
-    const watch = setInterval(() => { if (!document.querySelector('.popover')) { clearInterval(watch); if (editing) { editing = false; render(); } } }, 200);
+    const watch = setInterval(() => { if (!document.querySelector('.popover:not([inert])')) { clearInterval(watch); if (editing) { editing = false; render(); } } }, 200);
   };
 
   async function editRelation(cell, row, p) {
@@ -473,7 +475,7 @@ export async function showBase(initial) {
     }
     // Un menu fermé sans choix (clic ailleurs, Échap) ramène l'affichage normal.
     if (['multi_select', 'person', 'page_link', 'date_range'].includes(p.type)) {
-      const watch = setInterval(() => { if (!document.querySelector('.popover')) { clearInterval(watch); if (editing) done(); } }, 200);
+      const watch = setInterval(() => { if (!document.querySelector('.popover:not([inert])')) { clearInterval(watch); if (editing) done(); } }, 200);
     }
   }
 

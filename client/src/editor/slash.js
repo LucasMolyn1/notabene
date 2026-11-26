@@ -7,7 +7,9 @@ import { pickBase } from './base-block.js';
 import { askSyncedCopy, insideSource } from './synced.js';
 import { allowedHosts, embedUrl } from './embed.js';
 import { uploadFiles } from './attachments.js';
+import { DEFAULT_GRAPH } from '../workflow/model.js';
 import { DEFAULT_MATH, DEFAULT_MERMAID, DEFAULT_PLANTUML, openDrawio, openExcalidraw } from '../diagrams.js';
+import { popIn, stop } from '../motion.js';
 
 // ---- Images ---------------------------------------------------------------
 
@@ -99,6 +101,10 @@ const SLASH_ITEMS = [
   {
     group: 'Diagrammes', title: 'PlantUML', desc: 'Diagrammes UML décrits en texte (classes, séquence…)', ico: 'code', keys: 'plantuml uml diagramme classe sequence',
     run: chainCmd((c) => c.insertContent({ type: 'plantuml', attrs: { code: DEFAULT_PLANTUML } })),
+  },
+  {
+    group: 'Diagrammes', title: 'Workflow', desc: 'Schéma de processus : étapes, décisions, liens', ico: 'workflow', keys: 'workflow processus logigramme schema etapes flux',
+    run: chainCmd((c) => c.insertContent({ type: 'workflow', attrs: { graph: DEFAULT_GRAPH } })),
   },
   {
     group: 'Diagrammes', title: 'Excalidraw', desc: 'Dessin à main levée', ico: 'pencil', keys: 'excalidraw dessin croquis sketch whiteboard',
@@ -231,7 +237,7 @@ export function createSlashMenu(editor, ctx) {
   let range = null;
   let dismissedAt = null;
 
-  const close = () => { if (open) { open = false; el.hidden = true; } };
+  const close = () => { if (open) { open = false; el.hidden = true; stop(el); } };
 
   function filter(q) {
     const nq = norm(q);
@@ -283,10 +289,13 @@ export function createSlashMenu(editor, ctx) {
     range = { from, to: $from.pos };
     items = next;
     active = Math.min(active, items.length - 1);
+    const opening = !open;
     open = true;
     el.hidden = false;
     render();
     position();
+    // Seulement à l'ouverture : la frappe qui filtre la liste ne relance rien.
+    if (opening) popIn(el);
   }
 
   function select(i) {
@@ -308,5 +317,5 @@ export function createSlashMenu(editor, ctx) {
 
   editor.on('transaction', update);
   editor.on('blur', close);
-  return { onKeyDown, destroy: () => el.remove() };
+  return { onKeyDown, destroy: () => { stop(el); el.remove(); } };
 }

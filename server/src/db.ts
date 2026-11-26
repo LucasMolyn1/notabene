@@ -1109,6 +1109,79 @@ export const MIGRATIONS: string[] = [
   CREATE TRIGGER space_shares_user_deleted BEFORE DELETE ON users
     BEGIN DELETE FROM space_shares WHERE created_by = OLD.id; END;
   `,
+  // v39 : icône de page importée (lib/page-icons.ts). Une image raster (PNG, JPEG, WebP, GIF ; jamais de SVG) par page au plus,
+  // rangée dans la base comme les photos de profil : elle suit la page (ON DELETE CASCADE) et les sauvegardes de la base.
+  // La page la désigne par `pages.icon = 'img:<id>'` ; une image que plus aucune icône ne désigne est purgée par cleanup.
+  // Additive. Retour arrière : UPDATE pages SET icon = '' WHERE icon LIKE 'img:%'; DROP TABLE page_icon_images;
+  `
+  CREATE TABLE page_icon_images (
+    id          TEXT PRIMARY KEY,
+    page_id     TEXT NOT NULL UNIQUE REFERENCES pages(id) ON DELETE CASCADE,
+    mime        TEXT NOT NULL CHECK (mime IN ('image/png', 'image/jpeg', 'image/webp', 'image/gif')),
+    data        BLOB NOT NULL,
+    size        INTEGER NOT NULL,
+    sha256      TEXT NOT NULL,
+    uploader_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at  INTEGER NOT NULL
+  );
+  CREATE INDEX page_icon_images_uploader ON page_icon_images(uploader_id) WHERE uploader_id IS NOT NULL;
+  `,
+  // v40 : e-mails de gestion de projet (lib/task-mail.ts, routes/shares.ts).
+  // - notification_prefs.email_tasks (activé par défaut) : tâche attribuée, tâche en retard ; email_summary (désactivé par
+  //   défaut) : résumé hebdomadaire des tâches.
+  // - task_assign_events : attributions en attente d'e-mail, regroupées par personne et par base (au plus un e-mail par heure) ;
+  //   task_assign_mails : dernier e-mail d'attribution par personne et par base.
+  // - task_overdue_mails : e-mail de retard déjà envoyé, une fois par tâche, personne et échéance (une autre échéance rouvre l'envoi).
+  // - task_mail_daily : e-mails de tâches par personne et par jour (plafond). task_summary_mails : semaine du dernier résumé.
+  // - space_share_mails : envois de liens d'espace par e-mail (plafonds), sans l'adresse du destinataire.
+  // Additive. Retour arrière : DROP TABLE de ces six tables, puis ALTER TABLE notification_prefs DROP COLUMN email_tasks;
+  // ALTER TABLE notification_prefs DROP COLUMN email_summary;
+  `
+  ALTER TABLE notification_prefs ADD COLUMN email_tasks INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE notification_prefs ADD COLUMN email_summary INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE task_assign_events (
+    row_id     TEXT NOT NULL REFERENCES base_rows(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    base_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (row_id, user_id)
+  );
+  CREATE INDEX task_assign_events_group ON task_assign_events(user_id, base_id);
+  CREATE INDEX task_assign_events_base ON task_assign_events(base_id);
+  CREATE TABLE task_assign_mails (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    base_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    sent_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, base_id)
+  );
+  CREATE INDEX task_assign_mails_base ON task_assign_mails(base_id);
+  CREATE TABLE task_overdue_mails (
+    row_id  TEXT NOT NULL REFERENCES base_rows(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    due     TEXT NOT NULL,
+    sent_at INTEGER NOT NULL,
+    PRIMARY KEY (row_id, user_id)
+  );
+  CREATE INDEX task_overdue_mails_user ON task_overdue_mails(user_id);
+  CREATE TABLE task_mail_daily (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    day     TEXT NOT NULL,
+    n       INTEGER NOT NULL,
+    PRIMARY KEY (user_id, day)
+  );
+  CREATE TABLE task_summary_mails (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    week    TEXT NOT NULL,
+    sent_at INTEGER NOT NULL
+  );
+  CREATE TABLE space_share_mails (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    at       INTEGER NOT NULL
+  );
+  CREATE INDEX space_share_mails_space ON space_share_mails(space_id, at);
+  CREATE INDEX space_share_mails_at ON space_share_mails(at);
+  `,
 ];
 
 // Ordre des migrations : la version est la position dans MIGRATIONS (indice + 1, PRAGMA user_version), appliquées une à une
@@ -1177,6 +1250,13 @@ export function cleanup(db: DB, retention: Retention = DEFAULT_RETENTION) {
   db.prepare('DELETE FROM password_resets WHERE expires_at < ?').run(now);
   // Liens de partage d'espace expirés (déjà muets à la lecture) : on n'en garde pas l'empreinte.
   db.prepare('DELETE FROM space_shares WHERE expires_at IS NOT NULL AND expires_at < ?').run(now);
+  // Icônes importées que l'icône de leur page ne désigne plus (remplacée par un emoji, une autre image, ou retirée).
+  db.prepare(`DELETE FROM page_icon_images WHERE NOT EXISTS (SELECT 1 FROM pages p WHERE p.id = page_icon_images.page_id AND p.icon = 'img:' || page_icon_images.id)`).run();
+  // Traces des e-mails de tâches et de partage d'espace : seulement le temps de leurs plafonds et regroupements.
+  db.prepare('DELETE FROM task_mail_daily WHERE day < ?').run(new Date(before(7)).toISOString().slice(0, 10));
+  db.prepare('DELETE FROM task_assign_mails WHERE sent_at < ?').run(before(2));
+  db.prepare('DELETE FROM task_assign_events WHERE created_at < ?').run(before(2));
+  db.prepare('DELETE FROM space_share_mails WHERE at < ?').run(before(2));
   if (retention.auditDays > 0) db.prepare('DELETE FROM audit_log WHERE at < ?').run(before(retention.auditDays));
   if (retention.auditIpDays > 0) db.prepare('UPDATE audit_log SET ip = NULL WHERE ip IS NOT NULL AND at < ?').run(before(retention.auditIpDays));
   if (retention.notificationDays > 0) db.prepare('DELETE FROM notifications WHERE read_at IS NOT NULL AND read_at < ?').run(before(retention.notificationDays));

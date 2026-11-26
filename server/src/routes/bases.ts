@@ -353,7 +353,7 @@ export default async function baseRoutes(app: FastifyInstance) {
   // ----- Mes tâches -----
   app.get('/my-tasks', {
     preHandler: guard('read'),
-    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+    config: { rateLimit: { max: app.config.MY_TASKS_RATE_LIMIT_PER_MINUTE, timeWindow: '1 minute' } },
     schema: { tags, summary: `Mes tâches : lignes où une colonne Personne me désigne (${MAX_TASK_BASES} bases, ${MAX_TASKS} tâches au plus)`, querystring: tasksQuery },
   }, async (req) => {
     const q = req.query as z.output<typeof tasksQuery>;

@@ -17,6 +17,7 @@ import { HttpError, idSchema, newId } from './http.js';
 import { readersAmong } from './mentions.js';
 import { canReadPage, filterReadable, pageLevel } from './page-acl.js';
 import { createPage, getPageRow, type PageRow } from './pages.js';
+import { recordAssignments } from './task-assign.js';
 
 export const MAX_PROPERTIES = 50;
 export const MAX_ROWS = 5000;
@@ -757,6 +758,7 @@ export function addRow(ctx: Ctx, values: Record<string, unknown>, userId: string
     const now = Date.now();
     db.prepare('INSERT INTO base_rows (id, base_id, position, vals, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(id, baseId, last.m === null ? 0 : last.m + 1, JSON.stringify(vals), userId, now, userId, now);
+    recordAssignments(db, baseId, id, props, {}, vals, userId);
     return db.prepare('SELECT * FROM base_rows WHERE id = ?').get(id) as RowRow;
   })();
 }
@@ -773,6 +775,7 @@ export function patchRow(ctx: Ctx, rowId: string, patch: Record<string, unknown>
     if (JSON.stringify(vals).length > MAX_ROW_CHARS) throw new HttpError(400, 'Ligne trop volumineuse');
     assertRoom(db, baseId, Math.max(0, JSON.stringify(vals).length - row.vals.length));
     db.prepare('UPDATE base_rows SET vals = ?, updated_by = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(vals), userId, Date.now(), rowId);
+    recordAssignments(db, baseId, rowId, props, before, vals, userId);
     return db.prepare('SELECT * FROM base_rows WHERE id = ?').get(rowId) as RowRow;
   })();
 }

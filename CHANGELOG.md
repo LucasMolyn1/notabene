@@ -4,6 +4,25 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Numérotation
 
 La version de référence est le champ `version` de `package.json` ; le premier titre de ce fichier doit toujours lui correspondre (un test le vérifie). Procédure de release : voir le README, « Versions et releases ».
 
+## Non publié
+
+### Ajouté
+- **Bloc « Workflow »** (menu `/`, groupe Diagrammes) : éditeur de schémas de processus fait maison, sans nouvelle dépendance. Nœuds Début, Étape, Décision (sorties Oui et Non), Fin et Note ; liens par glisser ou par le menu « Relier à… » ; libellés modifiables en place ; déplacement à la souris, au doigt ou au clavier ; rangement automatique, zoom, ajustement à l'écran, loupe plein écran, annuler et refaire par l'historique de la page, « Vue texte » pour les lecteurs d'écran. Rien ne s'exécute. Limite connue : en co-édition, le schéma entier est un seul attribut, donc la dernière modification enregistrée sur un même bloc l'emporte.
+- **Workflow en plein écran et panneau d'explication** : le bouton « Agrandir » du bloc Workflow ouvre le schéma en plein écran, toujours modifiable (mêmes droits et même historique que dans la page ; Échap ferme, le focus revient au bouton ; lecture seule pour qui ne peut pas écrire). Un clic (ou Entrée) sur un nœud ouvre un panneau qui explique à quoi sert son type, ses paramètres (libellé, couleur) et ses connexions. Meilleure prise en charge des petits écrans : schéma ajusté à l'ouverture sans libellé trop petit, bloc plus haut dans la page quand la fenêtre le permet. Entrée ouvre le panneau ; F2 modifie le libellé en place.
+- **Automatisations en schéma** : le panneau « Automatisations » d'une base a une bascule « Liste » / « Schéma ». Une automatisation s'y lit et s'y modifie en chaîne Déclencheur, Filtres, Actions (un seul déclencheur, chaîne linéaire, 5 actions au plus), avec les mêmes formulaires à listes fermées dans le panneau d'explication d'un nœud et l'enregistrement par les routes existantes (aucun changement serveur, aucune position enregistrée). Les nœuds prennent la couleur du dernier résultat du journal, avec l'état « en panne » ou « en pause » en texte ; ce que le serveur masque (base illisible) reste masqué et le schéma est alors en lecture seule.
+
+### Corrigé
+- **Écran de connexion** : les fournisseurs d'identité (Authentik, Google, SAML) sont présentés en tuiles carrées à coins arrondis avec leur logo, au lieu de gros boutons (nom en infobulle et pour les lecteurs d'écran). Demande de l'issue 159.
+
+## [3.19.0] - 2026-11-20
+
+### Corrigé
+- **Membres d'un espace** : la liste des groupes est proposée dès l'ouverture, sans devoir taper pour découvrir qu'on peut en ajouter (les personnes se cherchent toujours à partir de 2 lettres). L'avertissement d'un espace public précise qu'il est visible des personnes non connectées.
+
+### Ajouté
+- **Animations de l'interface** : changements de vue, ouverture et fermeture des modales, menus et popovers (dont le menu « / »), palette de recherche, panneau de l'assistant, toasts, apparition échelonnée de l'arborescence et des listes (accueil d'espace, libellés, tâches, résultats). Courtes (0,15 à 0,35 s), elles ne bloquent jamais la saisie ni le clic ; aucune animation avec la préférence système « réduire les animations ». L'éditeur lui-même n'est pas animé. Bibliothèque GSAP intégrée au client (aucun CDN).
+- **Icônes de page personnalisées** : une page peut avoir une image importée comme icône (sélecteur d'icône, « Importer une image » ; « Retirer l'image » pour revenir en arrière). PNG, JPEG, WebP ou GIF (pas de SVG), 512 Ko au plus, 8 à 1024 px de côté ; type vérifié sur le contenu du fichier, métadonnées (EXIF, GPS) retirées avant stockage, une seule image par page. Droit de lecture de la page vérifié à chaque affichage, y compris sur les pages partagées par lien. L'image compte dans le quota de stockage des pièces jointes ; elle est copiée avec la page, rangée dans `attachments/` à l'export ZIP, et supprimée avec la page. API : `PUT` et `DELETE /api/v3/pages/:id/icon-image` ; la valeur de `icon` vaut `img:<identifiant>`.
+
 ## [3.18.4] - 2026-11-18
 
 ### Ajouté

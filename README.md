@@ -15,7 +15,7 @@ Wiki collaboratif **auto-hébergé**, inspiré de [Docmost](https://docmost.com)
 | **Authentification** | OIDC (Authentik ou tout fournisseur conforme) : Authorization Code + PKCE, state et nonce à usage unique, rôles dérivés des groupes, déconnexion côté fournisseur |
 | **Rôles** | `admin` (espaces, réglages, audit, suppression définitive), `editor` (écriture), `reader` (lecture) ; espaces **publics** lisibles sans connexion |
 | **Éditeur** | TipTap 3 : menu `/`, raccourcis Markdown, callouts, tableaux, tâches, images et diagrammes redimensionnables, blocs dépliables, colonnes, formules (KaTeX), couleurs et alignement, liens vers d'autres pages, sommaire automatique, blocs de code colorés (CodeMirror 6, co-édition comprise), vraie liste d'emojis en français |
-| **Diagrammes** | **Mermaid** (texte, rendu en direct), **Excalidraw** (dessin), **Draw.io** (instance auto-hébergée) |
+| **Diagrammes** | **Mermaid** (texte, rendu en direct), **Excalidraw** (dessin), **Draw.io** (instance auto-hébergée), **Workflow** (schémas de processus dessinés dans la page : étapes, décisions, liens, clavier et Vue texte accessibles ; rien ne s'exécute) |
 | **Recherche** | Plein texte SQLite FTS5 insensible aux accents (`⌘K`) |
 | **IA** | Onglet « Demander à l’IA » dans `⌘K` : réponses sourcées à partir des pages lisibles par l’utilisateur ; **assistant de rédaction** dans l’éditeur (améliorer, raccourcir, corriger, traduire, consigne libre sur le texte sélectionné, aperçu avant d’écrire) ; **Claude** ou tout endpoint **compatible OpenAI** (OpenAI, Mistral, Ollama, LM Studio…) |
 | **API REST** | `/api/v3`, jetons personnels à portées (`read`, `write`, `ai`, `admin`), expiration et limitation facultative à certains espaces, documentation OpenAPI sur `/api/docs` |
@@ -253,3 +253,5 @@ Un audit automatisé (axe, clair et sombre) tourne dans la CI. Un audit avec lec
 ## Licence
 
 MIT. Inspiré de Docmost (AGPL-3.0), sans reprise de son code.
+
+Exception côté client : les animations utilisent [GSAP](https://gsap.com) (GreenSock), qui n'est pas sous licence MIT mais sous sa [licence « no charge »](https://gsap.com/standard-license) (usage libre, y compris commercial, hors outils concurrents de Webflow). GSAP reste une dépendance npm, intégrée au bundle du client ; son code n'est pas copié dans le dépôt.

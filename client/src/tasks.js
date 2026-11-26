@@ -10,6 +10,7 @@ import { pagePath, spacePath } from './urls.js';
 import { store } from './store.js';
 import { beginView, setView, topbar } from './views.js';
 import { dayNum, fmtDate, isoDay, todayNum } from './base-model.js';
+import { stagger } from './motion.js';
 
 const main = () => document.getElementById('main');
 const listeners = new Set();
@@ -102,7 +103,8 @@ export async function showTasks() {
     return;
   }
 
-  async function load(focusFilter = false) {
+  // `animate` : chargement demandé par l'utilisateur (arrivée, filtre), pas un rafraîchissement venu du serveur.
+  async function load(focusFilter = false, animate = false) {
     let res;
     try {
       res = await api.get(`/my-tasks${filter === 'todo' ? '?done=false' : ''}`);
@@ -112,6 +114,7 @@ export async function showTasks() {
     }
     if (destroyed) return;
     render(res?.tasks ?? [], !!res?.truncated);
+    if (animate) stagger(body.querySelectorAll('.tasks-bucket, .task, .tasks-empty'));
     if (focusFilter) /** @type {HTMLElement | null} */ (body.querySelector('.tasks-filter [aria-pressed="true"]'))?.focus();
   }
 
@@ -126,7 +129,7 @@ export async function showTasks() {
     for (const t of tasks) groups.get(bucketOf(t, today, weekEnd)).push(t);
     const pick = (value, label) => h('button', {
       class: `btn btn-ghost btn-sm${filter === value ? ' active' : ''}`, 'aria-pressed': String(filter === value),
-      onClick: () => { if (filter === value) return; filter = value; load(true); },
+      onClick: () => { if (filter === value) return; filter = value; load(true, true); },
     }, label);
     const taskEl = (t) => {
       const lateNow = isLate(t, today);
@@ -173,5 +176,5 @@ export async function showTasks() {
   const reload = debounce(() => { if (!destroyed) load(); }, 1000);
   const onRemote = () => reload();
   window.addEventListener('notabene:base', onRemote);
-  await load();
+  await load(false, true);
 }
