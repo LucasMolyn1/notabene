@@ -6,6 +6,8 @@ La version de référence est le champ `version` de `package.json` ; le premier 
 
 ## Non publié
 
+## [3.20.0] - 2026-11-26
+
 ### Ajouté
 - **Connecteur MCP : bases** : cinq nouveaux outils. `list_bases`, `get_base` (colonnes, options, vues) et `query_rows` (filtres et tris, colonnes désignées par leur nom, options par leur libellé) en lecture ; `create_row` et `update_row` (portée `write`, compte lecteur exclu). Les outils rappellent l'API des bases avec le jeton de l'appelant : mêmes droits d'espace, mêmes validations, même journal d'audit. Le contenu des cellules est signalé comme non fiable.
 - **Bloc « Workflow »** (menu `/`, groupe Diagrammes) : éditeur de schémas de processus fait maison, sans nouvelle dépendance. Nœuds Début, Étape, Décision (sorties Oui et Non), Fin et Note ; liens par glisser ou par le menu « Relier à… » ; libellés modifiables en place ; déplacement à la souris, au doigt ou au clavier ; rangement automatique, zoom, ajustement à l'écran, loupe plein écran, annuler et refaire par l'historique de la page, « Vue texte » pour les lecteurs d'écran. Rien ne s'exécute. Limite connue : en co-édition, le schéma entier est un seul attribut, donc la dernière modification enregistrée sur un même bloc l'emporte.
