@@ -33,7 +33,7 @@ services:
 
   drawio:
     # Tag + digest : le tag seul peut être déplacé. Dependabot (docker-compose) met les deux à jour.
-    image: jgraph/drawio:32.6.9@sha256:77bf6d04657320efc972575327461b5e3acc04a123182faf907f13fc7d75200b
+    image: jgraph/drawio:32.6.10@sha256:44e9e4b43d92a0704ee67da3dcf0966272ce95543cd135025ff05515e1dfaa9c
     restart: unless-stopped
     ports:
       - "${DRAWIO_BIND:-127.0.0.1}:${DRAWIO_PORT:-8081}:8080"
