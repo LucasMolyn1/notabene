@@ -40,7 +40,7 @@
     "@fastify/websocket": "^11.3.7",
     "@node-saml/node-saml": "^5.2.0",
     "age-encryption": "^0.3.1",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "^13.2.0",
     "fastify": "^5.12.8",
     "fflate": "0.8.3",
     "ldapts": "^9.2.0",
