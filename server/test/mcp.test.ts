@@ -17,11 +17,11 @@ beforeEach(async () => {
 });
 afterEach(async () => { await app.close(); db.close(); });
 
-async function token(role: 'admin' | 'editor' | 'reader', scopes: string[]) {
+async function token(role: 'admin' | 'editor' | 'reader', scopes: string[], spaceIds?: string[]) {
   const res = await app.inject({ method: 'POST', url: '/auth/dev-login', payload: { role } });
   const cookie = res.cookies.find((c) => c.name === 'nb_session')!.value;
   const me = (await app.inject({ method: 'GET', url: '/api/v3/me', cookies: { nb_session: cookie } })).json();
-  const t = await app.inject({ method: 'POST', url: '/api/v3/tokens', cookies: { nb_session: cookie }, headers: { 'x-csrf-token': me.csrf }, payload: { name: 'mcp', scopes, expiresInDays: 7 } });
+  const t = await app.inject({ method: 'POST', url: '/api/v3/tokens', cookies: { nb_session: cookie }, headers: { 'x-csrf-token': me.csrf }, payload: { name: 'mcp', scopes, expiresInDays: 7, ...(spaceIds ? { spaceIds } : {}) } });
   return { Authorization: `Bearer ${t.json().token}` };
 }
 
@@ -246,5 +246,103 @@ describe('serveur MCP : modification, déplacement, corbeille et commentaires', 
     expect(failed(await tool(editor, 'update_page', { id, text: 'x'.repeat(100_001) }))).toBe(true);
     expect(failed(await tool(editor, 'update_page', { id, text: 'x', mode: 'écraser' }))).toBe(true);
     expect(failed(await tool(editor, 'resolve_comment', { id, commentId: 'nexistepas' }))).toBe(true);
+  });
+});
+
+describe('serveur MCP : bases', () => {
+  type R = { result?: { isError?: boolean; content: { text: string }[] }; error?: { code: number } };
+  const tool = async (h: Record<string, string>, name: string, args: object) => (await call(h, rpc('tools/call', { name, arguments: args }))).json() as R;
+  const data = (r: R) => JSON.parse(r.result!.content[0]!.text);
+  const failed = (r: R) => r.error !== undefined || r.result?.isError === true;
+  const rest = async (h: Record<string, string>, method: 'GET' | 'POST', url: string, payload?: object) => app.inject({ method, url, payload, headers: h });
+
+  // Base de suivi dans un espace donné : colonnes Tâche (texte), Statut (option), Échéance (date), Points (nombre).
+  async function newBase(admin: Record<string, string>, spaceId: string) {
+    const created = (await rest(admin, 'POST', '/api/v3/bases', { spaceId, title: 'Suivi' })).json() as { page: { id: string } };
+    const id = created.page.id;
+    const add = async (b: object) => (await rest(admin, 'POST', `/api/v3/bases/${id}/properties`, b)).json() as { id: string };
+    await add({ name: 'Tâche', type: 'text' });
+    await add({ name: 'Statut', type: 'select', options: [{ name: 'À faire' }, { name: 'En cours' }, { name: 'Fait' }] });
+    await add({ name: 'Échéance', type: 'date' });
+    await add({ name: 'Points', type: 'number' });
+    return id;
+  }
+  const privateSpace = () => {
+    const id = `sp-${randomBytes(4).toString('hex')}`;
+    db.prepare("INSERT INTO spaces (id, name, icon, description, visibility, position, created_at, updated_at) VALUES (?, 'Prive', '', '', 'private', 99, ?, ?)").run(id, Date.now(), Date.now());
+    return id;
+  };
+  const publicSpace = () => (db.prepare("SELECT id FROM spaces WHERE visibility = 'public'").get() as { id: string }).id;
+
+  it('annonce les outils selon les portées', async () => {
+    const reader = await token('reader', ['read']);
+    const editor = await token('editor', ['read', 'write']);
+    const readerNames = (await call(reader, rpc('tools/list'))).json().result.tools.map((t: { name: string }) => t.name);
+    expect(readerNames).toEqual(expect.arrayContaining(['list_bases', 'get_base', 'query_rows']));
+    for (const n of ['create_row', 'update_row']) expect(readerNames).not.toContain(n);
+    expect((await call(editor, rpc('tools/list'))).json().result.tools.map((t: { name: string }) => t.name)).toEqual(expect.arrayContaining(['create_row', 'update_row']));
+  });
+
+  it('liste, interroge (filtre, tri) et modifie des lignes par noms de colonnes et libellés d’options', async () => {
+    const admin = await token('admin', ['read', 'write', 'admin']);
+    const base = await newBase(admin, publicSpace());
+    expect(data(await tool(admin, 'list_bases', {})).map((b: { id: string }) => b.id)).toContain(base);
+    const info = data(await tool(admin, 'get_base', { id: base })) as { properties: { name: string; options?: string[] }[]; canWrite: boolean };
+    expect(info.canWrite).toBe(true);
+    expect(info.properties.find((p) => p.name === 'Statut')!.options).toEqual(['À faire', 'En cours', 'Fait']);
+
+    const a = data(await tool(admin, 'create_row', { id: base, values: { Tâche: 'Villa Meunier', Statut: 'en cours', Échéance: '2026-12-01', Points: 3 } })) as { id: string; values: Record<string, unknown> };
+    expect(a.values.Statut).toBe('En cours');
+    await tool(admin, 'create_row', { id: base, values: { Tâche: 'Cabanon', Statut: 'À faire', Échéance: '2026-11-30', Points: 5 } });
+    await tool(admin, 'create_row', { id: base, values: { Tâche: 'Garage', Statut: 'Fait', Points: 1 } });
+
+    const q = async (args: object) => data(await tool(admin, 'query_rows', { id: base, ...args })) as { total: number; rows: { id: string; values: Record<string, unknown> }[] };
+    expect((await q({})).total).toBe(3);
+    expect((await q({ filters: [{ property: 'Statut', op: 'neq', value: 'Fait' }] })).total).toBe(2);
+    expect((await q({ filters: [{ property: 'Échéance', op: 'lt', value: '2026-12-01' }] })).rows.map((r) => r.values.Tâche)).toEqual(['Cabanon']);
+    expect((await q({ filters: [{ property: 'Échéance', op: 'empty' }] })).rows.map((r) => r.values.Tâche)).toEqual(['Garage']);
+    expect((await q({ filters: [{ property: 'Points', op: 'gt', value: 2 }], sort: [{ property: 'Points', dir: 'desc' }] })).rows.map((r) => r.values.Tâche)).toEqual(['Cabanon', 'Villa Meunier']);
+    expect((await q({ sort: [{ property: 'Échéance' }] })).rows.map((r) => r.values.Tâche)).toEqual(['Cabanon', 'Villa Meunier', 'Garage']); // vide à la fin
+    expect((await q({ limit: 1 })).rows).toHaveLength(1);
+    expect(failed(await tool(admin, 'query_rows', { id: base, filters: [{ property: 'Inconnue', op: 'empty' }] }))).toBe(true);
+
+    const updated = data(await tool(admin, 'update_row', { id: base, rowId: a.id, values: { Statut: 'Fait', Points: null } })) as { values: Record<string, unknown> };
+    expect(updated.values.Statut).toBe('Fait');
+    expect(updated.values.Points).toBeUndefined(); // cellule effacée
+    expect(updated.values.Tâche).toBe('Villa Meunier');
+    expect(failed(await tool(admin, 'update_row', { id: base, rowId: a.id, values: {} }))).toBe(true);
+  });
+
+  it('un jeton en lecture ne peut ni créer ni modifier une ligne', async () => {
+    const admin = await token('admin', ['read', 'write', 'admin']);
+    const reader = await token('reader', ['read']);
+    const base = await newBase(admin, publicSpace());
+    const row = data(await tool(admin, 'create_row', { id: base, values: { Tâche: 'X' } })) as { id: string };
+    expect((await tool(reader, 'create_row', { id: base, values: { Tâche: 'Y' } })).error?.code).toBe(-32602);
+    expect((await tool(reader, 'update_row', { id: base, rowId: row.id, values: { Tâche: 'Z' } })).error?.code).toBe(-32602);
+    expect((data(await tool(admin, 'query_rows', { id: base })) as { total: number }).total).toBe(1);
+  });
+
+  it('un jeton ne lit ni ne modifie une base d’un espace privé non autorisé', async () => {
+    const admin = await token('admin', ['read', 'write', 'admin']);
+    const editor = await token('editor', ['read', 'write']);
+    const space = privateSpace();
+    const base = await newBase(admin, space);
+    const row = data(await tool(admin, 'create_row', { id: base, values: { Tâche: 'Secret' } })) as { id: string };
+    expect(data(await tool(editor, 'list_bases', {})).map((b: { id: string }) => b.id)).not.toContain(base);
+    for (const [name, args] of [['get_base', { id: base }], ['query_rows', { id: base }], ['create_row', { id: base, values: { Tâche: 'Intrus' } }], ['update_row', { id: base, rowId: row.id, values: { Tâche: 'Piraté' } }]] as const) {
+      expect(failed(await tool(editor, name, args)), name).toBe(true);
+    }
+    const rows = data(await tool(admin, 'query_rows', { id: base })) as { rows: { values: Record<string, unknown> }[] };
+    expect(rows.rows.map((r) => r.values.Tâche)).toEqual(['Secret']);
+  });
+
+  it('un jeton limité à d’autres espaces ne touche pas la base', async () => {
+    const admin = await token('admin', ['read', 'write', 'admin']);
+    const base = await newBase(admin, publicSpace());
+    const other = privateSpace();
+    const limited = await token('admin', ['read', 'write'], [other]);
+    expect(failed(await tool(limited, 'get_base', { id: base }))).toBe(true);
+    expect(failed(await tool(limited, 'create_row', { id: base, values: { Tâche: 'x' } }))).toBe(true);
   });
 });
