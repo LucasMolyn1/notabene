@@ -42,7 +42,8 @@ async function tasksBase(browser: Browser, title: string, extra = false) {
 }
 
 test('mes tâches : pastille des retards, groupes d’échéance, filtre et lien vers la base', async ({ page, browser }) => {
-  const b = await tasksBase(browser, 'Suivi e2e', true);
+  const titre = `Suivi e2e ${Date.now()}`; // unique : un nouvel essai ne retrouve pas les données du précédent
+  const b = await tasksBase(browser, titre, true);
   await loginUi(page, ADMIN.email, ADMIN.password);
   await page.goto('/');
   const entry = page.getByRole('button', { name: /^Mes tâches/ });
@@ -58,26 +59,26 @@ test('mes tâches : pastille des retards, groupes d’échéance, filtre et lien
   const none = section(/^Sans échéance/);
   // À faire (par défaut) : le retard est mis en évidence par un mot (pas seulement une couleur), avec un compteur.
   await expect(late.getByRole('heading', { level: 2 })).toHaveAccessibleName(/^En retard : \d+ tâches?$/);
-  await expect(late.locator('.task', { hasText: 'Suivi e2e T1' })).toContainText('En retard');
-  await expect(today.locator('.task', { hasText: 'Suivi e2e T0' })).toBeVisible();
-  await expect(today.locator('.task', { hasText: 'Suivi e2e T0' })).not.toContainText('En retard');
-  await expect(none.locator('.task', { hasText: 'Suivi e2e T5' })).toContainText('Sans échéance');
+  await expect(late.locator('.task', { hasText: `${titre} T1` })).toContainText('En retard');
+  await expect(today.locator('.task', { hasText: `${titre} T0` })).toBeVisible();
+  await expect(today.locator('.task', { hasText: `${titre} T0` })).not.toContainText('En retard');
+  await expect(none.locator('.task', { hasText: `${titre} T5` })).toContainText('Sans échéance');
   // T2 (dans trois jours) : cette semaine ou plus tard selon le jour, jamais en retard ni aujourd'hui.
-  await expect(page.locator('section.tasks-week, section.tasks-later').locator('.task', { hasText: 'Suivi e2e T2' })).toBeVisible();
-  await expect(late).not.toContainText('Suivi e2e T2');
+  await expect(page.locator('section.tasks-week, section.tasks-later').locator('.task', { hasText: `${titre} T2` })).toBeVisible();
+  await expect(late).not.toContainText(`${titre} T2`);
   // La tâche terminée et celle d'autrui sont absentes.
-  await expect(page.locator('.task', { hasText: 'Suivi e2e T3' })).toHaveCount(0);
-  await expect(page.locator('.task', { hasText: 'Suivi e2e T4' })).toHaveCount(0);
+  await expect(page.locator('.task', { hasText: `${titre} T3` })).toHaveCount(0);
+  await expect(page.locator('.task', { hasText: `${titre} T4` })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Toutes' }).click();
   await expect(page.getByRole('button', { name: 'Toutes' })).toHaveAttribute('aria-pressed', 'true');
-  const done = section(/^Terminées/).locator('.task', { hasText: 'Suivi e2e T3' });
+  const done = section(/^Terminées/).locator('.task', { hasText: `${titre} T3` });
   await expect(done).toContainText('Terminé');
   await expect(done).not.toContainText('En retard');
 
-  await late.locator('.task', { hasText: 'Suivi e2e T1' }).getByRole('link', { name: 'Suivi e2e' }).click();
+  await late.locator('.task', { hasText: `${titre} T1` }).getByRole('link', { name: titre }).click();
   await expect(page).toHaveURL(new RegExp(`${b.id}$`));
-  await expect(page.getByRole('textbox', { name: 'Titre de la base' })).toHaveValue('Suivi e2e');
+  await expect(page.getByRole('textbox', { name: 'Titre de la base' })).toHaveValue(titre);
 });
 
 test('progression d’une base : dernière option du statut, mise à jour après modification', async ({ page, browser }) => {
