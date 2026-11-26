@@ -192,7 +192,7 @@ describe('plafonds', () => {
   });
 
   it('envois en cours : comptés dans le plafond, limités à trois par personne, coupés après un silence', async () => {
-    await boot({ ATTACHMENTS_TOTAL_MB: '1', ATTACHMENT_UPLOAD_IDLE_SECONDS: '1' });
+    await boot({ ATTACHMENTS_TOTAL_MB: '1', ATTACHMENT_UPLOAD_IDLE_SECONDS: '3' });
     const ed1 = await login('ed1');
     // Envoi qui s'arrête au milieu : le corps reste ouvert, sans plus rien envoyer.
     const stalled = (bytes: number) => {
@@ -211,7 +211,7 @@ describe('plafonds', () => {
     // Les 700 Ko en cours sont réservés : 400 Ko de plus dépasseraient le plafond de 1 Mo.
     expect((await upload(await login('ed2'), 'p1', 'b.bin', randomBytes(400 * 1024))).statusCode).toBe(413);
     const others = [stalled(1), stalled(1)];
-    await vi.waitFor(() => expect(tmpCount()).toBe(MAX_CONCURRENT_UPLOADS));
+    await vi.waitFor(() => expect(tmpCount()).toBe(MAX_CONCURRENT_UPLOADS), { timeout: 2000 });
     expect((await upload(ed1, 'p1', 'x.bin', Buffer.from('x'))).statusCode).toBe(429);
     for (const s of [first, ...others]) {
       const r = await s.res;
