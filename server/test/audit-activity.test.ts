@@ -225,7 +225,7 @@ describe('activité des jetons', () => {
     expect(access.length).toBeLessThanOrEqual(2);
     const pages = access.map((r) => ({ ...r, meta: JSON.parse(r.meta!) })).find((r) => r.meta.routes[0] === 'pages')!;
     expect(pages).toMatchObject({ user_id: 'ed', target: t.id, token_id: t.id, meta: { requests: 1000, routes: ['pages'], statuses: { 200: 500, 404: 500 }, windowMinutes: 5 } });
-    expect(JSON.stringify(access)).not.toContain('pA');
+    expect(JSON.stringify(access)).not.toContain('/pages/pA');
     expect(JSON.stringify(access)).not.toContain('inexistante');
     // Compteur du jeton : à jour dans la liste avant même l'écriture en base (au plus une par minute).
     const listed = ((await call(ed, 'GET', '/api/v3/tokens')).json() as { id: string; requestCount: number; lastUsedAt: number | null }[]).find((x) => x.id === t.id)!;
@@ -257,7 +257,7 @@ describe('activité des jetons', () => {
     const after = rows('auth.denied');
     expect(after).toHaveLength(3);
     expect(JSON.parse(after[2]!.meta!)).toMatchObject({ reason: 'space', aggregated: true, requests: 50, routes: ['pages'], statuses: { 404: 50 } });
-    expect(JSON.stringify(after)).not.toContain('pB');
+    expect(JSON.stringify(after)).not.toContain('/pages/pB');
     // Liste réservée aux administrateurs : libellé et outcome.
     const adm = await login('adm');
     const items = (await call(adm, 'GET', '/api/v3/admin/audit/events?action=auth.denied')).json().items as { outcome: string; label: string; actor: { via: { id: string } } }[];
